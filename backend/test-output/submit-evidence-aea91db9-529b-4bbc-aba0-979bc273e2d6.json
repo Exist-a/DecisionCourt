@@ -1,0 +1,777 @@
+{
+  "session_uuid": "aea91db9-529b-4bbc-aba0-979bc273e2d6",
+  "title": "集成测试-中途提交证据",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "deliberation",
+  "final_round": 0,
+  "converged": false,
+  "agents": [
+    {
+      "id": "90c7adfe-ef53-4d58-9960-5ee3dbc2154c",
+      "session_id": "a94c3d41-a567-4082-99d8-fc565e004d9e",
+      "agent_uuid": "b18d4c1e-470b-4745-9351-5078971ce911",
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "role": "支持选项 A",
+      "belief_a": 0.796,
+      "belief_b": 0.204,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T08:13:40.825901+08:00",
+      "updated_at": "2026-06-27T08:14:12.355083+08:00"
+    },
+    {
+      "id": "bf0c27bb-6aea-4970-83e1-9dae7f14eb49",
+      "session_id": "a94c3d41-a567-4082-99d8-fc565e004d9e",
+      "agent_uuid": "7f8a4994-068e-44fa-a7f8-33d696940680",
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "role": "支持选项 B",
+      "belief_a": 0.296,
+      "belief_b": 0.704,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T08:13:40.827883+08:00",
+      "updated_at": "2026-06-27T08:14:12.355886+08:00"
+    },
+    {
+      "id": "e56d4522-3341-4cca-98d5-68235778b3a4",
+      "session_id": "a94c3d41-a567-4082-99d8-fc565e004d9e",
+      "agent_uuid": "98a82d82-0e64-4fb8-8b1c-c544ab59db01",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.546,
+      "belief_b": 0.454,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T08:13:40.828944+08:00",
+      "updated_at": "2026-06-27T08:14:12.35662+08:00"
+    },
+    {
+      "id": "5e3a0dd1-9276-4f67-8b08-ca16f39df790",
+      "session_id": "a94c3d41-a567-4082-99d8-fc565e004d9e",
+      "agent_uuid": "2fbec10d-e3a6-4fcb-bf4e-740f16f14f5c",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.546,
+      "belief_b": 0.454,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T08:13:40.829975+08:00",
+      "updated_at": "2026-06-27T08:14:12.357289+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "尊敬的审判长，对方律师。我方认为，对于计算机专业本科生而言，出国留学是更优选择。首先，计算机领域的前沿技术，如人工智能、量子计算等，国外顶尖院校起步更早，资源更集中。其次，留学能带来国际化的视野和跨文化沟通能力，这在全球化职场中是重要加分项。最后，家庭可支持部分费用，说明经济并非不可逾越的障碍。从长期职业回报看，留学经历的溢价会远超初期投入。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"辩方尚未发言，我需要先发制人，基于背景信息强调出国留学的优势。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "对方律师关于前沿资源和国际视野的论述，忽略了几个关键风险。第一，留学成本极高，家庭仅能支持部分费用，意味着学生需背负巨额贷款或依赖兼职，这会严重分散学习精力。第二，海外实习和就业市场竞争激烈，文化语言障碍可能导致无法获得理想机会，而国内计算机行业正处于高速发展期，头部企业校招更青睐国内名校研究生。第三，国内导师项目资源丰富，学生能深度参与国家级课题，积累的实践经验与行业需求直接挂钩。因此，我方认为国内读研更稳妥。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方观点，指出留学的高成本、不确定性和就业风险，强调国内读研的稳定性。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "对方律师提到了成本和风险，但忽略了关键一点：国内读研的同质化竞争正在加剧。当大量计算机研究生涌向头部企业时，留学经历恰恰能提供差异化竞争力。国外顶尖院校的校友网络、海外实习经历、以及跨文化团队协作能力，是单纯国内学历难以替代的。家庭支持部分费用，已经降低了门槛，而留学带来的长期职业溢价和全球流动性，足以覆盖短期投入。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方强调留学风险和国内优势，但我方需要从长期价值和不可替代性反驳，强调留学带来的差异化竞争力。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "对方所谓的'差异化竞争力'缺乏数据支撑。教育部《2023中国留学回国就业蓝皮书》显示，超过30%的海归起薪低于国内985硕士，且部分留学生因缺乏国内实习经历，在秋招中反被淘汰。相比之下，国内读研可参与华为、腾讯等企业的联合实验室项目，毕业即获内推资格。家庭支持部分费用后，剩余缺口仍需贷款或打工弥补，这会直接挤占科研时间。国内读研的确定性收益，远高于留学这种高风险投资。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方强调留学差异化竞争力，我需用数据反驳留学实际收益，并强调国内读研的确定性优势。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "对方引用的《蓝皮书》数据存在幸存者偏差——它包含了大量非顶尖院校留学生。而我的当事人已被美国Top30 CS硕士录取并获RA奖学金，这属于留学群体中的前5%。RA奖学金可覆盖大部分学费，家庭仅需承担生活费。美国Top30 CS硕士应届生平均薪资约12万美元，远超国内同级别院校。且硅谷、西雅图等地对AI、分布式系统方向人才需求持续增长，留学生的职业天花板更高。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"针对对方引用的蓝皮书数据，指出其局限性，并强调顶尖院校留学生的优势。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "对方所谓'前5%'缺乏出处，RA奖学金通常仅覆盖学费，生活费仍是每年2-3万美元。硅谷薪资12万美元需扣除约30%税和住房成本，实际可支配收入未必高于国内一线城市。教育部数据明确显示海归起薪中位数低于国内985硕士，且留美实习受OPT限制，近年H1B中签率不足30%。国内读研可享受校企联合培养，确定性更高。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方强调Top30录取和RA奖学金是前5%，但我方质疑RA奖学金能否覆盖全部费用，且高薪数据未扣除高税负和生活成本。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "对方律师反复强调成本和风险，却忽视了关键一点：国内读研的同质化竞争正在加剧，而留学提供的国际化视野、前沿科研资源和全球职业网络，是未来十年AI产业爆发期不可替代的竞争优势。家庭支持已降低门槛，RA奖学金更减轻负担。短期投入换来的是长期职业溢价和全球流动性，这是国内读研难以比拟的。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"回应对方关于成本和风险的质疑，强调留学的长期价值和不可替代性。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "对方律师反复强调国际化视野，却忽视了最核心的科研匹配度。证据E002明确显示，国内导师实验室方向与当事人想做的AI安全高度匹配。AI安全作为前沿领域，国内顶尖实验室的科研水平已跻身世界前列，且导师能提供更直接的指导与资源。留学虽能接触不同文化，但若研究方向不匹配，反而浪费机会成本。国内读研在科研深度、师生互动和职业确定性上，显然优于留学。",
+      "evidence_refs": [
+        "E002"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方强调的国际化视野和全球职业网络，我指出国内AI安全方向实验室的高度匹配性，强调国内读研的科研优势与确定性。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "对方片面强调科研匹配度，却忽略了我方证据E001的关键事实：当事人已被美国Top30 CS录取并获RA奖学金。RA奖学金大幅降低经济负担，且美国Top30在AI安全领域的顶级实验室、企业合作和学术资源远超国内。据CSRankings，AI安全方向全球前十的大学中有七所在美国。国内虽方向匹配，但资源深度和国际影响力有限。留学的科研机遇和职业发展空间明显更优。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方过度强调科研匹配度，但忽略了我方证据E001的RA奖学金和Top30录取优势，且AI安全领域国外资源更丰富。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "对方夸大RA奖学金作用，通常仅覆盖学费，生活费仍是沉重负担。证据E002明确国内导师方向高度匹配，AI安全作为前沿领域，国内顶尖实验室如清华、中科院已取得世界级成果，且导师能提供更直接的指导、项目资源和内推机会。美国Top30虽有名校光环，但若导师研究方向与当事人不完全一致，反而浪费科研黄金期。国内读研的科研深度和确定性更优。",
+      "evidence_refs": [
+        "E002"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方强调RA奖学金降低负担和美国Top30资源，我方需质疑奖学金覆盖范围，并指出国内导师资源的直接优势。\"}"
+    }
+  ],
+  "evidences": [
+    {
+      "id": "0125cca4-8133-46c2-9849-9e5b51ae294b",
+      "session_id": "a94c3d41-a567-4082-99d8-fc565e004d9e",
+      "evidence_id": "E001",
+      "type": "fact",
+      "source": "user",
+      "content": "我已收到美国 Top30 CS 硕士录取，并有 RA 奖学金",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0,
+      "impact_on_option_b": 0,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-27T08:13:50.834548+08:00"
+    },
+    {
+      "id": "43d06766-b616-47bc-b21e-30fc89b96936",
+      "session_id": "a94c3d41-a567-4082-99d8-fc565e004d9e",
+      "evidence_id": "E002",
+      "type": "data",
+      "source": "user",
+      "content": "国内导师实验室方向与我想做的 AI 安全高度匹配",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.3,
+      "impact_on_option_b": -0.15,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-27T08:14:12.35358+08:00"
+    }
+  ],
+  "verdict": {
+    "ID": "c595a124-c214-4436-8f02-13c10531ab99",
+    "SessionID": "a94c3d41-a567-4082-99d8-fc565e004d9e",
+    "Content": "# 决策判决书\n\n## 一、双方主张\n- 选项A（出国留学）：主张美国Top30 CS硕士录取及RA奖学金可提供差异化竞争力和前沿资源。\n- 选项B（国内读研）：主张国内导师方向高度匹配，且留学成本高、海归就业优势有限。\n\n## 二、证据认定\n- E001：美国Top30 CS录取及RA奖学金（事实，但RA奖学金通常仅覆盖学费，生活费仍需自担）。\n- E002：国内导师实验室方向与AI安全高度匹配（事实，科研匹配度明确）。\n\n## 三、争议焦点分析\n1. **差异化竞争力**：留学方主张Top30录取属前5%，但缺乏数据支撑；国内方引用《蓝皮书》显示海归起薪优势有限，且存在幸存者偏差。双方证据均不充分。\n2. **经济负担**：RA奖学金仅覆盖学费，生活费每年2-3万美元，家庭仅能支持部分费用，留学方未提供具体财务方案。国内读研经济压力显著较小。\n3. **科研匹配度**：E002明确国内导师方向高度匹配，而留学方未提供美国导师在AI安全方向的匹配证据。\n\n## 四、判决\n综合证据，国内读研在科研匹配度上具有明确优势，且经济风险较低。留学方虽提供录取事实，但未充分证明其经济可行性和科研匹配度。因此，建议选择国内读研。",
+    "Summary": "建议优先考虑国内读研，因科研方向高度匹配且经济风险较低。",
+    "OptionAScore": 0.45,
+    "OptionBScore": 0.65,
+    "ConsensusPoints": "[\"计算机专业本科背景\", \"家庭可支持部分费用\", \"AI安全是前沿领域\"]",
+    "DivergencePoints": "[\"留学是否具有差异化竞争力\", \"RA奖学金能否覆盖经济负担\", \"国内科研匹配度与留学资源的权衡\"]",
+    "Recommendation": "建议选择国内读研，利用导师在AI安全方向的匹配优势，同时避免留学经济风险和就业不确定性。",
+    "UserFeedback": "none",
+    "CreatedAt": "2026-06-27T08:14:35.831309+08:00"
+  },
+  "events": [
+    {
+      "timestamp": "2026-06-27T00:13:40Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:43Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "尊敬的审判长，对方律师。我方认为，对于计算机专业本科生而言，出国留学是更优选择。首先，计算机领域的前沿技术，如人工智能、量子计算等，国外顶尖院校起步更早，资源更集中。其次，留学能带来国际化的视野和跨文化沟通能力，这在全球化职场中是重要加分项。最后，家庭可支持部分费用，说明经济并非不可逾越的障碍。从长期职业回报看，留学经历的溢价会远超初期投入。",
+        "evidence_refs": [],
+        "name": "控方律师",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:46Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方律师关于前沿资源和国际视野的论述，忽略了几个关键风险。第一，留学成本极高，家庭仅能支持部分费用，意味着学生需背负巨额贷款或依赖兼职，这会严重分散学习精力。第二，海外实习和就业市场竞争激烈，文化语言障碍可能导致无法获得理想机会，而国内计算机行业正处于高速发展期，头部企业校招更青睐国内名校研究生。第三，国内导师项目资源丰富，学生能深度参与国家级课题，积累的实践经验与行业需求直接挂钩。因此，我方认为国内读研更稳妥。",
+        "evidence_refs": [],
+        "name": "辩方律师",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:46Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 1,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "opening"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:48Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "对方律师提到了成本和风险，但忽略了关键一点：国内读研的同质化竞争正在加剧。当大量计算机研究生涌向头部企业时，留学经历恰恰能提供差异化竞争力。国外顶尖院校的校友网络、海外实习经历、以及跨文化团队协作能力，是单纯国内学历难以替代的。家庭支持部分费用，已经降低了门槛，而留学带来的长期职业溢价和全球流动性，足以覆盖短期投入。",
+        "evidence_refs": [],
+        "name": "控方律师",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:50Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "我已收到美国 Top30 CS 硕士录取，并有 RA 奖学金",
+        "created_at": "2026-06-27T08:13:50+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E001",
+        "impact_on_option_a": 0,
+        "impact_on_option_b": 0,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "fact"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:50Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": null,
+        "round": 1,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:50Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": null,
+        "round": 1,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:50Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "98a82d82-0e64-4fb8-8b1c-c544ab59db01",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 1,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:50Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2fbec10d-e3a6-4fcb-bf4e-740f16f14f5c",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 1,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:51Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方所谓的'差异化竞争力'缺乏数据支撑。教育部《2023中国留学回国就业蓝皮书》显示，超过30%的海归起薪低于国内985硕士，且部分留学生因缺乏国内实习经历，在秋招中反被淘汰。相比之下，国内读研可参与华为、腾讯等企业的联合实验室项目，毕业即获内推资格。家庭支持部分费用后，剩余缺口仍需贷款或打工弥补，这会直接挤占科研时间。国内读研的确定性收益，远高于留学这种高风险投资。",
+        "evidence_refs": [],
+        "name": "辩方律师",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:51Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:51Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:51Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "98a82d82-0e64-4fb8-8b1c-c544ab59db01",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:51Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2fbec10d-e3a6-4fcb-bf4e-740f16f14f5c",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:13:51Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 1,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:01Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "对方引用的《蓝皮书》数据存在幸存者偏差——它包含了大量非顶尖院校留学生。而我的当事人已被美国Top30 CS硕士录取并获RA奖学金，这属于留学群体中的前5%。RA奖学金可覆盖大部分学费，家庭仅需承担生活费。美国Top30 CS硕士应届生平均薪资约12万美元，远超国内同级别院校。且硅谷、西雅图等地对AI、分布式系统方向人才需求持续增长，留学生的职业天花板更高。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "控方律师",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:04Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方所谓'前5%'缺乏出处，RA奖学金通常仅覆盖学费，生活费仍是每年2-3万美元。硅谷薪资12万美元需扣除约30%税和住房成本，实际可支配收入未必高于国内一线城市。教育部数据明确显示海归起薪中位数低于国内985硕士，且留美实习受OPT限制，近年H1B中签率不足30%。国内读研可享受校企联合培养，确定性更高。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "辩方律师",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:04Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:04Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:04Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "98a82d82-0e64-4fb8-8b1c-c544ab59db01",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:04Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2fbec10d-e3a6-4fcb-bf4e-740f16f14f5c",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:04Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 2,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:12Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "国内导师实验室方向与我想做的 AI 安全高度匹配",
+        "created_at": "2026-06-27T08:14:12+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E002",
+        "impact_on_option_a": 0.3,
+        "impact_on_option_b": -0.15,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "data"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:12Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:12Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:12Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "98a82d82-0e64-4fb8-8b1c-c544ab59db01",
+        "agent_type": "investigator",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:12Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2fbec10d-e3a6-4fcb-bf4e-740f16f14f5c",
+        "agent_type": "clerk",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:22Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "content": "对方律师反复强调成本和风险，却忽视了关键一点：国内读研的同质化竞争正在加剧，而留学提供的国际化视野、前沿科研资源和全球职业网络，是未来十年AI产业爆发期不可替代的竞争优势。家庭支持已降低门槛，RA奖学金更减轻负担。短期投入换来的是长期职业溢价和全球流动性，这是国内读研难以比拟的。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "控方律师",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:25Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "content": "对方律师反复强调国际化视野，却忽视了最核心的科研匹配度。证据E002明确显示，国内导师实验室方向与当事人想做的AI安全高度匹配。AI安全作为前沿领域，国内顶尖实验室的科研水平已跻身世界前列，且导师能提供更直接的指导与资源。留学虽能接触不同文化，但若研究方向不匹配，反而浪费机会成本。国内读研在科研深度、师生互动和职业确定性上，显然优于留学。",
+        "evidence_refs": [
+          "E002"
+        ],
+        "name": "辩方律师",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:25Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:25Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:25Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "98a82d82-0e64-4fb8-8b1c-c544ab59db01",
+        "agent_type": "investigator",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:25Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2fbec10d-e3a6-4fcb-bf4e-740f16f14f5c",
+        "agent_type": "clerk",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:25Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "closing",
+        "current_round": 0,
+        "message": "进入 closing 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:27Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "b18d4c1e-470b-4745-9351-5078971ce911",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "content": "对方片面强调科研匹配度，却忽略了我方证据E001的关键事实：当事人已被美国Top30 CS录取并获RA奖学金。RA奖学金大幅降低经济负担，且美国Top30在AI安全领域的顶级实验室、企业合作和学术资源远超国内。据CSRankings，AI安全方向全球前十的大学中有七所在美国。国内虽方向匹配，但资源深度和国际影响力有限。留学的科研机遇和职业发展空间明显更优。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "控方律师",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:30Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "7f8a4994-068e-44fa-a7f8-33d696940680",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "content": "对方夸大RA奖学金作用，通常仅覆盖学费，生活费仍是沉重负担。证据E002明确国内导师方向高度匹配，AI安全作为前沿领域，国内顶尖实验室如清华、中科院已取得世界级成果，且导师能提供更直接的指导、项目资源和内推机会。美国Top30虽有名校光环，但若导师研究方向与当事人不完全一致，反而浪费科研黄金期。国内读研的科研深度和确定性更优。",
+        "evidence_refs": [
+          "E002"
+        ],
+        "name": "辩方律师",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:30Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "deliberation",
+        "current_round": 0,
+        "message": "进入 deliberation 阶段",
+        "previous_phase": "closing"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:14:35Z",
+      "type": "verdict.ready",
+      "payload": {
+        "option_a_score": 0.45,
+        "option_b_score": 0.65,
+        "summary": "建议优先考虑国内读研，因科研方向高度匹配且经济风险较低。",
+        "verdict_id": "c595a124-c214-4436-8f02-13c10531ab99"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "final_phase_is_deliberation",
+    "message_counts_correct",
+    "no_duplicate_adjacent_content",
+    "no_self_repetition",
+    "no_fake_evidence_refs",
+    "beliefs_updated_when_evidence_present",
+    "verdict_generated_with_valid_scores",
+    "user_evidences_persisted",
+    "user_evidence_was_referenced",
+    "no_raw_json_in_messages"
+  ],
+  "asserts_failed": null,
+  "started_at": "2026-06-27T08:13:40.822231+08:00",
+  "finished_at": "2026-06-27T08:14:43.844513+08:00",
+  "duration_sec": 63.021173076,
+  "extra": {
+    "test": "TestSubmitEvidenceDuringCrossExam"
+  }
+}

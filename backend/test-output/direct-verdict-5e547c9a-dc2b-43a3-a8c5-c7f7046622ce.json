@@ -1,0 +1,304 @@
+{
+  "session_uuid": "5e547c9a-dc2b-43a3-a8c5-c7f7046622ce",
+  "title": "集成测试-直接判决提前结束",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "deliberation",
+  "final_round": 0,
+  "converged": false,
+  "agents": [
+    {
+      "id": "177a7267-42ae-4bc1-91a2-968b9991810f",
+      "session_id": "729004d5-d07d-4885-9063-0160a233d3ee",
+      "agent_uuid": "881e721a-e15d-4b2a-bd8f-6d0c51665aa0",
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "role": "支持选项 A",
+      "belief_a": 0.75,
+      "belief_b": 0.25,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:57:32.380838+08:00",
+      "updated_at": "2026-06-28T21:57:32.380838+08:00"
+    },
+    {
+      "id": "f9a910a5-7d9c-41b6-a33f-42565f0b2eb2",
+      "session_id": "729004d5-d07d-4885-9063-0160a233d3ee",
+      "agent_uuid": "277275c9-84f1-4cc6-8f55-839faf9c6939",
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "role": "支持选项 B",
+      "belief_a": 0.25,
+      "belief_b": 0.75,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:57:32.382557+08:00",
+      "updated_at": "2026-06-28T21:57:32.382557+08:00"
+    },
+    {
+      "id": "5afa11f8-73e9-4bd8-b41b-b3026fbd48cb",
+      "session_id": "729004d5-d07d-4885-9063-0160a233d3ee",
+      "agent_uuid": "52dfd098-e329-4288-a133-667094df1b95",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:57:32.383987+08:00",
+      "updated_at": "2026-06-28T21:57:32.383987+08:00"
+    },
+    {
+      "id": "d85c4129-4b12-4371-908a-ca83a1bba98e",
+      "session_id": "729004d5-d07d-4885-9063-0160a233d3ee",
+      "agent_uuid": "5c8631e8-e6c2-458a-8e18-e7c5aaaa62cd",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:57:32.385161+08:00",
+      "updated_at": "2026-06-28T21:57:32.385161+08:00"
+    },
+    {
+      "id": "e2fdfc18-88b3-4606-9cb3-2fbc640643d3",
+      "session_id": "729004d5-d07d-4885-9063-0160a233d3ee",
+      "agent_uuid": "e8492201-324a-4c5f-9ff3-c0e9df317e74",
+      "agent_type": "judge",
+      "name": "法官",
+      "role": "主持庭审与最终判决",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:57:32.386123+08:00",
+      "updated_at": "2026-06-28T21:57:48.945846+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "工作三年正是创业的黄金窗口期：已有行业经验积累，少量积蓄足以启动轻资产项目，且年轻试错成本低。继续打工只会加速职业倦怠，而创业能带来指数级成长。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方尚未发言，我先主动提出论点：工作三年有少量积蓄，此时创业风险可控，机会成本低，应抓住窗口期。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "完全同意对方前半句。工作三年积累的行业人脉和认知正是创业的燃料。但我想补充：少量积蓄不是劣势，而是轻资产创业的筛选器——它迫使你聚焦最小可行产品，避免资源浪费。继续打工虽然稳定，但三年后的你只会被更年轻的替代，而创业哪怕失败，收获的决策能力和抗压经验是打工永远给不了的。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方论点已明确，我作为正方首次发言需要亮明立场并补充新角度，无需调用工具。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "对方提到的轻资产创业看似美好，但工作三年积累的少量积蓄恰好是脆弱的安全垫。创业前半年通常无收入，而你的积蓄能支撑多久？一旦失败，不仅积蓄归零，还会因职业空窗期影响下一份工作。继续打工则能持续积累资金和人脉，等待更成熟的时机。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方强调轻资产创业优势，我需从风险角度反驳，强调打工的稳定性和积蓄不足的风险。\"}"
+    }
+  ],
+  "evidences": [],
+  "verdict": {
+    "ID": "4ac3c7f8-080d-48fb-8ea6-e45d3888133c",
+    "SessionID": "729004d5-d07d-4885-9063-0160a233d3ee",
+    "Content": "# 决策判决书\n\n## 一、双方主张\n| 选项A代表（辞职创业） | 选项B代表（继续打工） |\n|---|---|\n| 工作三年是创业黄金窗口期，已有行业经验，少量积蓄可启动轻资产项目，年轻试错成本低。 | 少量积蓄脆弱，创业前半年无收入难以支撑；失败后职业空窗期影响再就业。 |\n\n## 二、证据认定\n当前尚无证据。双方论点均基于背景信息，无具体证据支撑。\n\n## 三、争议焦点\n1. 少量积蓄是否足以支撑创业初期无收入阶段。\n2. 创业失败后职业空窗期对职业发展的影响。\n\n## 四、法官裁决\n双方论点势均力敌：支持创业方强调行业经验、轻资产启动和成长性；支持打工方指出积蓄脆弱、创业风险及职业空窗期影响。由于信念度相等，无法做出明确倾向。\n\n## 五、可执行建议\n建议暂不行动，先制定详细创业计划并评估风险，同时继续工作积累更多资金和人脉。",
+    "Summary": "建议暂不行动，先制定详细创业计划并评估风险，同时继续工作积累更多资金和人脉。",
+    "OptionAScore": 0.5,
+    "OptionBScore": 0.5,
+    "ConsensusPoints": "[\"工作三年积累了行业经验和人脉\", \"少量积蓄可用于启动轻资产项目\"]",
+    "DivergencePoints": "[\"少量积蓄是否足以支撑创业初期无收入阶段\", \"创业失败后职业空窗期的影响\"]",
+    "Recommendation": "建议暂不行动，先制定详细创业计划并评估风险，同时继续工作积累更多资金和人脉。",
+    "UserFeedback": "none",
+    "CreatedAt": "2026-06-28T21:57:52.749081+08:00"
+  },
+  "events": [
+    {
+      "timestamp": "2026-06-28T13:57:32Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:34Z",
+      "type": "agent.cot_step",
+      "payload": {
+        "agent_id": "881e721a-e15d-4b2a-bd8f-6d0c51665aa0",
+        "agent_type": "prosecutor",
+        "step": {
+          "index": 0,
+          "thought": "对方尚未发言，我先主动提出论点：工作三年有少量积蓄，此时创业风险可控，机会成本低，应抓住窗口期。",
+          "action": "speak",
+          "elapsed_ms": 2331
+        }
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:34Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "881e721a-e15d-4b2a-bd8f-6d0c51665aa0",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "工作三年正是创业的黄金窗口期：已有行业经验积累，少量积蓄足以启动轻资产项目，且年轻试错成本低。继续打工只会加速职业倦怠，而创业能带来指数级成长。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:36Z",
+      "type": "agent.cot_step",
+      "payload": {
+        "agent_id": "277275c9-84f1-4cc6-8f55-839faf9c6939",
+        "agent_type": "defender",
+        "step": {
+          "index": 0,
+          "thought": "对方强调黄金窗口期，我需要拆解其逻辑漏洞：少量积蓄是否足够？试错成本真的低吗？先思考再反击。",
+          "action": "reflect",
+          "observation": "[reflect] 1/3",
+          "elapsed_ms": 1835
+        }
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:40Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "closing",
+        "current_round": 0,
+        "message": "进入 closing 阶段",
+        "previous_phase": "opening"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:43Z",
+      "type": "agent.cot_step",
+      "payload": {
+        "agent_id": "881e721a-e15d-4b2a-bd8f-6d0c51665aa0",
+        "agent_type": "prosecutor",
+        "step": {
+          "index": 0,
+          "thought": "对方论点已明确，我作为正方首次发言需要亮明立场并补充新角度，无需调用工具。",
+          "action": "speak",
+          "elapsed_ms": 3195
+        }
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:43Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "881e721a-e15d-4b2a-bd8f-6d0c51665aa0",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "完全同意对方前半句。工作三年积累的行业人脉和认知正是创业的燃料。但我想补充：少量积蓄不是劣势，而是轻资产创业的筛选器——它迫使你聚焦最小可行产品，避免资源浪费。继续打工虽然稳定，但三年后的你只会被更年轻的替代，而创业哪怕失败，收获的决策能力和抗压经验是打工永远给不了的。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:46Z",
+      "type": "agent.cot_step",
+      "payload": {
+        "agent_id": "277275c9-84f1-4cc6-8f55-839faf9c6939",
+        "agent_type": "defender",
+        "step": {
+          "index": 0,
+          "thought": "对方强调轻资产创业优势，我需从风险角度反驳，强调打工的稳定性和积蓄不足的风险。",
+          "action": "speak",
+          "elapsed_ms": 2994
+        }
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:46Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "277275c9-84f1-4cc6-8f55-839faf9c6939",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方提到的轻资产创业看似美好，但工作三年积累的少量积蓄恰好是脆弱的安全垫。创业前半年通常无收入，而你的积蓄能支撑多久？一旦失败，不仅积蓄归零，还会因职业空窗期影响下一份工作。继续打工则能持续积累资金和人脉，等待更成熟的时机。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:46Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "deliberation",
+        "current_round": 0,
+        "message": "进入 deliberation 阶段",
+        "previous_phase": "closing"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:48Z",
+      "type": "judge.final_decision",
+      "payload": {
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "preferred": "neutral",
+        "reasoning": "双方论点势均力敌：支持创业方强调行业经验、轻资产启动和成长性；支持打工方指出积蓄脆弱、创业风险及职业空窗期影响。由于信念度相等，无法做出明确倾向。",
+        "recommendation": "建议暂不行动，先制定详细创业计划并评估风险，同时继续工作积累更多资金和人脉。"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:57:52Z",
+      "type": "verdict.ready",
+      "payload": {
+        "option_a_score": 0.5,
+        "option_b_score": 0.5,
+        "summary": "建议暂不行动，先制定详细创业计划并评估风险，同时继续工作积累更多资金和人脉。",
+        "verdict_id": "4ac3c7f8-080d-48fb-8ea6-e45d3888133c"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "final_phase_is_deliberation",
+    "verdict_generated_despite_early_termination",
+    "early_termination_occurred"
+  ],
+  "asserts_failed": null,
+  "started_at": "2026-06-28T21:57:32.379215+08:00",
+  "finished_at": "2026-06-28T21:57:55.757312+08:00",
+  "duration_sec": 23.37773819,
+  "extra": {
+    "test": "TestDirectVerdictEarlyTermination"
+  }
+}

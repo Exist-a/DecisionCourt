@@ -1,0 +1,931 @@
+{
+  "session_uuid": "baa7b1e0-b21a-489e-9cc1-2c465470bcec",
+  "title": "集成测试-中途提交证据",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "deliberation",
+  "final_round": 0,
+  "converged": false,
+  "agents": [
+    {
+      "id": "d7351594-fc27-456e-b9dd-0eb03235736b",
+      "session_id": "58b72f0d-67a7-44b6-9d80-95d66272b3e5",
+      "agent_uuid": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "role": "支持选项 B",
+      "belief_a": 0.296,
+      "belief_b": 0.704,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:12:36.221249+08:00",
+      "updated_at": "2026-06-27T11:13:18.880012+08:00"
+    },
+    {
+      "id": "86e7d3e0-7f18-4be7-8c73-b6e7be953ab0",
+      "session_id": "58b72f0d-67a7-44b6-9d80-95d66272b3e5",
+      "agent_uuid": "a2d88ebd-35eb-4291-a59d-043b20811105",
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "role": "支持选项 A",
+      "belief_a": 0.796,
+      "belief_b": 0.204,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:12:36.218935+08:00",
+      "updated_at": "2026-06-27T11:13:18.88165+08:00"
+    },
+    {
+      "id": "db6c998e-8bba-4942-864a-40e0aea23641",
+      "session_id": "58b72f0d-67a7-44b6-9d80-95d66272b3e5",
+      "agent_uuid": "bb5cb0f1-25c6-4bef-8876-158fdd46504d",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.546,
+      "belief_b": 0.454,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:12:36.222483+08:00",
+      "updated_at": "2026-06-27T11:13:18.882565+08:00"
+    },
+    {
+      "id": "2bfce5cd-5959-4829-84c0-758f91fa47f4",
+      "session_id": "58b72f0d-67a7-44b6-9d80-95d66272b3e5",
+      "agent_uuid": "b317b358-51bf-489a-840e-a1a129c45898",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.546,
+      "belief_b": 0.454,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:12:36.227707+08:00",
+      "updated_at": "2026-06-27T11:13:18.883257+08:00"
+    },
+    {
+      "id": "f825ea11-6615-431f-aa3c-92379fe86bc5",
+      "session_id": "58b72f0d-67a7-44b6-9d80-95d66272b3e5",
+      "agent_uuid": "e9ee749d-7de2-4fbd-9a9b-c9602b832ea3",
+      "agent_type": "judge",
+      "name": "法官",
+      "role": "主持庭审与最终判决",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:12:36.229365+08:00",
+      "updated_at": "2026-06-27T11:13:33.715967+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "既然家庭能支持部分费用，出国留学完全可行。计算机领域国外顶尖院校（如CMU、MIT）提供更前沿的课程和科研环境，毕业后薪资回报远超国内读研。此外，海外经历能提升语言能力和全球视野，这是国内读研难以替代的。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"基于背景信息，家庭可支持部分费用，说明经济条件不是绝对障碍，应强调出国留学的长期回报。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "出国留学看似光鲜，但成本高昂——仅学费每年30-50万，生活费等另计。家庭只能支持部分，意味着你需背负沉重经济压力或频繁打工，影响学业。国内读研奖学金丰厚，导师项目补贴可覆盖生活费，经济风险极小。计算机领域国内顶尖高校如清华、浙大，科研实力已比肩世界，且企业校招更青睐本土学历，人脉资源也更扎实。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方夸大出国优势，忽略成本风险。首次发言需直击B方核心优势：稳定性、性价比、人脉积累。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "对方提到的经济压力确实存在，但请注意证据E001：我已收到RA奖学金，这能大幅减轻学费负担，且实验室工作本身就是宝贵的科研经历。相比国内读研，国外顶级CS硕士的起薪通常高出50%-100%，几年内即可收回投资。此外，海外经历对进入国际顶级科技公司至关重要，长期职业天花板更高。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方强调经济压力，我反驳并引用证据E001说明有RA奖学金可减轻负担，并强调长期回报。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "E001的RA奖学金确实能减轻部分负担，但美国Top30的CS硕士两年总花费仍高达60-80万人民币，奖学金通常只覆盖学费的30%-50%，剩余部分仍需家庭支持或自筹。国内读研则完全不同：学硕免学费、每月有补贴，加上家庭支持，经济上毫无压力。计算机行业更看重实际能力和项目经验，国内大厂对本土研究生认可度极高，且校招竞争更可控。何必为了不确定的海外高薪，冒下经济风险？",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方引用E001奖学金来反驳经济压力，我需指出奖学金无法覆盖全部费用，并强调国内读研的经济确定性和职业稳定性。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "RA奖学金通常覆盖全部学费并提供生活费，E001明确是RA奖学金，实际负担远低于预估。美国Top30 CS硕士起薪12-15万美元，两年回本。国内读研虽然经济压力小，但起薪仅2-3万美元，长期差距巨大。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"针对对方的经济压力论点，强调奖学金实际覆盖率和长期回报，反驳国内读研更经济的说法。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "RA奖学金并非全部覆盖，美国硕士学费普遍每年5-7万美元，RA通常只免学费并提供少量生活费，但国际生需补足州外学费差额，实际自付费用仍高达每年2-3万美元。国内读研则完全无此负担，且计算机领域国内大厂对本土研究生项目经验更看重，就业成功率不逊于海归。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"反驳对方关于RA奖学金覆盖全部费用的说法，强调实际成本仍高，并指出国内读研的就业优势。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "即使RA奖学金只覆盖部分费用，家庭支持加上留学期间实习收入（OPT可达12-15美元/小时），完全可覆盖剩余支出。美国CS硕士毕业起薪12-15万美元，国内仅2-3万美元，三年内即可收回全部投资。国内读研虽经济压力小，但职业天花板明显更低。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方强调RA奖学金不覆盖全部费用，但计算机领域海外硕士投资回报率极高，且家庭能支持部分费用，经济风险可控。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "OPT实习收入有限，每周最多20小时，且需缴纳高额税。美国生活成本高昂，实习收入难以覆盖剩余学费。反观国内读研，实验室项目合作企业提供带薪实习，收入稳定且积累行业人脉。E002显示导师方向与AI安全高度匹配，这在国内读研就能获得顶级科研资源，无需冒险出国。",
+      "evidence_refs": [
+        "E002"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方实习收入论点，指出OPT限制和国内实习机会优势\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "OPT实习虽有限制，但RA奖学金已覆盖主要学费，实习收入仅用于生活补贴，完全可行。E002中导师方向匹配，但国内AI安全资源有限，美国Top30在AI安全领域全球领先，能接触前沿课题与产业合作。长期来看，海外经历与薪资优势远超短期经济压力。",
+      "evidence_refs": [
+        "E001",
+        "E002"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方强调OPT实习收入有限、生活成本高，我需反驳这点，并引用E002说明国内导师方向匹配实际是优势，但E001的RA奖学金才是关键，应坚持出国长期回报更高。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "国内读研在AI安全方向同样有顶级资源。E002明确显示国内导师方向高度匹配，且国内高校如清华、中科院在AI安全领域已有世界级成果。出国留学需承担文化适应、签证风险等隐性成本，而国内读研可无缝衔接实验室项目，快速产出论文。家庭支持部分费用更应优先保障稳定路径，而非冒险。",
+      "evidence_refs": [
+        "E002"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方强调RA奖学金和OPT实习的可行性，但忽略国内读研在AI安全方向的匹配优势，需指出国内资源同样顶级且风险更低。\"}"
+    }
+  ],
+  "evidences": [
+    {
+      "id": "572c475b-ee4a-472a-8d56-d717762d4886",
+      "session_id": "58b72f0d-67a7-44b6-9d80-95d66272b3e5",
+      "evidence_id": "E001",
+      "type": "fact",
+      "source": "user",
+      "content": "我已收到美国 Top30 CS 硕士录取，并有 RA 奖学金",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0,
+      "impact_on_option_b": 0,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-27T11:12:46.234688+08:00"
+    },
+    {
+      "id": "a38f91bc-056d-4cc3-a748-c58d462cda2c",
+      "session_id": "58b72f0d-67a7-44b6-9d80-95d66272b3e5",
+      "evidence_id": "E002",
+      "type": "data",
+      "source": "user",
+      "content": "国内导师实验室方向与我想做的 AI 安全高度匹配",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.3,
+      "impact_on_option_b": -0.15,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-27T11:13:18.878467+08:00"
+    }
+  ],
+  "verdict": {
+    "ID": "83dd43ef-5ce3-423b-bcf7-65ed14dacd80",
+    "SessionID": "58b72f0d-67a7-44b6-9d80-95d66272b3e5",
+    "Content": "# 决策判决书\n\n## 一、双方主张\n\n**选项A（出国留学）：** 主张者认为，美国Top30 CS硕士提供前沿课程和科研环境，RA奖学金可大幅减轻学费负担，毕业后薪资回报高（起薪12-15万美元），两年可回本。家庭支持加上OPT实习收入可覆盖剩余支出。\n\n**选项B（国内读研）：** 主张者认为，出国留学成本高昂（总花费60-80万人民币），RA奖学金通常只覆盖学费30%-50%，剩余部分仍需自筹；OPT实习收入有限且需缴税。国内读研经济压力小，且E002显示导师方向与AI安全高度匹配，国内高校在该领域已有世界级成果。\n\n## 二、证据分析\n\n- **E001 [fact]：** 已收到美国Top30 CS硕士录取，并有RA奖学金。双方对奖学金存在争议：一方认为RA覆盖全部学费并提供生活费，另一方认为仅覆盖部分，国际生需补足差额。证据未明确奖学金具体金额，故实际负担无法确定。\n- **E002 [data]：** 国内导师实验室方向与AI安全高度匹配。该证据对选项A有正面影响（+0.3），对选项B有轻微负面影响（-0.1），表明国内导师方向优势明显。\n\n## 三、共识点\n\n1. 家庭可支持部分费用，但不足以完全覆盖出国留学全部成本。\n2. RA奖学金可减轻部分经济负担，但具体覆盖程度存在争议。\n\n## 四、争议焦点\n\n1. **RA奖学金覆盖程度：** 一方主张覆盖全部学费及生活费，另一方主张仅覆盖30%-50%，且需补足州外学费差额。证据不足，无法判定。\n2. **薪资回报对比：** 一方主张美国CS硕士起薪12-15万美元，两年回本；另一方质疑国内读研回报更高。证据不足，无实际数据支持。\n3. **国内AI安全资源：** 一方认为国内资源有限，另一方认为清华、中科院等已有世界级成果。E002仅表明导师方向匹配，未提供具体资源对比。\n\n## 五、判决\n\n鉴于以下理由，建议优先选择**国内读研（选项B）**：\n1. 经济风险较低：出国留学总费用存在不确定性，RA奖学金覆盖程度不明，家庭支持有限，可能导致沉重经济压力。\n2. 导师方向高度匹配：E002明确显示国内导师方向与AI安全高度匹配，为证据中唯一量化正面影响的数据。\n3. 证据不足：关于薪资回报、国外资源等论点缺乏实际证据支持，无法作为决策依据。\n\n综上，国内读研在现有证据下更为稳妥。",
+    "Summary": "建议优先考虑国内读研，因经济风险较低且导师方向高度匹配。",
+    "OptionAScore": 0.45,
+    "OptionBScore": 0.55,
+    "ConsensusPoints": "[\"家庭可支持部分费用\", \"RA奖学金可减轻部分经济负担\"]",
+    "DivergencePoints": "[\"RA奖学金覆盖程度及实际自付费用\", \"美国CS硕士毕业薪资与国内读研回报对比\", \"国内AI安全资源是否充足\"]",
+    "Recommendation": "建议选择国内读研，利用E002中导师方向高度匹配的优势，同时避免出国留学的高昂自付费用和不确定性。",
+    "UserFeedback": "none",
+    "CreatedAt": "2026-06-27T11:13:49.83644+08:00"
+  },
+  "events": [
+    {
+      "timestamp": "2026-06-27T03:12:36Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:38Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "既然家庭能支持部分费用，出国留学完全可行。计算机领域国外顶尖院校（如CMU、MIT）提供更前沿的课程和科研环境，毕业后薪资回报远超国内读研。此外，海外经历能提升语言能力和全球视野，这是国内读研难以替代的。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:41Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "出国留学看似光鲜，但成本高昂——仅学费每年30-50万，生活费等另计。家庭只能支持部分，意味着你需背负沉重经济压力或频繁打工，影响学业。国内读研奖学金丰厚，导师项目补贴可覆盖生活费，经济风险极小。计算机领域国内顶尖高校如清华、浙大，科研实力已比肩世界，且企业校招更青睐本土学历，人脉资源也更扎实。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:41Z",
+      "type": "opening.finished",
+      "payload": {
+        "message": "开庭陈述结束，等待用户确认开始质证"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:46Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "我已收到美国 Top30 CS 硕士录取，并有 RA 奖学金",
+        "created_at": "2026-06-27T11:12:46+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E001",
+        "impact_on_option_a": 0,
+        "impact_on_option_b": 0,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "fact"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:46Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:46Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:46Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "bb5cb0f1-25c6-4bef-8876-158fdd46504d",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:46Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b317b358-51bf-489a-840e-a1a129c45898",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:46Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "e9ee749d-7de2-4fbd-9a9b-c9602b832ea3",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:46Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 1,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "opening"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:48Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "对方提到的经济压力确实存在，但请注意证据E001：我已收到RA奖学金，这能大幅减轻学费负担，且实验室工作本身就是宝贵的科研经历。相比国内读研，国外顶级CS硕士的起薪通常高出50%-100%，几年内即可收回投资。此外，海外经历对进入国际顶级科技公司至关重要，长期职业天花板更高。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:51Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "E001的RA奖学金确实能减轻部分负担，但美国Top30的CS硕士两年总花费仍高达60-80万人民币，奖学金通常只覆盖学费的30%-50%，剩余部分仍需家庭支持或自筹。国内读研则完全不同：学硕免学费、每月有补贴，加上家庭支持，经济上毫无压力。计算机行业更看重实际能力和项目经验，国内大厂对本土研究生认可度极高，且校招竞争更可控。何必为了不确定的海外高薪，冒下经济风险？",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:51Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:51Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "bb5cb0f1-25c6-4bef-8876-158fdd46504d",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:51Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b317b358-51bf-489a-840e-a1a129c45898",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:51Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "e9ee749d-7de2-4fbd-9a9b-c9602b832ea3",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:51Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:53Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "e9ee749d-7de2-4fbd-9a9b-c9602b832ea3",
+        "belief_a": 0.55,
+        "belief_b": 0.45,
+        "reasoning": "正方强调出国留学的学术和职业优势，并引用RA奖学金减轻经济负担；反方则指出即使有奖学金，总花费仍高，国内读研经济风险更小。双方论点均有理，但正方证据E001（RA奖学金）增强了其论点的可信度，而反方未提供具体证据。因此，小幅调整倾向偏向出国留学。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:54Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "b317b358-51bf-489a-840e-a1a129c45898",
+        "round": 1,
+        "summary": "本轮总结：选项A代表主要论证了RA奖学金能减轻经济负担且海外硕士起薪更高，选项B代表则主张即使有奖学金，美国留学总花费仍高，而国内读研经济压力小，双方争议焦点在于留学经济成本与回报的权衡。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:12:54Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 1,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:04Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "RA奖学金通常覆盖全部学费并提供生活费，E001明确是RA奖学金，实际负担远低于预估。美国Top30 CS硕士起薪12-15万美元，两年回本。国内读研虽然经济压力小，但起薪仅2-3万美元，长期差距巨大。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:07Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "RA奖学金并非全部覆盖，美国硕士学费普遍每年5-7万美元，RA通常只免学费并提供少量生活费，但国际生需补足州外学费差额，实际自付费用仍高达每年2-3万美元。国内读研则完全无此负担，且计算机领域国内大厂对本土研究生项目经验更看重，就业成功率不逊于海归。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:07Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:07Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:07Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "bb5cb0f1-25c6-4bef-8876-158fdd46504d",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:07Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b317b358-51bf-489a-840e-a1a129c45898",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:07Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "e9ee749d-7de2-4fbd-9a9b-c9602b832ea3",
+        "agent_type": "judge",
+        "belief_a": 0.55,
+        "belief_b": 0.45,
+        "delta": 0.05,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:09Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "e9ee749d-7de2-4fbd-9a9b-c9602b832ea3",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "reasoning": "正方强调RA奖学金减轻负担和高回报，反方则指出RA奖学金通常不覆盖全部费用，仍有较大经济压力。双方论点均有依据，但反方对RA奖学金的具体限制提出了更具体的质疑，且当前证据E001未明确奖学金覆盖范围，因此反方论点稍占优势。我微调倾向，降低对A的支持。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:10Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "b317b358-51bf-489a-840e-a1a129c45898",
+        "round": 2,
+        "summary": "本轮总结：选项A代表主要论证RA奖学金可大幅降低留学成本，且美国Top30 CS硕士起薪高、回报快；选项B代表则主张RA奖学金无法完全覆盖费用，国际生仍需自付高额学费，国内读研经济压力更小。双方争议焦点在于RA奖学金能否真正消除留学经济负担及中美硕士的长期回报差异。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:10Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 2,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:18Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "国内导师实验室方向与我想做的 AI 安全高度匹配",
+        "created_at": "2026-06-27T11:13:18+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E002",
+        "impact_on_option_a": 0.3,
+        "impact_on_option_b": -0.15,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "data"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "bb5cb0f1-25c6-4bef-8876-158fdd46504d",
+        "agent_type": "investigator",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b317b358-51bf-489a-840e-a1a129c45898",
+        "agent_type": "clerk",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "e9ee749d-7de2-4fbd-9a9b-c9602b832ea3",
+        "agent_type": "judge",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:29Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "content": "即使RA奖学金只覆盖部分费用，家庭支持加上留学期间实习收入（OPT可达12-15美元/小时），完全可覆盖剩余支出。美国CS硕士毕业起薪12-15万美元，国内仅2-3万美元，三年内即可收回全部投资。国内读研虽经济压力小，但职业天花板明显更低。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:31Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "content": "OPT实习收入有限，每周最多20小时，且需缴纳高额税。美国生活成本高昂，实习收入难以覆盖剩余学费。反观国内读研，实验室项目合作企业提供带薪实习，收入稳定且积累行业人脉。E002显示导师方向与AI安全高度匹配，这在国内读研就能获得顶级科研资源，无需冒险出国。",
+        "evidence_refs": [
+          "E002"
+        ],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "bb5cb0f1-25c6-4bef-8876-158fdd46504d",
+        "agent_type": "investigator",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "b317b358-51bf-489a-840e-a1a129c45898",
+        "agent_type": "clerk",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "e9ee749d-7de2-4fbd-9a9b-c9602b832ea3",
+        "agent_type": "judge",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": -0.004,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:33Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "e9ee749d-7de2-4fbd-9a9b-c9602b832ea3",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "reasoning": "双方辩论焦点集中在经济成本和职业回报。支持出国方强调RA奖学金和海外高薪，但对方指出RA奖学金覆盖有限，实际自付费用仍高。支持国内方指出E002显示导师方向高度匹配，且国内读研经济风险小、人脉积累好。考虑到E002对A有正面影响（0.3）且对B有负面影响（-0.1），而E001为中性事实，国内方论点更扎实，因此小幅调整倾向偏向国内读研。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:35Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "b317b358-51bf-489a-840e-a1a129c45898",
+        "round": 3,
+        "summary": "本轮总结：选项A代表主张RA奖学金、家庭支持和OPT实习收入可覆盖留学费用，且美国CS硕士起薪远高于国内，三年可收回投资；选项B代表则反驳OPT收入有限、生活成本高，强调国内读研有带薪实习和E002证据显示导师方向与AI安全高度匹配的优势。双方争议焦点在于留学经济可行性及国内导师资源价值。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:35Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "closing",
+        "current_round": 0,
+        "message": "进入 closing 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:37Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a2d88ebd-35eb-4291-a59d-043b20811105",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "content": "OPT实习虽有限制，但RA奖学金已覆盖主要学费，实习收入仅用于生活补贴，完全可行。E002中导师方向匹配，但国内AI安全资源有限，美国Top30在AI安全领域全球领先，能接触前沿课题与产业合作。长期来看，海外经历与薪资优势远超短期经济压力。",
+        "evidence_refs": [
+          "E001",
+          "E002"
+        ],
+        "name": "选项A代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:42Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "addc15a7-8610-4b3a-8754-f17cd2109e8d",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "content": "国内读研在AI安全方向同样有顶级资源。E002明确显示国内导师方向高度匹配，且国内高校如清华、中科院在AI安全领域已有世界级成果。出国留学需承担文化适应、签证风险等隐性成本，而国内读研可无缝衔接实验室项目，快速产出论文。家庭支持部分费用更应优先保障稳定路径，而非冒险。",
+        "evidence_refs": [
+          "E002"
+        ],
+        "name": "选项B代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:42Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "deliberation",
+        "current_round": 0,
+        "message": "进入 deliberation 阶段",
+        "previous_phase": "closing"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:13:49Z",
+      "type": "verdict.ready",
+      "payload": {
+        "option_a_score": 0.45,
+        "option_b_score": 0.55,
+        "summary": "建议优先考虑国内读研，因经济风险较低且导师方向高度匹配。",
+        "verdict_id": "83dd43ef-5ce3-423b-bcf7-65ed14dacd80"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "final_phase_is_deliberation",
+    "message_counts_correct",
+    "no_duplicate_adjacent_content",
+    "no_self_repetition",
+    "no_fake_evidence_refs",
+    "beliefs_updated_when_evidence_present",
+    "verdict_generated_with_valid_scores",
+    "user_evidences_persisted",
+    "user_evidence_was_referenced",
+    "no_raw_json_in_messages"
+  ],
+  "asserts_failed": [
+    "judge belief did not change from initial 0.5/0.5 despite evidence"
+  ],
+  "started_at": "2026-06-27T11:12:36.215835+08:00",
+  "finished_at": "2026-06-27T11:13:57.853488+08:00",
+  "duration_sec": 81.635605561,
+  "extra": {
+    "test": "TestSubmitEvidenceDuringCrossExam"
+  }
+}

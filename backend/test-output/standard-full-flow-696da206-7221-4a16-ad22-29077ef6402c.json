@@ -1,0 +1,658 @@
+{
+  "session_uuid": "696da206-7221-4a16-ad22-29077ef6402c",
+  "title": "集成测试-标准模式完整流程",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "deliberation",
+  "final_round": 0,
+  "converged": true,
+  "agents": [
+    {
+      "id": "9b02a168-b23a-4801-9426-10a8034e4bea",
+      "session_id": "21be6aaf-0be6-4a96-8917-2ff8900b8e24",
+      "agent_uuid": "711dd937-200c-4d3d-b12d-5e9954a24308",
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "role": "支持选项 A",
+      "belief_a": 0.75,
+      "belief_b": 0.25,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T07:12:06.302886+08:00",
+      "updated_at": "2026-06-28T07:12:06.302886+08:00"
+    },
+    {
+      "id": "5ae79ff1-ae48-4812-ba0e-9e4e97b1c196",
+      "session_id": "21be6aaf-0be6-4a96-8917-2ff8900b8e24",
+      "agent_uuid": "a219cf09-f06b-4a86-be6e-e2bc2b8d64ac",
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "role": "支持选项 B",
+      "belief_a": 0.25,
+      "belief_b": 0.75,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T07:12:06.304334+08:00",
+      "updated_at": "2026-06-28T07:12:06.304334+08:00"
+    },
+    {
+      "id": "4d25b4af-cf74-4a88-a93c-b6edff34a6d5",
+      "session_id": "21be6aaf-0be6-4a96-8917-2ff8900b8e24",
+      "agent_uuid": "c0e7231d-d3e1-439e-96a2-cceca2eae783",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T07:12:06.305623+08:00",
+      "updated_at": "2026-06-28T07:12:06.305623+08:00"
+    },
+    {
+      "id": "add26d77-bfd5-42fc-9dd3-8cce4daed583",
+      "session_id": "21be6aaf-0be6-4a96-8917-2ff8900b8e24",
+      "agent_uuid": "278a6698-25cd-42a5-b3c0-caafa3cc0f66",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T07:12:06.306831+08:00",
+      "updated_at": "2026-06-28T07:12:06.306831+08:00"
+    },
+    {
+      "id": "4673e964-9672-4074-aed8-b8c1fdd0b4b2",
+      "session_id": "21be6aaf-0be6-4a96-8917-2ff8900b8e24",
+      "agent_uuid": "4edd2197-773a-4755-91d9-b9a1acbd9af4",
+      "agent_type": "judge",
+      "name": "法官",
+      "role": "主持庭审与最终判决",
+      "belief_a": 0.55,
+      "belief_b": 0.45,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T07:12:06.307831+08:00",
+      "updated_at": "2026-06-28T07:13:06.899584+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "毕业就加入大厂能提供系统化培训和规范流程，这对职场新人至关重要。大厂完善的导师制度、技术积累和职业晋升通道，能帮助应届生快速建立专业基础和人脉网络。相比之下，小厂往往要求立即产出，缺乏培养体系，可能导致成长瓶颈。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"基于背景信息，大厂有完善培训体系和职业发展路径，而小厂可能缺乏系统指导。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "我支持选项B：先加入小厂快速成长。小厂虽然资源有限，但新人能直接接触核心业务，快速承担关键职责，实际动手能力提升更快。大厂分工过细，新人可能长期做边缘模块，反而限制视野。小厂的灵活性和高密度实战经验，更有利于应届生短期内积累完整项目经验，为后续职业发展打下坚实基础。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"首次发言，明确支持选项B，指出小厂快速成长的优势。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "对方提到小厂能接触核心业务，但忽略了关键一点：大厂的平台背书和系统化资源是个人长期职业资本的核心。大厂的项目经验、品牌效应和人脉网络，能为未来跳槽或创业提供坚实跳板。小厂项目虽多，但行业认可度有限，一旦业务波动，新人抗风险能力极弱。大厂即使分工细，也能通过内部转岗和跨部门协作拓宽视野，而非长期局限在边缘模块。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方强调小厂能接触核心业务，但忽略了小厂缺乏系统培养和职业保障的风险。我从大厂提供的长期职业资本角度反驳，强调平台背书和资源对新人成长的重要性。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "大厂的平台背书确实有长期价值，但应届生更缺的是独立解决问题的能力。小厂的全栈实践和快速试错，能让人在短时间内积累从0到1的完整经验。大厂分工过细，新人往往只懂局部，一旦脱离平台，个人竞争力大打折扣。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方强调大厂平台背书和系统化资源的论点，我指出小厂的全栈实战和快速试错能力更能积累核心技能，而大厂分工过细可能限制新人成长。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "小厂看似锻炼独立能力，但问题在于：小厂业务不稳定，项目可能随时终止，你辛苦积累的经验可能瞬间贬值。而大厂有成熟的内部转岗机制，即使当前分工细，你完全可以通过主动学习、跨部门协作拓宽技能树。更重要的是，大厂的品牌背书是职业生涯的保险——你见过几个大厂出来的人找不到工作？",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方强调小厂能培养独立解决问题的能力，但大厂的系统化培训同样能培养能力，且平台背书是长期优势。我反驳小厂抗风险能力弱，大厂转岗机制可拓宽视野。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "小厂业务不稳定，但正因如此，新人必须掌握从0到1的全流程能力，这种经验在任何公司都通用。大厂分工过细，新人长期只做局部优化，反而容易技能单一化。且小厂裁员时因团队小，个人影响力更易被看见，利于积累人脉和口碑。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方强调大厂平台价值，我需反驳小厂风险可控、经验更扎实。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "小厂全流程经验看似通用，但缺乏深度和规范。大厂的系统性训练培养的是标准化思维和工程化能力，这在任何成熟企业都更受认可。小厂从0到1的粗糙经验，在面试中往往被认为不够专业。大厂内部知识库、技术分享和导师指导，才是新人快速积累通用能力的捷径。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方强调小厂全流程经验通用，我需反驳大厂系统性训练同样培养可迁移能力，且资源更优\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "大厂的系统化训练确实规范，但行业技术迭代极快，5年前的标准化流程可能已经过时。小厂的全流程经验让你学会如何快速适应变化、解决实际问题，这种『生存能力』比任何标准化工具体系都更持久。大厂员工脱离平台后，往往发现自己只会特定工具，而小厂出身的人却具备从零搭建技术栈的完整能力。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方关于大厂系统化训练的观点，我强调小厂实战经验在快速变化行业中的适应性更强，且大厂培训未必能转化为个人核心竞争力。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "技术迭代快恰恰说明底层思维和工程化能力更重要。大厂培养的是抽象问题、拆分模块、规范协作的思维模式，这些在任何技术变革中都不会过时。小厂从0到1的粗糙经验，反而容易让人陷入重复造轮子的低效循环。大厂员工即使换工具，也能快速迁移方法论，这才是真正的持久竞争力。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"针对对方提出的技术迭代风险，强调大厂培养的是底层思维和适应能力，而非具体工具，反驳小厂经验更持久的论点。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "大厂的底层思维和工程化能力确实有价值，但问题在于：这些能力是建立在成熟稳定的业务和资源之上的抽象。小厂的全流程经验让你直面市场真实需求，学会在资源受限时做出权衡，这种'在约束下解决问题'的能力才是技术变革中最通用的。大厂的标准化流程反而可能让你失去对业务本质的感知。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方关于底层思维和工程化能力的论点，强调小厂的全流程经验更能培养适应变化的通用能力，反驳大厂方法论的持久性。\"}"
+    }
+  ],
+  "evidences": [],
+  "verdict": {
+    "ID": "70181078-22df-412e-a0ca-062b27893ab5",
+    "SessionID": "21be6aaf-0be6-4a96-8917-2ff8900b8e24",
+    "Content": "# 决策判决书\n\n## 一、双方主张\n| 选项A代表（毕业就加入大厂） | 选项B代表（先加入小厂快速成长） |\n|---|---|\n| 大厂提供系统化培训、导师制度、技术积累和职业晋升通道，帮助应届生快速建立专业基础。 | 小厂资源有限但新人能直接接触核心业务，快速承担关键职责，实际动手能力提升更快。 |\n| 大厂的平台背书、项目经验、品牌效应和人脉网络是长期职业资本的核心。 | 小厂的全栈实践和快速试错，能让人在短时间内积累从0到1的完整经验。 |\n| 大厂有成熟的内部转岗机制，即使当前岗位不合适也有调整空间。 | 小厂业务不稳定，但正因如此，新人必须掌握从0到1的全流程能力，这种经验在任何公司都通用。 |\n| 大厂的系统性训练培养标准化思维和工程化能力，在任何成熟企业都更受认可。 | 大厂分工过细，新人长期只做局部优化，容易技能单一；小厂全流程经验让你学会快速适应变化。 |\n| 大厂培养抽象问题、拆分模块、规范协作的思维模式，这些在任何技术变革中都不会过时。 | 小厂全流程经验让你直面市场真实需求，培养解决实际问题的能力。 |\n\n## 二、证据认定\n当前无具体证据，双方论点均基于一般性认知和逻辑推理。\n\n## 三、争议焦点\n1. 大厂的系统化训练与平台背书 vs 小厂的全流程实战与独立解决问题能力\n2. 大厂分工过细可能导致技能单一 vs 小厂业务不稳定可能导致经验贬值\n\n## 四、法官裁决\n综合庭审辩论，支持大厂的观点强调了系统化培训、平台背书、规范思维和长期职业资本，这些对应届生建立扎实基础至关重要；而小厂虽能提供全流程实战，但存在业务不稳定、经验深度不足、行业认可度有限等风险。考虑到应届生缺乏经验，大厂的稳定性和培养体系更有利于长远发展，因此略微倾向于大厂。\n\n## 五、可执行建议\n1. 优先投递大厂校招岗位，利用应届生身份获取系统化培养机会。\n2. 若进入大厂，主动争取跨部门项目或轮岗机会，避免长期局限于单一模块。\n3. 入职后积极参与内部技术社区和培训，最大化利用平台资源。\n4. 保持对行业动态的关注，利用业余时间补充全栈或新兴技术知识。",
+    "Summary": "建议毕业就加入大厂，其系统化培训、平台背书和规范思维更有利于应届生长期职业发展。",
+    "OptionAScore": 0.55,
+    "OptionBScore": 0.45,
+    "ConsensusPoints": "[\"大厂提供系统化培训和平台背书\", \"小厂提供全流程实战和快速成长机会\"]",
+    "DivergencePoints": "[\"大厂的系统化训练与平台背书 vs 小厂的全流程实战与独立解决问题能力\", \"大厂分工过细可能导致技能单一 vs 小厂业务不稳定可能导致经验贬值\"]",
+    "Recommendation": "建议选择毕业就加入大厂",
+    "UserFeedback": "none",
+    "CreatedAt": "2026-06-28T07:13:12.722042+08:00"
+  },
+  "events": [
+    {
+      "timestamp": "2026-06-27T23:12:06Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:08Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "711dd937-200c-4d3d-b12d-5e9954a24308",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "毕业就加入大厂能提供系统化培训和规范流程，这对职场新人至关重要。大厂完善的导师制度、技术积累和职业晋升通道，能帮助应届生快速建立专业基础和人脉网络。相比之下，小厂往往要求立即产出，缺乏培养体系，可能导致成长瓶颈。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:10Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a219cf09-f06b-4a86-be6e-e2bc2b8d64ac",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "我支持选项B：先加入小厂快速成长。小厂虽然资源有限，但新人能直接接触核心业务，快速承担关键职责，实际动手能力提升更快。大厂分工过细，新人可能长期做边缘模块，反而限制视野。小厂的灵活性和高密度实战经验，更有利于应届生短期内积累完整项目经验，为后续职业发展打下坚实基础。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:10Z",
+      "type": "opening.finished",
+      "payload": {
+        "message": "开庭陈述结束，等待用户确认开始质证"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:14Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 1,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "opening"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:17Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "711dd937-200c-4d3d-b12d-5e9954a24308",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "对方提到小厂能接触核心业务，但忽略了关键一点：大厂的平台背书和系统化资源是个人长期职业资本的核心。大厂的项目经验、品牌效应和人脉网络，能为未来跳槽或创业提供坚实跳板。小厂项目虽多，但行业认可度有限，一旦业务波动，新人抗风险能力极弱。大厂即使分工细，也能通过内部转岗和跨部门协作拓宽视野，而非长期局限在边缘模块。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:19Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a219cf09-f06b-4a86-be6e-e2bc2b8d64ac",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "大厂的平台背书确实有长期价值，但应届生更缺的是独立解决问题的能力。小厂的全栈实践和快速试错，能让人在短时间内积累从0到1的完整经验。大厂分工过细，新人往往只懂局部，一旦脱离平台，个人竞争力大打折扣。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:19Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "711dd937-200c-4d3d-b12d-5e9954a24308",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:19Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a219cf09-f06b-4a86-be6e-e2bc2b8d64ac",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:19Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4edd2197-773a-4755-91d9-b9a1acbd9af4",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:21Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "4edd2197-773a-4755-91d9-b9a1acbd9af4",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "reasoning": "双方论点各有侧重：A方强调系统化培训、平台背书和长期职业资本；B方强调独立解决问题能力、全栈实践和快速成长。目前双方论据均有一定说服力，但未出现明显压倒性证据，因此保持中立。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:22Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "278a6698-25cd-42a5-b3c0-caafa3cc0f66",
+        "round": 1,
+        "summary": "本轮总结：选项A代表主要论证大厂的平台背书、系统化资源和品牌效应是长期职业资本的核心；选项B代表则主张小厂的全栈实践和快速试错能培养独立解决问题的能力，避免大厂分工过细导致的局限性。双方争议焦点在于应届生应优先选择大厂的平台背书还是小厂的实战经验。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:22Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 1,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:32Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 2,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:34Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "711dd937-200c-4d3d-b12d-5e9954a24308",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "小厂看似锻炼独立能力，但问题在于：小厂业务不稳定，项目可能随时终止，你辛苦积累的经验可能瞬间贬值。而大厂有成熟的内部转岗机制，即使当前分工细，你完全可以通过主动学习、跨部门协作拓宽技能树。更重要的是，大厂的品牌背书是职业生涯的保险——你见过几个大厂出来的人找不到工作？",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:37Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a219cf09-f06b-4a86-be6e-e2bc2b8d64ac",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "小厂业务不稳定，但正因如此，新人必须掌握从0到1的全流程能力，这种经验在任何公司都通用。大厂分工过细，新人长期只做局部优化，反而容易技能单一化。且小厂裁员时因团队小，个人影响力更易被看见，利于积累人脉和口碑。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:37Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "711dd937-200c-4d3d-b12d-5e9954a24308",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:37Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a219cf09-f06b-4a86-be6e-e2bc2b8d64ac",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:37Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4edd2197-773a-4755-91d9-b9a1acbd9af4",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:38Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "4edd2197-773a-4755-91d9-b9a1acbd9af4",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "reasoning": "双方论点各有侧重：A方强调大厂的系统化培训、平台背书和长期职业资本，B方强调小厂的实战机会、独立解决问题能力和全栈经验。A方指出小厂业务不稳定风险，B方则反驳大厂分工过细导致技能单一。目前双方论据均衡，未出现明显压倒性论点，因此保持中立。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:40Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "278a6698-25cd-42a5-b3c0-caafa3cc0f66",
+        "round": 2,
+        "summary": "本轮总结：选项A代表主张大厂有成熟的内部转岗机制，可通过主动学习拓宽技能树，而小厂业务不稳定可能导致经验贬值；选项B代表则强调小厂能培养从0到1的全流程能力，经验通用性强，且个人影响力更易被看见。双方争议焦点在于大厂与小厂对长期职业发展的价值比较。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:40Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 2,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:50Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 3,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:52Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "711dd937-200c-4d3d-b12d-5e9954a24308",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "小厂全流程经验看似通用，但缺乏深度和规范。大厂的系统性训练培养的是标准化思维和工程化能力，这在任何成熟企业都更受认可。小厂从0到1的粗糙经验，在面试中往往被认为不够专业。大厂内部知识库、技术分享和导师指导，才是新人快速积累通用能力的捷径。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:54Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a219cf09-f06b-4a86-be6e-e2bc2b8d64ac",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "大厂的系统化训练确实规范，但行业技术迭代极快，5年前的标准化流程可能已经过时。小厂的全流程经验让你学会如何快速适应变化、解决实际问题，这种『生存能力』比任何标准化工具体系都更持久。大厂员工脱离平台后，往往发现自己只会特定工具，而小厂出身的人却具备从零搭建技术栈的完整能力。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:54Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "711dd937-200c-4d3d-b12d-5e9954a24308",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:54Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a219cf09-f06b-4a86-be6e-e2bc2b8d64ac",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:54Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4edd2197-773a-4755-91d9-b9a1acbd9af4",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:56Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "4edd2197-773a-4755-91d9-b9a1acbd9af4",
+        "belief_a": 0.55,
+        "belief_b": 0.45,
+        "reasoning": "双方论点各有优劣，但大厂支持者强调了系统化培训、平台背书和长期职业资本，而小厂支持者则强调独立解决问题能力和全流程经验。目前辩论中，大厂一方在反驳小厂业务不稳定、经验贬值方面较为有力，且小厂一方未能有效回应大厂平台背书和系统化训练的价值。因此，我略微倾向于大厂。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:58Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "278a6698-25cd-42a5-b3c0-caafa3cc0f66",
+        "round": 3,
+        "summary": "本轮总结：选项A代表主要论证大厂的系统性训练培养标准化思维和工程化能力，更受成熟企业认可；选项B代表则主张小厂的全流程经验培养适应变化和解决实际问题的能力，比标准化工具更持久。双方争议焦点在于标准化深度与灵活适应能力哪个更具长期价值。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:58Z",
+      "type": "trial.converged",
+      "payload": {
+        "message": "辩论已收敛，提前进入结案陈词",
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:12:58Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "closing",
+        "current_round": 0,
+        "message": "进入 closing 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:13:02Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "711dd937-200c-4d3d-b12d-5e9954a24308",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "技术迭代快恰恰说明底层思维和工程化能力更重要。大厂培养的是抽象问题、拆分模块、规范协作的思维模式，这些在任何技术变革中都不会过时。小厂从0到1的粗糙经验，反而容易让人陷入重复造轮子的低效循环。大厂员工即使换工具，也能快速迁移方法论，这才是真正的持久竞争力。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:13:04Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "a219cf09-f06b-4a86-be6e-e2bc2b8d64ac",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "大厂的底层思维和工程化能力确实有价值，但问题在于：这些能力是建立在成熟稳定的业务和资源之上的抽象。小厂的全流程经验让你直面市场真实需求，学会在资源受限时做出权衡，这种'在约束下解决问题'的能力才是技术变革中最通用的。大厂的标准化流程反而可能让你失去对业务本质的感知。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:13:04Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "deliberation",
+        "current_round": 0,
+        "message": "进入 deliberation 阶段",
+        "previous_phase": "closing"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:13:06Z",
+      "type": "judge.final_decision",
+      "payload": {
+        "belief_a": 0.55,
+        "belief_b": 0.45,
+        "preferred": "option_a",
+        "reasoning": "综合庭审辩论，支持大厂的观点强调了系统化培训、平台背书、规范思维和长期职业资本，这些对应届生建立扎实基础至关重要；而小厂虽能提供全流程实战，但存在业务不稳定、经验深度不足、行业认可度有限等风险。考虑到应届生缺乏经验，大厂的稳定性和培养体系更有利于长远发展，因此略微倾向于大厂。",
+        "recommendation": "建议选择毕业就加入大厂"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T23:13:12Z",
+      "type": "verdict.ready",
+      "payload": {
+        "option_a_score": 0.55,
+        "option_b_score": 0.45,
+        "summary": "建议毕业就加入大厂，其系统化培训、平台背书和规范思维更有利于应届生长期职业发展。",
+        "verdict_id": "70181078-22df-412e-a0ca-062b27893ab5"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "final_phase_is_deliberation",
+    "message_counts_correct",
+    "no_duplicate_adjacent_content",
+    "no_self_repetition",
+    "no_fake_evidence_refs",
+    "beliefs_updated_when_evidence_present",
+    "judge_bias_compliant",
+    "verdict_generated_with_valid_scores",
+    "trial_converged_early"
+  ],
+  "asserts_failed": null,
+  "started_at": "2026-06-28T07:12:06.301354+08:00",
+  "finished_at": "2026-06-28T07:13:22.738833+08:00",
+  "duration_sec": 76.438465966,
+  "extra": {
+    "test": "TestStandardModeFullFlow"
+  }
+}

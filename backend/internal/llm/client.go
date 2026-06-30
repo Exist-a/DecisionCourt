@@ -1,0 +1,262 @@
+package llm
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/decisioncourt/backend/internal/config"
+	"github.com/sashabaranov/go-openai"
+)
+
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
+
+type CompletionOptions struct {
+	Model       string
+	Temperature float32
+	MaxTokens   int
+	JSONMode    bool
+}
+
+// StreamChunk 是流式输出的一次增量。Content 是相对上一次的新片段；
+// Done=true 时本批为最后一块；Err 仅在 Done=true 时可能携带错误。
+type StreamChunk struct {
+	Content string
+	Done    bool
+	Err     error
+}
+
+type Client interface {
+	Complete(ctx context.Context, systemPrompt string, messages []Message, opts CompletionOptions) (string, Usage, error)
+
+	// StreamComplete 流式返回 content 片段，每次 channel 收到一个 chunk。
+	// 流结束时 channel 关闭；调用方需要持续 drain 直到收到 Done=true 的
+	// chunk（Err 可能非 nil）。流式仅用于最终 speak action —— tool_call /
+	// reflect 决策仍走 Complete 因为需要完整 JSON。
+	//
+	// 实现要求：
+	//   - 至少在 Done=true 时关闭 channel
+	//   - 任何中间错误后立即 Done=true 并带 Err
+	//   - 不阻塞调用方
+	StreamComplete(ctx context.Context, systemPrompt string, messages []Message, opts CompletionOptions) <-chan StreamChunk
+}
+
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type openAIClient struct {
+	client *openai.Client
+}
+
+func NewClient() (Client, error) {
+	cfg := config.AppConfig
+	if cfg.LLMAPIKey == "" {
+		return nil, fmt.Errorf("LLM_API_KEY is not set")
+	}
+
+	clientConfig := openai.DefaultConfig(cfg.LLMAPIKey)
+	if cfg.LLMBaseURL != "" {
+		clientConfig.BaseURL = cfg.LLMBaseURL
+	}
+
+	return &openAIClient{
+		client: openai.NewClientWithConfig(clientConfig),
+	}, nil
+}
+
+func (c *openAIClient) Complete(
+	ctx context.Context,
+	systemPrompt string,
+	messages []Message,
+	opts CompletionOptions,
+) (string, Usage, error) {
+	if opts.Model == "" {
+		opts.Model = config.AppConfig.LLMModelV3
+	}
+	if opts.Temperature == 0 {
+		opts.Temperature = 0.7
+	}
+
+	chatMessages := []openai.ChatCompletionMessage{
+		{
+			Role:    openai.ChatMessageRoleSystem,
+			Content: systemPrompt,
+		},
+	}
+
+	for _, m := range messages {
+		chatMessages = append(chatMessages, openai.ChatCompletionMessage{
+			Role:    m.Role,
+			Content: m.Content,
+		})
+	}
+
+	req := openai.ChatCompletionRequest{
+		Model:       opts.Model,
+		Messages:    chatMessages,
+		Temperature: opts.Temperature,
+		MaxTokens:   opts.MaxTokens,
+	}
+
+	if opts.JSONMode {
+		req.ResponseFormat = &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+		}
+	}
+
+	start := time.Now()
+	resp, err := c.client.CreateChatCompletion(ctx, req)
+	latency := time.Since(start)
+
+	if err != nil {
+		return "", Usage{}, fmt.Errorf("llm completion failed: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return "", Usage{}, fmt.Errorf("no completion choices returned")
+	}
+
+	content := resp.Choices[0].Message.Content
+	usage := Usage{
+		PromptTokens:     resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens,
+		TotalTokens:      resp.Usage.TotalTokens,
+	}
+
+	fmt.Printf("[LLM] provider=%s model=%s latency=%dms tokens=%d\n",
+		config.AppConfig.LLMProvider,
+		opts.Model,
+		latency.Milliseconds(),
+		usage.TotalTokens,
+	)
+
+	if opts.JSONMode {
+		var parsed map[string]interface{}
+		if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+			// Try to extract JSON from markdown code block
+			content = extractJSON(content)
+		}
+	}
+
+	return content, usage, nil
+}
+
+// StreamComplete 流式输出 content。返回的 channel 在流结束（Done=true）
+// 时关闭；调用方在拿到 Done 后应当停止 drain。
+//
+// 注意：本实现暂未启用 JSONMode（流式 JSON 解析对 partial JSON 边界敏感，
+// deepseek 当前 API 也未官方保证）。调用方应当在决定 speak action 后
+// 用 JSONMode=false 调用本方法，专门生成纯文本 content。
+func (c *openAIClient) StreamComplete(
+	ctx context.Context,
+	systemPrompt string,
+	messages []Message,
+	opts CompletionOptions,
+) <-chan StreamChunk {
+	out := make(chan StreamChunk, 16) // small buffer so caller never blocks
+
+	if opts.Model == "" {
+		opts.Model = config.AppConfig.LLMModelV3
+	}
+	if opts.Temperature == 0 {
+		opts.Temperature = 0.7
+	}
+
+	chatMessages := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+	}
+	for _, m := range messages {
+		chatMessages = append(chatMessages, openai.ChatCompletionMessage{
+			Role: m.Role, Content: m.Content,
+		})
+	}
+
+	go func() {
+		defer close(out)
+		stream, err := c.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
+			Model:       opts.Model,
+			Messages:    chatMessages,
+			Temperature: opts.Temperature,
+			MaxTokens:   opts.MaxTokens,
+		})
+		if err != nil {
+			out <- StreamChunk{Done: true, Err: fmt.Errorf("open stream: %w", err)}
+			return
+		}
+
+		// v0.5 防御式 ctx 取消转发：DeepSeek 的 SSE stream 偶尔会卡住
+		// 不发也不关（bufio.Reader 不响应 ctx），导致本 goroutine 永不退出、
+		// channel 永不 close，消费侧 for-range 死循环 —— 整个 trial 挂起。
+		// 这里开一个 watcher：ctx 一旦取消，立刻 stream.Close() 强制 Recv
+		// 返回错误，本 goroutine 收到错误后写 Done 块 + close channel，
+		// 消费侧就能 break 出 for-range 走 retry 兜底。
+		streamDone := make(chan struct{})
+		defer close(streamDone)
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = stream.Close()
+			case <-streamDone:
+			}
+		}()
+		defer stream.Close()
+
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				// io.EOF 是正常结束
+				if err.Error() == "EOF" {
+					out <- StreamChunk{Done: true}
+					return
+				}
+				out <- StreamChunk{Done: true, Err: fmt.Errorf("stream recv: %w", err)}
+				return
+			}
+			// 跳过空 choice（DeepSeek / OpenAI 流式偶尔返回 placeholder）
+			if len(resp.Choices) == 0 {
+				continue
+			}
+			chunk := resp.Choices[0].Delta.Content
+			if chunk == "" {
+				continue
+			}
+			out <- StreamChunk{Content: chunk}
+		}
+	}()
+
+	return out
+}
+
+func extractJSON(content string) string {
+	// Simple extraction of JSON from ```json ... ``` blocks
+	start := -1
+	for i := 0; i < len(content)-5; i++ {
+		if content[i:i+5] == "```json" {
+			start = i + 5
+			break
+		}
+	}
+	if start == -1 {
+		return content
+	}
+
+	end := -1
+	for i := start; i < len(content)-3; i++ {
+		if content[i:i+3] == "```" {
+			end = i
+			break
+		}
+	}
+	if end == -1 {
+		return content
+	}
+
+	return content[start:end]
+}

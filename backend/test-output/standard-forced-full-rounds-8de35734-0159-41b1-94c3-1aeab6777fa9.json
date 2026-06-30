@@ -1,0 +1,409 @@
+{
+  "session_uuid": "8de35734-0159-41b1-94c3-1aeab6777fa9",
+  "title": "集成测试-标准模式强制满轮次",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "opening",
+  "final_round": 0,
+  "converged": false,
+  "agents": [
+    {
+      "id": "997ea568-7345-40cf-8eeb-904727b158d8",
+      "session_id": "7cf183a7-10eb-4b18-aefa-a1978889a5f5",
+      "agent_uuid": "6d20bd6d-3dde-41e6-ad87-30a3a1841a91",
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "role": "支持选项 B",
+      "belief_a": 0.134,
+      "belief_b": 0.866,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T20:19:57.627888+08:00",
+      "updated_at": "2026-06-28T20:20:09.662123+08:00"
+    },
+    {
+      "id": "8fecf5a5-4f73-4a17-b699-6f976c0fae92",
+      "session_id": "7cf183a7-10eb-4b18-aefa-a1978889a5f5",
+      "agent_uuid": "459fd50f-5e05-4c12-827b-db7b099304ae",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T20:19:57.630027+08:00",
+      "updated_at": "2026-06-28T20:19:57.630027+08:00"
+    },
+    {
+      "id": "2b65fe5f-dbce-4bd8-8f78-4a029c5c0d34",
+      "session_id": "7cf183a7-10eb-4b18-aefa-a1978889a5f5",
+      "agent_uuid": "f7e758ec-6611-4745-8cdf-2c6da861af7b",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T20:19:57.631957+08:00",
+      "updated_at": "2026-06-28T20:19:57.631957+08:00"
+    },
+    {
+      "id": "2ef0e06a-a4d7-47ae-a7a6-7a6c0f5162cd",
+      "session_id": "7cf183a7-10eb-4b18-aefa-a1978889a5f5",
+      "agent_uuid": "a3bb2aec-cad9-4689-bde2-c850b4dcb156",
+      "agent_type": "judge",
+      "name": "法官",
+      "role": "主持庭审与最终判决",
+      "belief_a": 0.384,
+      "belief_b": 0.616,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T20:19:57.634357+08:00",
+      "updated_at": "2026-06-28T20:20:09.663279+08:00"
+    },
+    {
+      "id": "5f787628-24b4-437e-a1d8-2ccdc8b4ed60",
+      "session_id": "7cf183a7-10eb-4b18-aefa-a1978889a5f5",
+      "agent_uuid": "f063e8b5-858b-42bd-b8be-4f04a7587e14",
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "role": "支持选项 A",
+      "belief_a": 0.634,
+      "belief_b": 0.366,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T20:19:57.626407+08:00",
+      "updated_at": "2026-06-28T20:20:09.6643+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "在一线城市工作五年并有50万存款，买房能提供稳定的居住环境，避免租金上涨风险，同时享受资产增值潜力。长期来看，房贷月供可能低于租金，且房子是固定资产，能对抗通胀。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"根据背景信息，有50万存款，一线城市工作五年，强调资产增值和稳定性的优势。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "50万首付在一线城市远远不够，强行买房会背上高额贷款，月供远超租金，且面临房价下跌风险。租房能保留现金流，投资理财或提升技能，获得更高回报。此外，工作五年未必稳定，租房可灵活换城市或换工作，避免被房产套牢。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方强调买房有稳定和增值优势，我需从流动性、机会成本和风险角度反驳，强调租房更灵活、安全。\"}"
+    }
+  ],
+  "evidences": [
+    {
+      "id": "b3671e87-8f4b-48d1-aa86-d10240626fb1",
+      "session_id": "7cf183a7-10eb-4b18-aefa-a1978889a5f5",
+      "evidence_id": "E001",
+      "type": "fact",
+      "source": "user",
+      "content": "我已经拿到一线城市大厂 offer，年薪总包 60 万，且公司承诺落户名额",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0,
+      "impact_on_option_b": 0,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T20:20:05.639971+08:00"
+    },
+    {
+      "id": "be21a2b9-209d-4f43-bd15-458bfd8ea3e1",
+      "session_id": "7cf183a7-10eb-4b18-aefa-a1978889a5f5",
+      "evidence_id": "E002",
+      "type": "data",
+      "source": "user",
+      "content": "目标区域房价预计三年内下跌 15%，租房可保留现金流用于投资",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0,
+      "impact_on_option_b": 0,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T20:20:07.649557+08:00"
+    },
+    {
+      "id": "62939e61-2846-4b53-bae4-ac36a01c2582",
+      "session_id": "7cf183a7-10eb-4b18-aefa-a1978889a5f5",
+      "evidence_id": "E003",
+      "type": "constraint",
+      "source": "user",
+      "content": "父母可以提供 100 万首付，但要求我必须买房",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": -0.3,
+      "impact_on_option_b": 0.15,
+      "constraint_strength": 0.7,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T20:20:09.658951+08:00"
+    }
+  ],
+  "events": [
+    {
+      "timestamp": "2026-06-28T12:19:57Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:19:59Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "f063e8b5-858b-42bd-b8be-4f04a7587e14",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "在一线城市工作五年并有50万存款，买房能提供稳定的居住环境，避免租金上涨风险，同时享受资产增值潜力。长期来看，房贷月供可能低于租金，且房子是固定资产，能对抗通胀。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:01Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "6d20bd6d-3dde-41e6-ad87-30a3a1841a91",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "50万首付在一线城市远远不够，强行买房会背上高额贷款，月供远超租金，且面临房价下跌风险。租房能保留现金流，投资理财或提升技能，获得更高回报。此外，工作五年未必稳定，租房可灵活换城市或换工作，避免被房产套牢。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:01Z",
+      "type": "opening.finished",
+      "payload": {
+        "message": "开庭陈述结束，等待用户确认开始质证"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:05Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "我已经拿到一线城市大厂 offer，年薪总包 60 万，且公司承诺落户名额",
+        "created_at": "2026-06-28T20:20:05+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E001",
+        "impact_on_option_a": 0,
+        "impact_on_option_b": 0,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "fact"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:05Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f063e8b5-858b-42bd-b8be-4f04a7587e14",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:05Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "6d20bd6d-3dde-41e6-ad87-30a3a1841a91",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:05Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a3bb2aec-cad9-4689-bde2-c850b4dcb156",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:07Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "目标区域房价预计三年内下跌 15%，租房可保留现金流用于投资",
+        "created_at": "2026-06-28T20:20:07+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E002",
+        "impact_on_option_a": 0,
+        "impact_on_option_b": 0,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "data"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:07Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "6d20bd6d-3dde-41e6-ad87-30a3a1841a91",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:07Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a3bb2aec-cad9-4689-bde2-c850b4dcb156",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:07Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f063e8b5-858b-42bd-b8be-4f04a7587e14",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:09Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0.7,
+        "content": "父母可以提供 100 万首付，但要求我必须买房",
+        "created_at": "2026-06-28T20:20:09+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E003",
+        "impact_on_option_a": -0.3,
+        "impact_on_option_b": 0.15,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "constraint"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:09Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "6d20bd6d-3dde-41e6-ad87-30a3a1841a91",
+        "agent_type": "defender",
+        "belief_a": 0.134,
+        "belief_b": 0.866,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:09Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "a3bb2aec-cad9-4689-bde2-c850b4dcb156",
+        "agent_type": "judge",
+        "belief_a": 0.384,
+        "belief_b": 0.616,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T12:20:09Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f063e8b5-858b-42bd-b8be-4f04a7587e14",
+        "agent_type": "prosecutor",
+        "belief_a": 0.634,
+        "belief_b": 0.366,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "no_duplicate_adjacent_content",
+    "no_self_repetition",
+    "no_fake_evidence_refs",
+    "beliefs_updated_when_evidence_present"
+  ],
+  "asserts_failed": [
+    "final_phase expected deliberation, got opening",
+    "expected 1 message for closing_r0_prosecutor, got 0",
+    "expected 1 message for closing_r0_defender, got 0",
+    "judge did not broadcast any belief update events",
+    "verdict_not_generated",
+    "expected final_round \u003e= 3, got 0 (converged=false)"
+  ],
+  "started_at": "2026-06-28T20:19:57.623264+08:00",
+  "finished_at": "2026-06-28T20:20:09.667476+08:00",
+  "duration_sec": 12.043952854,
+  "extra": {
+    "test": "TestStandardModeForcedFullRounds"
+  }
+}

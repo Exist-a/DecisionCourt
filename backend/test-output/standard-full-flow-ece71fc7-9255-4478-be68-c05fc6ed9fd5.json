@@ -1,0 +1,183 @@
+{
+  "session_uuid": "ece71fc7-9255-4478-be68-c05fc6ed9fd5",
+  "title": "集成测试-标准模式完整流程",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "opening",
+  "final_round": 0,
+  "converged": false,
+  "agents": [
+    {
+      "id": "a07b189a-0d1c-43a3-975a-1ee6e9a525bb",
+      "session_id": "1faf3408-8c91-420c-931a-f53da4477a1a",
+      "agent_uuid": "4c737b0f-248b-4921-832d-b6a167f9ceac",
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "role": "支持选项 A",
+      "belief_a": 0.75,
+      "belief_b": 0.25,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:25:27.66235+08:00",
+      "updated_at": "2026-06-27T11:25:27.66235+08:00"
+    },
+    {
+      "id": "ddc1c42a-b146-4f98-a594-50605e15ea2a",
+      "session_id": "1faf3408-8c91-420c-931a-f53da4477a1a",
+      "agent_uuid": "bfd76928-938f-4714-9c3f-38f45b99d3fc",
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "role": "支持选项 B",
+      "belief_a": 0.25,
+      "belief_b": 0.75,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:25:27.663913+08:00",
+      "updated_at": "2026-06-27T11:25:27.663913+08:00"
+    },
+    {
+      "id": "806bf1ae-6ac9-4a7b-98db-c8519547405d",
+      "session_id": "1faf3408-8c91-420c-931a-f53da4477a1a",
+      "agent_uuid": "9bf8ee39-a28a-4247-be7b-619e9a6ec10d",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:25:27.664785+08:00",
+      "updated_at": "2026-06-27T11:25:27.664785+08:00"
+    },
+    {
+      "id": "d739205a-9f6a-4c1e-a1a1-7ded00c9e18b",
+      "session_id": "1faf3408-8c91-420c-931a-f53da4477a1a",
+      "agent_uuid": "3d69879d-b6d4-4b62-8593-3261aca7f48c",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:25:27.665678+08:00",
+      "updated_at": "2026-06-27T11:25:27.665678+08:00"
+    },
+    {
+      "id": "374162e9-8d8b-4bd8-999a-fb4e98165741",
+      "session_id": "1faf3408-8c91-420c-931a-f53da4477a1a",
+      "agent_uuid": "26cdfdbe-dfe8-4cd4-b242-5b7bd203b64b",
+      "agent_type": "judge",
+      "name": "法官",
+      "role": "主持庭审与最终判决",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:25:27.666579+08:00",
+      "updated_at": "2026-06-27T11:25:27.666579+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "毕业就加入大厂，能获得顶级平台和资源支持，这是小厂短期内无法提供的。大厂完善的培训体系、规范流程和优质项目经历，对职业长期发展至关重要，能建立更高的职业起点和抗风险能力。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"基于背景信息，大厂平台优势明显，可反驳对方观点。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "对方强调大厂的平台和资源，但忽略了小厂的核心优势：快速成长。在小厂，新人可能被赋予核心职责，直接参与关键决策，快速积累全栈能力和实战经验。大厂新人往往只能承担边缘模块，培训体系虽完善，但晋升周期长、竞争激烈，初期成长速度反而不如小厂。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"首次发言，需清晰亮明支持选项B的立场，并直接回应对手观点。\"}"
+    }
+  ],
+  "evidences": [],
+  "events": [
+    {
+      "timestamp": "2026-06-27T03:25:27Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:25:29Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "4c737b0f-248b-4921-832d-b6a167f9ceac",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "毕业就加入大厂，能获得顶级平台和资源支持，这是小厂短期内无法提供的。大厂完善的培训体系、规范流程和优质项目经历，对职业长期发展至关重要，能建立更高的职业起点和抗风险能力。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:25:32Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "bfd76928-938f-4714-9c3f-38f45b99d3fc",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方强调大厂的平台和资源，但忽略了小厂的核心优势：快速成长。在小厂，新人可能被赋予核心职责，直接参与关键决策，快速积累全栈能力和实战经验。大厂新人往往只能承担边缘模块，培训体系虽完善，但晋升周期长、竞争激烈，初期成长速度反而不如小厂。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:25:32Z",
+      "type": "opening.finished",
+      "payload": {
+        "message": "开庭陈述结束，等待用户确认开始质证"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "no_duplicate_adjacent_content",
+    "no_self_repetition",
+    "no_fake_evidence_refs",
+    "beliefs_updated_when_evidence_present",
+    "trial_ran_all_rounds"
+  ],
+  "asserts_failed": [
+    "final_phase expected deliberation, got opening",
+    "expected 1 message for closing_r0_prosecutor, got 0",
+    "expected 1 message for closing_r0_defender, got 0",
+    "judge did not broadcast any belief update events",
+    "verdict_not_generated"
+  ],
+  "started_at": "2026-06-27T11:25:27.660085+08:00",
+  "finished_at": "2026-06-27T11:25:32.176308+08:00",
+  "duration_sec": 4.51610935,
+  "extra": {
+    "test": "TestStandardModeFullFlow"
+  }
+}

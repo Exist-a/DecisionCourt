@@ -1,0 +1,279 @@
+{
+  "session_uuid": "89f10276-8883-4aad-8bdd-8cb373648c50",
+  "title": "集成测试-直接判决提前结束",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "deliberation",
+  "final_round": 0,
+  "converged": false,
+  "agents": [
+    {
+      "id": "9dfdd182-7397-4d80-be63-5e5d1cb44361",
+      "session_id": "4ff84e88-11b7-4204-81a5-03e888b3c39d",
+      "agent_uuid": "96aa6cd7-c135-400d-898c-aba0b46fe81a",
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "role": "支持选项 A",
+      "belief_a": 0.75,
+      "belief_b": 0.25,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:40:41.719168+08:00",
+      "updated_at": "2026-06-28T09:40:41.719168+08:00"
+    },
+    {
+      "id": "1454e58f-2ef0-4e54-a264-3539e5c80335",
+      "session_id": "4ff84e88-11b7-4204-81a5-03e888b3c39d",
+      "agent_uuid": "42ab7dff-cf81-4ddc-aa8c-b66ad44393aa",
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "role": "支持选项 B",
+      "belief_a": 0.25,
+      "belief_b": 0.75,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:40:41.720568+08:00",
+      "updated_at": "2026-06-28T09:40:41.720568+08:00"
+    },
+    {
+      "id": "843f526b-d730-41f0-bc8f-b31a4dcdd89a",
+      "session_id": "4ff84e88-11b7-4204-81a5-03e888b3c39d",
+      "agent_uuid": "2b8e3636-b1b3-4625-92a7-874ed873ffd0",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:40:41.721641+08:00",
+      "updated_at": "2026-06-28T09:40:41.721641+08:00"
+    },
+    {
+      "id": "8a361d09-b9c4-4f82-bd96-c0b9c2594893",
+      "session_id": "4ff84e88-11b7-4204-81a5-03e888b3c39d",
+      "agent_uuid": "c35a93b1-5edb-4736-b80f-8c68d220d50a",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:40:41.724342+08:00",
+      "updated_at": "2026-06-28T09:40:41.724342+08:00"
+    },
+    {
+      "id": "e9747d89-a8a0-45a6-8221-0405ab66cc36",
+      "session_id": "4ff84e88-11b7-4204-81a5-03e888b3c39d",
+      "agent_uuid": "8b9a3e5e-fba0-481f-8c71-4526f89e8d09",
+      "agent_type": "judge",
+      "name": "法官",
+      "role": "主持庭审与最终判决",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:40:41.725686+08:00",
+      "updated_at": "2026-06-28T09:40:56.980315+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "工作三年积累了一定经验和人脉，此时辞职创业可以抓住市场窗口期，避免陷入职场舒适区。少量积蓄足以启动低成本的轻资产创业，试错成本可控。年轻时的创业经验无论成败都是宝贵资产，而继续打工只会让机会成本随时间递增。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方尚未发言，先主动提出辞职创业的核心优势。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "三年经验与人脉在职场同样能发挥作用，但创业风险远高于打工。少量积蓄用于应急尚可，投入创业一旦失败将血本无归。当前经济环境下，市场窗口期不确定性极高，而打工提供稳定收入与社保保障，是更理性的选择。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"回应对方创业观点，强调打工稳定性与风险控制。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "风险确实存在，但三年职场经验已证明你的学习与执行能力。少量积蓄足够启动低风险轻资产项目（如知识付费、外包服务），即使失败也不至于血本无归。反观打工，每年因通胀与晋升停滞导致的隐性损失约5-10%。年轻时的试错成本远低于中年，此刻不尝试，未来机会成本更高。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方强调创业风险高，但未评估打工的机会成本。我指出年轻试错成本低，风险可控，而打工损失潜在增长机会。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "轻资产创业看似风险低，但知识付费、外包服务等赛道竞争激烈，成功需要持续投入时间和精力，而打工的稳定收入能让你在低谷期有喘息空间。三年经验确实宝贵，但职场同样能积累资源和人脉，且风险可控。创业失败不仅损失积蓄，更可能打击自信，影响未来求职。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方提出的轻资产创业风险低、经验可用的论点，反驳其低估了稳定收入的价值和创业失败的心理成本。\"}"
+    }
+  ],
+  "evidences": [],
+  "verdict": {
+    "ID": "44c5a4d2-2d5d-48d2-9195-975943f49f02",
+    "SessionID": "4ff84e88-11b7-4204-81a5-03e888b3c39d",
+    "Content": "# 决策判决书\n\n## 一、双方主张\n| 选项A代表（辞职创业） | 选项B代表（继续打工） |\n|---|---|\n| 三年经验与人脉可抓住市场窗口期，轻资产创业试错成本低，成长机会大 | 创业风险高，积蓄有限，经济环境不确定，稳定收入与社保保障更重要 |\n| 学习与执行能力已验证，轻资产项目失败也不至于血本无归 | 轻资产赛道竞争激烈，成功需持续投入，打工收入可提供喘息空间 |\n\n## 二、证据认定\n当前无具体证据，仅基于背景和双方论点分析。\n\n## 三、争议焦点\n1. 创业风险与收益的权衡：创业方认为轻资产试错成本低，打工方强调失败风险与竞争压力。\n2. 经济环境的不确定性：创业方认为可抓住窗口期，打工方强调环境风险。\n\n## 四、法官裁决\n双方论点势均力敌：支持创业方强调轻资产、低试错成本与成长机会；支持打工方强调经济环境不确定性、稳定收入与社保保障。目前证据不足以打破平衡，故保持中立。\n\n## 五、可执行建议\n建议暂不行动，先制定详细创业计划并评估风险，同时保留工作以积累更多资金和经验。",
+    "Summary": "建议暂不行动，先制定详细创业计划并评估风险，同时保留工作以积累更多资金和经验。",
+    "OptionAScore": 0.5,
+    "OptionBScore": 0.5,
+    "ConsensusPoints": "[\"工作三年积累了一定经验和人脉\", \"有少量积蓄\"]",
+    "DivergencePoints": "[\"创业风险与收益的权衡\", \"经济环境的不确定性\"]",
+    "Recommendation": "建议暂不行动，先制定详细创业计划并评估风险，同时保留工作以积累更多资金和经验。",
+    "UserFeedback": "none",
+    "CreatedAt": "2026-06-28T09:41:01.072757+08:00"
+  },
+  "events": [
+    {
+      "timestamp": "2026-06-28T01:40:41Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:40:43Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "96aa6cd7-c135-400d-898c-aba0b46fe81a",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "工作三年积累了一定经验和人脉，此时辞职创业可以抓住市场窗口期，避免陷入职场舒适区。少量积蓄足以启动低成本的轻资产创业，试错成本可控。年轻时的创业经验无论成败都是宝贵资产，而继续打工只会让机会成本随时间递增。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:40:45Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "42ab7dff-cf81-4ddc-aa8c-b66ad44393aa",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "三年经验与人脉在职场同样能发挥作用，但创业风险远高于打工。少量积蓄用于应急尚可，投入创业一旦失败将血本无归。当前经济环境下，市场窗口期不确定性极高，而打工提供稳定收入与社保保障，是更理性的选择。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:40:45Z",
+      "type": "opening.finished",
+      "payload": {
+        "message": "开庭陈述结束，等待用户确认开始质证"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:40:49Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "closing",
+        "current_round": 0,
+        "message": "进入 closing 阶段",
+        "previous_phase": "opening"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:40:52Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "96aa6cd7-c135-400d-898c-aba0b46fe81a",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "风险确实存在，但三年职场经验已证明你的学习与执行能力。少量积蓄足够启动低风险轻资产项目（如知识付费、外包服务），即使失败也不至于血本无归。反观打工，每年因通胀与晋升停滞导致的隐性损失约5-10%。年轻时的试错成本远低于中年，此刻不尝试，未来机会成本更高。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:40:55Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "42ab7dff-cf81-4ddc-aa8c-b66ad44393aa",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "轻资产创业看似风险低，但知识付费、外包服务等赛道竞争激烈，成功需要持续投入时间和精力，而打工的稳定收入能让你在低谷期有喘息空间。三年经验确实宝贵，但职场同样能积累资源和人脉，且风险可控。创业失败不仅损失积蓄，更可能打击自信，影响未来求职。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:40:55Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "deliberation",
+        "current_round": 0,
+        "message": "进入 deliberation 阶段",
+        "previous_phase": "closing"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:40:56Z",
+      "type": "judge.final_decision",
+      "payload": {
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "preferred": "neutral",
+        "reasoning": "双方论点势均力敌：支持创业方强调轻资产、低试错成本与成长机会；支持打工方强调经济环境不确定性、稳定收入与社保保障。目前证据不足以打破平衡，故保持中立。",
+        "recommendation": "建议暂不行动，先制定详细创业计划并评估风险，同时保留工作以积累更多资金和经验。"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:41:01Z",
+      "type": "verdict.ready",
+      "payload": {
+        "option_a_score": 0.5,
+        "option_b_score": 0.5,
+        "summary": "建议暂不行动，先制定详细创业计划并评估风险，同时保留工作以积累更多资金和经验。",
+        "verdict_id": "44c5a4d2-2d5d-48d2-9195-975943f49f02"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "final_phase_is_deliberation",
+    "verdict_generated_despite_early_termination",
+    "early_termination_occurred"
+  ],
+  "asserts_failed": null,
+  "started_at": "2026-06-28T09:40:41.716616+08:00",
+  "finished_at": "2026-06-28T09:41:04.086936+08:00",
+  "duration_sec": 22.364507124,
+  "extra": {
+    "test": "TestDirectVerdictEarlyTermination"
+  }
+}

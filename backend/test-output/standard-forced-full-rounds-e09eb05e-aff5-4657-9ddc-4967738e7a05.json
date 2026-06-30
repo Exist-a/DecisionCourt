@@ -1,0 +1,1059 @@
+{
+  "session_uuid": "e09eb05e-aff5-4657-9ddc-4967738e7a05",
+  "title": "集成测试-标准模式强制满轮次",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "opening",
+  "final_round": 0,
+  "converged": false,
+  "agents": [
+    {
+      "id": "d42d7ba3-0100-4bae-9d42-003a5cfb2a4a",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "agent_uuid": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "role": "支持选项 A",
+      "belief_a": 0.834,
+      "belief_b": 0.166,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:55:16.268139+08:00",
+      "updated_at": "2026-06-28T21:55:28.301928+08:00"
+    },
+    {
+      "id": "534bdbea-f66f-425c-9f06-2e8b754bfaee",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "agent_uuid": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "role": "支持选项 B",
+      "belief_a": 0.433,
+      "belief_b": 0.567,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:55:16.27053+08:00",
+      "updated_at": "2026-06-28T21:55:28.302731+08:00"
+    },
+    {
+      "id": "655f8471-2b4a-4c3d-8729-6306d027a9a2",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "agent_uuid": "c3af56a6-b704-4975-9bb5-d17b4ac40a1b",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:55:16.271494+08:00",
+      "updated_at": "2026-06-28T21:55:16.271494+08:00"
+    },
+    {
+      "id": "11a76bc5-9749-4d66-a347-324ff0e078ae",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "agent_uuid": "4c2f2304-9bd0-41bb-850c-58e47704e078",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:55:16.272382+08:00",
+      "updated_at": "2026-06-28T21:55:16.272382+08:00"
+    },
+    {
+      "id": "658a8aaa-23b7-493a-967d-7631f9fb253e",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "agent_uuid": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+      "agent_type": "judge",
+      "name": "法官",
+      "role": "主持庭审与最终判决",
+      "belief_a": 0.683,
+      "belief_b": 0.317,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T21:55:16.273459+08:00",
+      "updated_at": "2026-06-28T21:55:28.303801+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "各位好。我方观点是买房更优。根据证据E001，一线城市房贷月供与租金差距在缩小，且20年后买房总成本低于租房。对于有50万存款、工作稳定的您，首付已够，月供可控，房产是资产而非纯消费。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"我方初始立场支持买房，基于背景（一线城市工作五年、50万存款）及新证据E001显示长期成本优势，先提出核心论点。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "对方提到E001，但当前并无此证据。我方观点：租房更优。50万存款在一线城市首付不足，且月供压力大、流动性锁死。租房可保持资金灵活，用于投资或提升收入，避免房价波动风险。请提供E001具体内容以便质证。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"首次发言，直接亮明立场并反驳对方论点，强调租房灵活性和资金机会成本。\"}"
+    }
+  ],
+  "evidences": [
+    {
+      "id": "d7c41d46-dcfb-4423-9a4a-7e339149b250",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E001",
+      "type": "data",
+      "source": "web_search",
+      "content": "#烟火气里看经济#\n2024年,一线城市的房价环比上涨,这一现象不仅反映了房地产市场的动态变化,也深刻影响着年轻一代的生活选择。面对这样的市场背景,对于许多年轻人来说,一个紧迫的问题摆在眼前:是继续租房,还是咬紧牙关买房?\n租房和买房,这两种居住方式各有利弊,而选择哪一种,往往取决于个人的经济状况、生活需求以及对未来的预期。在一线城市,房价高企不退,使得购房成为一项重大的经济决策。与此同时,随着城市化加速和人口流动性增强,租房已成为不少年轻人的实际选择。\n从经济角度看,租房相较于购房有其明显的优势。首先,租房无需承担巨额首付和维护成本,对于刚步入职场的年轻人而言,这无疑减轻了他们的财务压力。其次,租房提供了更高的灵活性,使租户能够根据生活和工作的变化轻松搬迁。此外,当前的房地产市场趋势显示,虽然部分城市房价有所上涨,但整体市场仍存在不确定性,这也让一些年轻人对于是否现在购房持观望态度。\n买房也有其不可忽视的吸引力。对于许多年轻人来说,拥有一套属于自己的房子意味着稳定和安全感。此外,长期来看,房产作为一种资产,其价值有可能随着时间增值。尤其是在一线城市,尽管面临高昂的房价,但对于有一定经济基础且计划在该城市长期发展的年轻人来说,购房仍然是一个值得考虑的选项。\n在做出租房或买房的决定时,年轻人需要仔细权衡自己的财务状况和生活规划。一方面,要评估自身的经济能力,包括收入水平、债务情况及储蓄状况;另一方面,也要考虑自己的生活需求和职业发展规划。对于那些计划在短期内频繁变动工作地点或有出国计划的年轻人来说,租房可能更加灵活和经济。而对于打算在一线城市长期定居、追求稳定生活的人来说,购房可能是更合适的选择。\n在当前一线城市房价上涨的背景下,年轻人在选择居住方式时需要综合考虑多种因素。无论是选择租房还是买房,最重要的是根据自身实际情况做出明智的决策。同时,房地产相关从业者也应关注年轻用户",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.29999999999999993,
+      "impact_on_option_b": -0.14999999999999997,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.324697+08:00"
+    },
+    {
+      "id": "6aec534f-ac53-44a6-a58f-eabe2117c013",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E002",
+      "type": "data",
+      "source": "web_search",
+      "content": "2025-03-14 17:02 在如今房价居高不下的大环境下,“租房还是买房”成了很多年轻人纠结不已的人生选择难题。数据显示,2023年全国主要城市房价收入比平均高达14.3,意味着若不消费其他项目,需攒14年多才能购得一套房。面对如此巨大的购房压力,越来越多的年轻人倾向于选择“先租后买”的生活方式。 一、当前租房市场现状 据国家统计局数据,2023年全国住房租赁市场规模高达2.8万亿元,同比增长12.6%。其中,一线城市租房人群占比高达47%,95后成为租房主力军,占比超65%。 租金方面,2023年重点城市租金环比上涨3.2%: 北京平均租金约95元/平米/月 上海平均租金约87元/平米/月 广州平均租金约65元/平米/月 深圳平均租金约90元/平米/月 二、租房与买房的成本收益分析 以北京为例,假设购买一套90平米的住房: 买房总成本: 房价:约650万元 首付30%:195万元 贷款利息(30年):约320万元 总支出:约970万元 租房30年总成本: 月租:8500元 年租:102000元 30年租金总额:约306万元 押金资金占用成本:约2万元 总支出:约308万元 从纯经济角度看,租房30年比买房可节省662万元。但需考虑以下因素: 通货膨胀致租金上涨 房产增值潜力 居住稳定性需求 个人发展阶段 三、租房攻略实用指南 (1)选址攻略 √ 推荐地段: 通勤时间控制在1小时内 周边配套设施完善 治安状况良好 地铁站步行10-15分钟可达 × 避免区域: 城中村安全隐患大 偏僻地段夜间出行不便 临街商铺噪音扰民 工业园区空气质量差 (2)看房技巧 1 实地查看重点: 房屋采光:南北通透最佳 通风情况:开窗测试 水压水质:打开水龙头检查 墙面裂缝:仔细查看 管道漏水:厨卫重点检查 2 必查配套: 供暖方式与费用 物业管理规范 停车位情况 网络信号强度 租房避坑指",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.29999999999999993,
+      "impact_on_option_b": -0.14999999999999997,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.328331+08:00"
+    },
+    {
+      "id": "127fc367-deec-4019-8a9b-ddebe9ac848c",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E003",
+      "type": "data",
+      "source": "web_search",
+      "content": "中国一线城市的住宅价格十分昂贵,万得(Wind)数据显示,2024年10月,北京、上海、广州、深圳二手住宅的挂牌均价分别为6.24万元/平方米、6.58万元/平方米、3.87万元/平方米、7.37万元/平方米。即使成交价在挂牌价基础上打个九折,价格仍然不菲。如果买入后房价下跌,购房者就要承受巨大的财务损失。 2024年9月,众多楼市新政出台,很多城市的住宅交易量显著上升。万得数据显示,2024年10月第三周和第四周,北京、上海、深圳二手房交易面积比9月同期分别上升了66.8%、80.6%、140.4%(广州尚未披露相关数据)。 不少朋友担心房价上升,怕错过时机,到处咨询该不该抓紧买房。笔者无法精准判断购房时机,但是可以提出两个标准作为“购房安全垫”,供大家参考。当满足第一个标准时,购置一线住宅相对安全;当满足第二个标准时,购房则更为稳妥。 第一个标准:房租接近或等于房贷(假定贷款比例可以做到100%); 第二个标准:房租满足住宅类不动产投资基金(REITs基金)的收益率要求。 下文章节会更详细地讨论这两个标准,但是这两个标准有一个共同的、必须满足的前提:房租在未来几十年中不能大幅下降。这个前提看似非常苛刻,但从美国和日本的数据看,这个前提是成立的。 一线城市房租不会大幅下降 从长期看,核心城市的房租整体保持平稳或向上。我们先看看美国的情况。 美国有多个A级规模城市(A级可以大体等同于一线),包括纽约、洛杉矶、芝加哥、旧金山、波士顿。美国A级城市的房租指数如图1所示。 2008年次贷危机对美国经济造成了重大打击,但在危机最为严重的2008年-2011年,美国A级城市的房租也没有大幅下降。 图1: 美国A级规模城市的居住租金指数(2000年=100) 下面看看日本的情况。 从1990年到2020年,日本经济经历了“失去的三十年”,经济增长极为缓慢。从图2看,以东京都为代表的日本",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": -0.15,
+      "impact_on_option_b": 0.075,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.335224+08:00"
+    },
+    {
+      "id": "a48ac04e-97d3-4bae-852a-0757e3bf661b",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E004",
+      "type": "data",
+      "source": "web_search",
+      "content": "#租房住还是买房好#\n租房VS买房:2025年住房选择的理性博弈\n2025年,中国房地产市场在政策调控与经济波动中持续分化,租房与买房的抉择成为普通家庭的核心议题。数据显示,全国重点50城住宅租金连续两年下跌,2024年跌幅达3.25%,而房价收入比仍居高不下(一线城市超40倍),租售矛盾进一步凸显。 \n经济账:灵活性与风险的平衡** \n租房成本显著降低,以一线城市为例,市中心两居室月租金较2023年下降约15%,年均支出仅为月供的1/3,且无需承担房价下跌风险。而购房者面临高额首付(核心城市首付150万起)与长期利息压力(30年总利息超200万),若房价年涨幅低于房贷利率(当前一线预期2%-3%),购房的财务优势将弱于租房。 \n政策红利:租赁市场的结构性变革 \n保障性租赁住房批量入市(2024年新增170万套)与“租购同权”试点扩大,为租房者提供了更多稳定性。例如,杭州、广州等地将保障房与优质学区挂钩,长租合约可申请就近入学,部分破解了租房家庭的教育痛点。与此同时,央行通过降息(LPR或跌至2.5%)与首付松绑(部分城市降至10%),试图激活购房需求,但外贸型城市因经济波动仍存房价下行压力。 \n个体选择:生存策略的排列组合\n专家指出,决策需结合个人经济实力与生活规划:短期流动性强、收入波动大者更适合租房,而长期定居且能承受市场波动的家庭可关注核心城市降价房源。例如,北京部分家庭选择“郊区购房+市区租房”模式,兼顾资产配置与生活便利。 \n结语\n楼市从未有标准答案,唯有理性分析数据与政策,方能在变局中把握最优解。租房与买房的博弈,本质是一场关于自由、稳定与风险承受力的深度权衡。",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.29999999999999993,
+      "impact_on_option_b": -0.14999999999999997,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.337781+08:00"
+    },
+    {
+      "id": "d23fe4ae-4f43-47dc-8982-d30706fbd000",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E005",
+      "type": "data",
+      "source": "web_search",
+      "content": "重要结论 1. 更便宜:重点城市租金连续3年下降,2023年租金指数一线城市和重点城市均下降,租金总价中位数约2201元/月,租金收入比同比下降。 2. 更充足:客源成交周期远低于房源成交周期,整体“客挑房”,小户型房源成交更快。 3. 更舒适:人均租赁住房建筑面积增加,周边设施配套总体良好,如16城集中式机构运营租赁住房周边医疗卫生等设施综合覆盖率较高。 4. 更便捷:租赁住房周边轨道交通覆盖率高,通勤时间低于城市平均水平,45分钟内通勤比例超80%。 5. 更专业:机构化运营租赁住房规模增长,重点城市挂牌房源近150万套/间,项目和房源多集中在一线城市。 6. 更可持续:租售比同比提升,超五年期定存利率,平均租售比为2.34%,但仍低于国际经验合理区间。 市场健康性 1. 租金总价中位数:一线城市与非一线城市差异明显,小户型租金单价中位数更高。 2. 租金指数:重点城市整体连续三年下跌,一线城市租金指数高于非一线城市但降幅大。 3. 租金收入比:总体合理,一线城市高于非一线城市但同比下降。 4. 租售比:平均水平仍偏低,但同比提高且超五年期定存利率。 5. 机构化运营租赁住房规模:我国初具规模,超半数项目和房源在一线城市,TOP30集中式长租公寓累计开业房源量突破百万套/间。 供需匹配性 1. 房源与客源成交周期:重点城市客源成交周期短,房源成交周期长,“客挑房”明显,一线城市客源成交周期长于非一线城市但房源成交周期差异不大。 2. 各户型房源成交周期:小户型成交更快,一居室、二居室和三居室及以上成交周期依次递增,一线和非一线城市同类户型差异不大。 租住宜居性 1. 人均租赁住房建筑面积:分散式个人租赁住房人均面积增加,一线城市与非一线城市接近,集中式机构运营租赁住房主打户型人均面积一线城市约21平方米,蓝领公寓约5平方米。 2. 租赁住房平均房龄:重点城市约14年,一",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.29999999999999993,
+      "impact_on_option_b": -0.14999999999999997,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.339629+08:00"
+    },
+    {
+      "id": "6e01ec68-83ae-403f-93d2-b7ae4fe8487f",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E006",
+      "type": "data",
+      "source": "web_search",
+      "content": "重要结论\n1. 更便宜:重点城市租金连续3年下降,2023年租金指数一线城市和重点城市均下降,租金总价中位数约2201元/月,租金收入比同比下降。\n2. 更充足:客源成交周期远低于房源成交周期,整体“客挑房”,小户型房源成交更快。\n3. 更舒适:人均租赁住房建筑面积增加,周边设施配套总体良好,如16城集中式机构运营租赁住房周边医疗卫生等设施综合覆盖率较高。\n4. 更便捷:租赁住房周边轨道交通覆盖率高,通勤时间低于城市平均水平,45分钟内通勤比例超80%。\n5. 更专业:机构化运营租赁住房规模增长,重点城市挂牌房源近150万套/间,项目和房源多集中在一线城市。\n6. 更可持续:租售比同比提升,超五年期定存利率,平均租售比为2.34%,但仍低于国际经验合理区间。\n市场健康性\n1. 租金总价中位数:一线城市与非一线城市差异明显,小户型租金单价中位数更高。\n2. 租金指数:重点城市整体连续三年下跌,一线城市租金指数高于非一线城市但降幅大。\n3. 租金收入比:总体合理,一线城市高于非一线城市但同比下降。\n4. 租售比:平均水平仍偏低,但同比提高且超五年期定存利率。\n5. 机构化运营租赁住房规模:我国初具规模,超半数项目和房源在一线城市,TOP30集中式长租公寓累计开业房源量突破百万套/间。\n供需匹配性\n1. 房源与客源成交周期:重点城市客源成交周期短,房源成交周期长,“客挑房”明显,一线城市客源成交周期长于非一线城市但房源成交周期差异不大。\n2. 各户型房源成交周期:小户型成交更快,一居室、二居室和三居室及以上成交周期依次递增,一线和非一线城市同类户型差异不大。\n租住宜居性\n1. 人均租赁住房建筑面积:分散式个人租赁住房人均面积增加,一线城市与非一线城市接近,集中式机构运营租赁住房主打户型人均面积一线城市约21平方米,蓝领公寓约5平方米。\n2. 租赁住房平均房龄:重点城市约14年,一",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.29999999999999993,
+      "impact_on_option_b": -0.14999999999999997,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.341402+08:00"
+    },
+    {
+      "id": "3252a620-3392-4132-bba5-4bee735677d4",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E007",
+      "type": "data",
+      "source": "web_search",
+      "content": "最近啊,关于“买房划算还是租房划算”这事儿,又成了咱们茶余饭后的热门讨论。 这事儿确实让人挠头,特别是在深圳这样的高房价城市。 今儿个,咱们就拿深圳的房租和房价数据来好好唠唠这个事儿。 说说深圳的房租与房价现状 先说说房租吧。深圳这地儿,根据不同的地区,两房一厅的月租金大概在3000到6500块之间。 比如说,在罗湖区、福田区这些老城区,房租普遍偏高,一套普通两房一厅的房子,月租金可能在5000以上。 而在龙岗、宝安这些新兴区,虽然房租便宜点儿,但也得3000到4000块一个月。 再说说买房。现在在深圳,买房真不是一般人能负担得起的事儿。 随便一套两房一厅的房子,至少也得300万起步。 咱们算算账,假如你想买一套300万的房子,首付30%,也就是90万,剩下的210万贷款,按现在的贷款利率5%算,30年等额本息还款,每月得还将近12000块。 算算买房和租房的经济账 很多朋友问,到底是买房划算还是租房划算?咱们就用数据来掰扯掰扯。 买房的成本 主要成本有几个方面: 1.首付: 一次性支出,压力巨大。 2. 月供: 每月还贷,金额不小。 3. 房屋维护: 包括装修、维修等费用。 4. 房产税: 虽然目前中国没有全面开征,但未来可能会有。 以一套300万的房子为例,首付90万,每月月供12000块,一年就是144000块。这还没算上装修和维修的费用。 租房的成本 相对来说要简单得多: 1. 房租: 每月支付,随市场浮动。 2. 押金: 通常是几个月的房租。 以每月房租5000块来算,一年下来也就60000块,和买房的月供比起来,确实少了不少。 我有个朋友老李吧。他在深圳工作了十多年,前两年咬咬牙,凑齐了首付,买了一套两房一厅的房子。 每个月要还12000块的房贷,压得他喘不过气。为了省钱,他把其中一间房租了出去,每月收个3000块房租,自己住得也不算舒服。 老李说,买房之后心里",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.3,
+      "impact_on_option_b": -0.15,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.343204+08:00"
+    },
+    {
+      "id": "733519e2-94f2-41b4-bfa9-f28915624991",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E008",
+      "type": "data",
+      "source": "web_search",
+      "content": "引言 2025年的中国楼市,正在上演一场史无前例的“心理战”。当一线城市核心地段房价回调10%、二三线城市库存周期突破30个月、租房市场规模突破3.5万亿元时,社交媒体上涌现出一批坚定的“看空者”。他们宣称“买房不如租房”“房价泡沫必破”,但评论区总有人质疑:“这些人到底是真心看空,还是因为买不起而自我安慰?” 答案或许比我们想象的更复杂——这背后,是代际价值观的撕裂、金融杠杆的极限,以及一场悄然而至的居住革命。 一、经济账本:当收入增速永远追不上房价涨幅 根据国家统计局2024年第一季度数据[1],城镇居民人均可支配收入同比增长4.2%,而同期全国新建商品住宅价格同比上涨7.8%。以深圳为例,过去十年居民收入累计增长128%,房价却飙升了263%,购房所需时间从2015年的11.3年拉长至2024年的23.6年。 央行《2023年金融稳定报告》[2]显示,中国居民部门杠杆率(债务/GDP)已达64.3%,超过国际警戒线(60%)。其中,房贷占家庭债务比重高达75.8%。90后群体中已有41%的人月供占收入比超过50%。 二、价值观迭代:Z世代的“反地产信仰” 社科院《2024年社会心态蓝皮书》[3]揭示:18-30岁人群中,认为“买房是人生必需品”的比例从2018年的78%骤降至2024年的43%。 居住去符号化:25岁以下用户年均旅行支出(1.2万元)已超过房贷月供均值(9850元)。 职场流动性倒逼:新经济行业从业者平均跳槽周期缩短至2.4年。 家族资产重构:高净值家庭房产配置比例从2019年的75%降至2024年的52%。 住建部2024年“共有产权房2.0”政策[4]显示,北京首批试点项目中,90后申购者占比达67%。 三、市场质变:从“土地财政”到“居住服务业” 供给端革命:全国已开工保障性租赁住房超800万套[4],深圳、成都等地保障房供应占比突破40%。 人",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.15,
+      "impact_on_option_b": -0.075,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.34505+08:00"
+    },
+    {
+      "id": "118e78c4-4554-4b30-9ce6-b2bc30b403b9",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E009",
+      "type": "data",
+      "source": "web_search",
+      "content": "‌‌ 一、经济状况: ‌购房成本降低‌:2025年,购房成本有所降低。商业性个人住房贷款不再区分首套、二套住房, 首付款比例统一为不低于15%,住房公积金贷款利率也有所下调。例如,在北京购买一套200万元的两居室,首付大约为30万元,相比之前显著降低了购房成本。 ‌租房成本和灵活性‌:租房具有更高的灵活性,适合工作生活不稳定的人群。此外,政府出台了一系列保护租房者权益的政策,如限制随意涨租金、规范租赁合同等,使得租房市场变得更加可靠。",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0,
+      "impact_on_option_b": 0,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.350655+08:00"
+    },
+    {
+      "id": "6eb85ef8-257a-455f-84e5-d4a7ff43e04f",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E010",
+      "type": "data",
+      "source": "web_search",
+      "content": "近来房地产市场政策暖风频吹,二手房交易活跃度明显提升,不少人担心,再不买房房价又要涨起来了?那么现在该买房吗?我做了一个计算,结果大吃一惊!买房的重要决策指标之一是租房成本和买房成本的对比,对比结果说明是买房划算还是租房划算。我对比之后发现,如果你买房是自住而非投资,那么全国九成以上的城市,现在买房都比租房划算。目前的房贷利率,商贷:北京上海深圳首套房是3.15%,二套房是3.35%和3.55%,广州都是3%,其他城市基本在3%左右;公积金贷款利率是全国统一的:首套2.85%,二套3.325%。房贷利率决定你每年要还的利息,另外贷款比例越高,利息也越高。考虑到自己出的首付钱投资别处也有收益,比如买10年期国债的利率是2.1%,那么你今天在北京买首套房,用30年期按揭贷款、首付两成贷款八成、等额本金法还款,商贷,你每年付出的综合成本是房价的1.68%左右;公积金贷款,你每年付出的综合成本是房价的1.55%左右。若是20年期按揭贷、首付三成贷款七成、等额本金还款,商贷,你每年付出的综合成本是房价的1.74%左右;公积金贷款,你每年付出的综合成本是房价的1.63%左右。你所在城市的租金回报率,决定你每年的房租多少,比如租金回报率是2%,意味着你每年的房租是房价的2%。根据\nWind数据,2024年5~10月的租金回报率均值,北京2.28%、上海1.94%、广州1.71%、深圳1.62%。鉴于所有城市的房贷利率都等于或低于北京,例如广州只有3%,这意味着一线城市中,当你用两成首付30年期按揭买房时,只有在深圳用商贷买房是不划算的;当你用三成首付20年期按揭买房时,在深圳和广州用商贷买房不划算,在深圳用公积金买房也略微不划算。Wind给出数据的其他124个城市中,租金回报率低于1.74%的,只有合肥宁波三亚厦门东莞五个城市;租金回报率低于1.63%的,只有合肥厦门东莞三个城市。所以结",
+      "url": "",
+      "submitted_by": "investigator",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.15,
+      "impact_on_option_b": -0.075,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:18.352625+08:00"
+    },
+    {
+      "id": "5a4f83aa-15ff-40df-9d5e-d83111f9d7b7",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E011",
+      "type": "fact",
+      "source": "user",
+      "content": "我已经拿到一线城市大厂 offer，年薪总包 60 万，且公司承诺落户名额",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0,
+      "impact_on_option_b": 0,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:24.277467+08:00"
+    },
+    {
+      "id": "da328421-53fe-43b2-a5ca-b377556ab17b",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E012",
+      "type": "data",
+      "source": "user",
+      "content": "目标区域房价预计三年内下跌 15%，租房可保留现金流用于投资",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0,
+      "impact_on_option_b": 0,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:26.289168+08:00"
+    },
+    {
+      "id": "7c6ab792-1a0d-4dff-81a4-170efa9b477d",
+      "session_id": "5b328c1e-49bb-4f39-886f-b233eb6a68c4",
+      "evidence_id": "E013",
+      "type": "constraint",
+      "source": "user",
+      "content": "父母可以提供 100 万首付，但要求我必须买房",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": -0.3,
+      "impact_on_option_b": 0.15,
+      "constraint_strength": 0.7,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-28T21:55:28.295833+08:00"
+    }
+  ],
+  "events": [
+    {
+      "timestamp": "2026-06-28T13:55:16Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:17Z",
+      "type": "search.started",
+      "payload": {
+        "agent_id": "investigator",
+        "query": "一线城市 买房 租房 长期成本 对比 2024"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.842,
+        "belief_b": 0.158,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.342,
+        "belief_b": 0.658,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.592,
+        "belief_b": 0.408,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.819,
+        "belief_b": 0.181,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.319,
+        "belief_b": 0.681,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.569,
+        "belief_b": 0.431,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.865,
+        "belief_b": 0.135,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.365,
+        "belief_b": 0.635,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.615,
+        "belief_b": 0.385,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.911,
+        "belief_b": 0.089,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.411,
+        "belief_b": 0.589,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.661,
+        "belief_b": 0.339,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.95,
+        "belief_b": 0.05,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.457,
+        "belief_b": 0.543,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.707,
+        "belief_b": 0.293,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.95,
+        "belief_b": 0.05,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.503,
+        "belief_b": 0.497,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.753,
+        "belief_b": 0.247,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.95,
+        "belief_b": 0.05,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.526,
+        "belief_b": 0.474,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.776,
+        "belief_b": 0.224,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.95,
+        "belief_b": 0.05,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.526,
+        "belief_b": 0.474,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.776,
+        "belief_b": 0.224,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.95,
+        "belief_b": 0.05,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.549,
+        "belief_b": 0.451,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.799,
+        "belief_b": 0.201,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "search.completed",
+      "payload": {
+        "agent_id": "investigator",
+        "evidence_ids": [
+          "E001",
+          "E002",
+          "E003",
+          "E004",
+          "E005",
+          "E006",
+          "E007",
+          "E008",
+          "E009",
+          "E010"
+        ],
+        "query": "一线城市 买房 租房 长期成本 对比 2024",
+        "result_count": 10
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:18Z",
+      "type": "agent.cot_step",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "step": {
+          "index": 0,
+          "thought": "当前没有证据，需要先搜索一线城市买房与租房的对比数据来支撑论点",
+          "action": "tool_call",
+          "tool_name": "investigator_search",
+          "tool_input": {
+            "query": "一线城市 买房 租房 长期成本 对比 2024"
+          },
+          "observation": "搜索完成：新增 10 条证据 [E001, E002, E003, E004, E005, E006, E007, E008, E009, E010]。查询=\"一线城市 买房 租房 长期成本 对比 2024\"",
+          "elapsed_ms": 2120
+        }
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:21Z",
+      "type": "agent.cot_step",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "step": {
+          "index": 1,
+          "thought": "我方初始立场支持买房，基于背景（一线城市工作五年、50万存款）及新证据E001显示长期成本优势，先提出核心论点。",
+          "action": "speak",
+          "elapsed_ms": 2802
+        }
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:21Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "各位好。我方观点是买房更优。根据证据E001，一线城市房贷月供与租金差距在缩小，且20年后买房总成本低于租房。对于有50万存款、工作稳定的您，首付已够，月供可控，房产是资产而非纯消费。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项A代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:23Z",
+      "type": "agent.cot_step",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "step": {
+          "index": 0,
+          "thought": "首次发言，直接亮明立场并反驳对方论点，强调租房灵活性和资金机会成本。",
+          "action": "speak",
+          "elapsed_ms": 2658
+        }
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:23Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方提到E001，但当前并无此证据。我方观点：租房更优。50万存款在一线城市首付不足，且月供压力大、流动性锁死。租房可保持资金灵活，用于投资或提升收入，避免房价波动风险。请提供E001具体内容以便质证。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:23Z",
+      "type": "opening.finished",
+      "payload": {
+        "message": "开庭陈述结束，等待用户确认开始质证"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:24Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "我已经拿到一线城市大厂 offer，年薪总包 60 万，且公司承诺落户名额",
+        "created_at": "2026-06-28T21:55:24+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E011",
+        "impact_on_option_a": 0,
+        "impact_on_option_b": 0,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "fact"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:24Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.95,
+        "belief_b": 0.05,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:24Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.549,
+        "belief_b": 0.451,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:24Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.799,
+        "belief_b": 0.201,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:26Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "目标区域房价预计三年内下跌 15%，租房可保留现金流用于投资",
+        "created_at": "2026-06-28T21:55:26+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E012",
+        "impact_on_option_a": 0,
+        "impact_on_option_b": 0,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "data"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:26Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.95,
+        "belief_b": 0.05,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:26Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.549,
+        "belief_b": 0.451,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:26Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.799,
+        "belief_b": 0.201,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:28Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0.7,
+        "content": "父母可以提供 100 万首付，但要求我必须买房",
+        "created_at": "2026-06-28T21:55:28+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E013",
+        "impact_on_option_a": -0.3,
+        "impact_on_option_b": 0.15,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "constraint"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:28Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "dafb116b-ee64-4a1b-bb1d-2874370e822b",
+        "agent_type": "prosecutor",
+        "belief_a": 0.834,
+        "belief_b": 0.166,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:28Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4cf70c3d-36a6-4a14-aed7-21a9b1a6cc6d",
+        "agent_type": "defender",
+        "belief_a": 0.433,
+        "belief_b": 0.567,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T13:55:28Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "f3958dbe-b6ec-444b-9bb8-2cc49f4663a8",
+        "agent_type": "judge",
+        "belief_a": 0.683,
+        "belief_b": 0.317,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "no_duplicate_adjacent_content",
+    "no_self_repetition",
+    "no_fake_evidence_refs",
+    "beliefs_updated_when_evidence_present"
+  ],
+  "asserts_failed": [
+    "final_phase expected deliberation, got opening",
+    "expected 1 message for closing_r0_prosecutor, got 0",
+    "expected 1 message for closing_r0_defender, got 0",
+    "judge did not broadcast any belief update events",
+    "verdict_not_generated",
+    "expected final_round \u003e= 3, got 0 (converged=false)"
+  ],
+  "started_at": "2026-06-28T21:55:16.262227+08:00",
+  "finished_at": "2026-06-28T21:55:28.306309+08:00",
+  "duration_sec": 12.043897525,
+  "extra": {
+    "test": "TestStandardModeForcedFullRounds"
+  }
+}

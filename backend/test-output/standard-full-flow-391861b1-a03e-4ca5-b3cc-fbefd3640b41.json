@@ -1,0 +1,661 @@
+{
+  "session_uuid": "391861b1-a03e-4ca5-b3cc-fbefd3640b41",
+  "title": "集成测试-标准模式完整流程",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "deliberation",
+  "final_round": 0,
+  "converged": true,
+  "agents": [
+    {
+      "id": "d5614a96-e7ee-4dac-9554-74ffd88e9511",
+      "session_id": "87d16678-d295-4ab7-a4f6-585f1c0800c9",
+      "agent_uuid": "2f7e1677-88ef-479c-bd70-65113067e096",
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "role": "支持选项 A",
+      "belief_a": 0.75,
+      "belief_b": 0.25,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:36:21.648303+08:00",
+      "updated_at": "2026-06-28T09:36:21.648303+08:00"
+    },
+    {
+      "id": "e8388e80-c125-41ee-9c93-630a6a8488b9",
+      "session_id": "87d16678-d295-4ab7-a4f6-585f1c0800c9",
+      "agent_uuid": "02933c3b-26a9-4233-a868-b4f5f549ed0f",
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "role": "支持选项 B",
+      "belief_a": 0.25,
+      "belief_b": 0.75,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:36:21.650537+08:00",
+      "updated_at": "2026-06-28T09:36:21.650537+08:00"
+    },
+    {
+      "id": "f89e67de-2874-40c8-995b-d4d120ce10a8",
+      "session_id": "87d16678-d295-4ab7-a4f6-585f1c0800c9",
+      "agent_uuid": "edb5ee5a-f3f2-4d8f-9111-540107267570",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:36:21.651208+08:00",
+      "updated_at": "2026-06-28T09:36:21.651208+08:00"
+    },
+    {
+      "id": "d4f0c968-2660-42ff-81f3-318392979a2c",
+      "session_id": "87d16678-d295-4ab7-a4f6-585f1c0800c9",
+      "agent_uuid": "5e209cdf-21ab-4ebf-a13d-e6e2211782f3",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.5,
+      "belief_b": 0.5,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:36:21.651991+08:00",
+      "updated_at": "2026-06-28T09:36:21.651991+08:00"
+    },
+    {
+      "id": "988e6ffe-ab57-48eb-9ad5-84c31aa02b7d",
+      "session_id": "87d16678-d295-4ab7-a4f6-585f1c0800c9",
+      "agent_uuid": "79e63e70-63b4-43a0-aae3-e9df0cfc544c",
+      "agent_type": "judge",
+      "name": "法官",
+      "role": "主持庭审与最终判决",
+      "belief_a": 40,
+      "belief_b": 60,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-28T09:36:21.653009+08:00",
+      "updated_at": "2026-06-28T09:37:21.110621+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "各位评审，大厂为应届生提供成熟的导师制度、规范化流程和跨部门协作机会，这些是小厂难以复制的。即便小厂初期成长快，但职业后半程，大厂的体系化经验和品牌背书往往决定天花板。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方可能强调小厂快速成长，但我认为大厂的系统性培养和职业背书是长远发展的关键。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "各位评审，对方强调大厂导师制和流程规范，但忽视了一个关键事实：小厂让新人直接参与核心业务，从0到1搭建系统，这种实战经验在大厂可能要等3-5年。大厂螺丝钉式分工反而容易限制视野，而小厂的全栈能力培养才是未来CTO的必经之路。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"首次发言，需要清晰亮明选项B立场，同时质疑对方导师制度等论点，提出小厂的实践机会和成长速度优势。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "对方提到小厂的全栈经验，但全栈不等于深度。大厂的导师制能帮你打下扎实基础，避免野路子习惯。至于0到1经验，大厂内部创新项目同样提供机会，而且有更规范的工程实践护航。长期看，大厂履历是职业杠杆，跳槽时溢价明显。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"反驳对方对小厂全栈经验的论点，强调大厂流程积累的长期价值。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "对方提到全栈不等于深度，但小厂的全栈是真正解决业务问题的深度。大厂导师制可能流于形式，新人仍只接触模块。而小厂从架构设计到上线运维全流程参与，这种系统性思维是技术总监必备的。另外，大厂履历溢价正在下降，小厂经验反而在创业和中小公司市场更受青睐。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方关于全栈经验与深度的论点，强调小厂的实战机会和快速成长优势，同时指出大厂导师制可能流于形式，以及小厂经验对创业和职业灵活性的长期价值。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "小厂的全栈看似全面，但缺乏大厂在分布式、高并发等核心领域的系统化深度训练。大厂导师制并非形式化，而是有明确考核机制，确保新人获得实质性指导。短期看小厂全面，长期看大厂深度才是技术专家和架构师的必备基石。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"针对对方提出的小厂全栈深度和大厂导师制形式化问题，我强调大厂系统化深度训练和导师实质指导，反驳小厂经验短期有效但长期天花板低。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "对方强调大厂深度训练，但小厂的全栈实战恰恰是培养系统思维和解决真实问题的深度。大厂导师制有考核，但新人仍可能被局限于单一模块；而小厂从0到1的完整项目经验，能让应届生在2-3年内具备技术负责人的视野和能力，这种成长速度在大厂很难实现。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方关于大厂深度训练和导师制有效性的论点，用小厂真实业务场景和快速成长机会进行反驳。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "小厂的全栈看似全面，但缺乏大厂在分布式、高并发等核心领域的系统化深度训练。大厂导师制并非形式化，而是有明确考核机制，确保新人获得实质性指导。短期看小厂全面，长期看大厂深度才是技术专家和架构师的必备基石。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"针对对方小厂全栈实战培养系统思维的观点，反驳其缺乏大厂在分布式系统、高并发等核心领域的深度训练，强调大厂深度才是技术专家的基石。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "对方反复强调大厂深度训练，但忽略了关键一点：大厂导师制下的新人往往被安排执行已有架构下的细分任务，很难接触核心设计决策。小厂的全栈开发虽然广度优先，但当你独立完成一个模块从设计到上线的全过程，这种'被迫'的深度思考恰恰是技术成长最快的方式。而且，分布式、高并发等能力完全可以在工作2-3年后通过跳槽或自学补齐，而早期独立解决问题的经验却无法替代。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方重复大厂深度优势，我需指出小厂实战同样有深度，且大厂导师制对新人独立成长有限制。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "小厂的独立解决问题看似诱人，但缺乏规范指导容易养成野路子习惯，后期纠正成本极高。大厂导师制确保你从第一天起就学习业界最佳实践和工程规范，这种系统化训练是职业发展的护城河。至于分布式、高并发能力，小厂项目根本接触不到，而大厂有海量真实场景让你在安全环境中学习和实践。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方强调小厂独立解决问题的经验无法替代，我需反驳：大厂早期训练的系统化思维才是长期竞争力的基石，小厂的独立经验可能带来野路子风险。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "对方称小厂易养成野路子，但大厂新人同样可能学到过时或僵化的流程。小厂逼你快速试错并决策，这种能力是技术领导力的核心。至于分布式、高并发，完全可在工作2-3年通过系统学习或跳槽补齐，而早期独立解决问题的经验才是不可替代的稀缺资产。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"反驳对方关于大厂导师制优于小厂实战的观点，强调小厂早期独立决策和快速成长的价值，同时指出大厂系统化训练可以通过后期学习弥补。\"}"
+    }
+  ],
+  "evidences": [],
+  "verdict": {
+    "ID": "4810d5c9-d697-484b-ad51-4ecb33b87fed",
+    "SessionID": "87d16678-d295-4ab7-a4f6-585f1c0800c9",
+    "Content": "# 决策判决书\n\n## 一、双方主张\n| 选项A代表（毕业就加入大厂） | 选项B代表（先加入小厂快速成长） |\n|---|---|\n| 大厂提供成熟的导师制度、规范化流程和跨部门协作机会，能打下扎实基础，避免野路子习惯。大厂内部创新项目同样提供0到1经验，且分布式、高并发等核心领域训练更系统化。导师制有明确考核机制，确保新人获得实质性指导。 | 小厂让新人直接参与核心业务，从0到1搭建系统，培养全栈能力和技术领导力。小厂的全栈实战是真正解决业务问题的深度，能培养系统思维和快速试错决策能力。大厂履历溢价正在下降，小厂经验更有利于早期成长和长期技术视野。 |\n\n## 二、证据认定\n庭审中双方均未提供具体证据，仅基于各自观点进行辩论。因此，本判决书依据双方论点合理性及法官推理进行裁决。\n\n## 三、争议焦点\n1. **大厂导师制与规范流程 vs 小厂全栈实战与核心业务参与**：大厂方认为导师制和规范流程能提供系统化训练和最佳实践；小厂方认为大厂新人可能被局限于单一模块，而小厂的全栈实战能直接参与核心设计决策。\n2. **大厂深度训练 vs 小厂解决真实问题的系统思维培养**：大厂方强调分布式、高并发等领域的深度训练；小厂方认为全栈实战培养解决真实问题的系统思维，且大厂训练可能过时或僵化。\n\n## 四、法官裁决\n庭审中双方围绕大厂的体系化深度与小厂的实战广度展开辩论。支持大厂方强调导师制、规范流程和长期职业杠杆；支持小厂方则指出小厂能提供从0到1的核心业务参与、全栈能力和技术领导力培养，且大厂履历溢价正在下降。考虑到计算机专业应届生需要快速积累实战经验和系统性思维，小厂的全栈实战更有利于早期成长和长期技术视野，因此更倾向于小厂。\n\n## 五、可执行建议\n1. 优先选择能提供核心业务参与和全栈开发机会的小厂，确保从架构设计到上线运维的完整经验。\n2. 在小厂工作期间，主动学习业界最佳实践，避免养成野路子习惯，可通过在线课程、开源项目或技术社区补充系统化知识。\n3. 定期评估自身成长速度，若小厂无法提供持续挑战，可在2-3年后考虑跳槽至大厂，结合小厂实战经验与大厂体系化训练。",
+    "Summary": "建议先加入小厂快速成长",
+    "OptionAScore": 40,
+    "OptionBScore": 60,
+    "ConsensusPoints": "[\"大厂有导师制和规范流程\", \"小厂提供全栈实战机会\"]",
+    "DivergencePoints": "[\"大厂导师制与规范流程 vs 小厂全栈实战与核心业务参与\", \"大厂深度训练 vs 小厂解决真实问题的系统思维培养\"]",
+    "Recommendation": "建议先加入小厂快速成长",
+    "UserFeedback": "none",
+    "CreatedAt": "2026-06-28T09:37:27.160527+08:00"
+  },
+  "events": [
+    {
+      "timestamp": "2026-06-28T01:36:21Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:23Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "2f7e1677-88ef-479c-bd70-65113067e096",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "各位评审，大厂为应届生提供成熟的导师制度、规范化流程和跨部门协作机会，这些是小厂难以复制的。即便小厂初期成长快，但职业后半程，大厂的体系化经验和品牌背书往往决定天花板。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:25Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "02933c3b-26a9-4233-a868-b4f5f549ed0f",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "各位评审，对方强调大厂导师制和流程规范，但忽视了一个关键事实：小厂让新人直接参与核心业务，从0到1搭建系统，这种实战经验在大厂可能要等3-5年。大厂螺丝钉式分工反而容易限制视野，而小厂的全栈能力培养才是未来CTO的必经之路。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:25Z",
+      "type": "opening.finished",
+      "payload": {
+        "message": "开庭陈述结束，等待用户确认开始质证"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:29Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 1,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "opening"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:31Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "2f7e1677-88ef-479c-bd70-65113067e096",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "对方提到小厂的全栈经验，但全栈不等于深度。大厂的导师制能帮你打下扎实基础，避免野路子习惯。至于0到1经验，大厂内部创新项目同样提供机会，而且有更规范的工程实践护航。长期看，大厂履历是职业杠杆，跳槽时溢价明显。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:34Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "02933c3b-26a9-4233-a868-b4f5f549ed0f",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方提到全栈不等于深度，但小厂的全栈是真正解决业务问题的深度。大厂导师制可能流于形式，新人仍只接触模块。而小厂从架构设计到上线运维全流程参与，这种系统性思维是技术总监必备的。另外，大厂履历溢价正在下降，小厂经验反而在创业和中小公司市场更受青睐。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:34Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2f7e1677-88ef-479c-bd70-65113067e096",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:34Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "02933c3b-26a9-4233-a868-b4f5f549ed0f",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:34Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "79e63e70-63b4-43a0-aae3-e9df0cfc544c",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:36Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "79e63e70-63b4-43a0-aae3-e9df0cfc544c",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "reasoning": "双方论点各有依据。A方强调大厂导师制、规范流程和品牌背书，B方强调小厂实战经验、全栈能力和系统性思维。目前双方论据均未提供具体数据或案例支持，说服力相当。因此保持中立，不调整倾向。"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:37Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "5e209cdf-21ab-4ebf-a13d-e6e2211782f3",
+        "round": 1,
+        "summary": "本轮总结：选项A代表主张大厂导师制能打下扎实基础，大厂履历是职业杠杆；选项B代表则强调小厂全栈经验能培养系统性思维，且大厂履历溢价正在下降。双方争议焦点在于大厂的深度与规范是否优于小厂的全流程参与和实战经验。"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:37Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 1,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:47Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 2,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:50Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "2f7e1677-88ef-479c-bd70-65113067e096",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "小厂的全栈看似全面，但缺乏大厂在分布式、高并发等核心领域的系统化深度训练。大厂导师制并非形式化，而是有明确考核机制，确保新人获得实质性指导。短期看小厂全面，长期看大厂深度才是技术专家和架构师的必备基石。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:52Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "02933c3b-26a9-4233-a868-b4f5f549ed0f",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方强调大厂深度训练，但小厂的全栈实战恰恰是培养系统思维和解决真实问题的深度。大厂导师制有考核，但新人仍可能被局限于单一模块；而小厂从0到1的完整项目经验，能让应届生在2-3年内具备技术负责人的视野和能力，这种成长速度在大厂很难实现。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:52Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2f7e1677-88ef-479c-bd70-65113067e096",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:52Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "02933c3b-26a9-4233-a868-b4f5f549ed0f",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:52Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "79e63e70-63b4-43a0-aae3-e9df0cfc544c",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:53Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "79e63e70-63b4-43a0-aae3-e9df0cfc544c",
+        "belief_a": 0.45,
+        "belief_b": 0.55,
+        "reasoning": "双方论点各有优劣，但小厂方强调全栈实战和系统性思维，并指出大厂履历溢价下降，而大厂方未能有效反驳这些观点。小厂方论点更具说服力，因此小幅调整倾向。"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:55Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "5e209cdf-21ab-4ebf-a13d-e6e2211782f3",
+        "round": 2,
+        "summary": "本轮总结：选项A代表主要论证大厂在分布式、高并发等核心领域的系统化深度训练是长期成为技术专家和架构师的必备基石，选项B代表则主张小厂的全栈实战能培养系统思维和解决真实问题的深度，让应届生更快具备技术负责人的视野和能力，双方争议焦点在于哪种路径更能提供长期职业发展的深度训练。"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:36:55Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 2,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:05Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 3,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:07Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "2f7e1677-88ef-479c-bd70-65113067e096",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "小厂的全栈看似全面，但缺乏大厂在分布式、高并发等核心领域的系统化深度训练。大厂导师制并非形式化，而是有明确考核机制，确保新人获得实质性指导。短期看小厂全面，长期看大厂深度才是技术专家和架构师的必备基石。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:10Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "02933c3b-26a9-4233-a868-b4f5f549ed0f",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方反复强调大厂深度训练，但忽略了关键一点：大厂导师制下的新人往往被安排执行已有架构下的细分任务，很难接触核心设计决策。小厂的全栈开发虽然广度优先，但当你独立完成一个模块从设计到上线的全过程，这种'被迫'的深度思考恰恰是技术成长最快的方式。而且，分布式、高并发等能力完全可以在工作2-3年后通过跳槽或自学补齐，而早期独立解决问题的经验却无法替代。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:10Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2f7e1677-88ef-479c-bd70-65113067e096",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:10Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "02933c3b-26a9-4233-a868-b4f5f549ed0f",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:10Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "79e63e70-63b4-43a0-aae3-e9df0cfc544c",
+        "agent_type": "judge",
+        "belief_a": 0.45,
+        "belief_b": 0.55,
+        "delta": -0.05,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:12Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "79e63e70-63b4-43a0-aae3-e9df0cfc544c",
+        "belief_a": 40,
+        "belief_b": 60,
+        "reasoning": "双方辩论聚焦于大厂深度训练与小厂全栈实战的优劣。支持A方强调大厂系统化深度、导师制考核和长期职业杠杆，但支持B方指出大厂新人可能局限于细分模块，而小厂从0到1的完整经验能培养技术负责人视野。B方论点更具针对性，指出大厂导师制下新人难以接触核心设计决策，而小厂的全栈实战能提供更全面的能力培养。考虑到当前倾向已偏向B方（55%），且B方论点有力，适当增加对B方的支持。"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:13Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "5e209cdf-21ab-4ebf-a13d-e6e2211782f3",
+        "round": 3,
+        "summary": "本轮总结：选项A代表强调大厂在分布式、高并发等核心领域的系统化深度训练和导师制的实质性指导，认为这是技术专家和架构师的必备基石；选项B代表则指出大厂新人常被安排执行细分任务，难以接触核心设计决策，而小厂的全栈开发能让人独立完成模块从设计到上线的全过程。双方争议焦点在于大厂的深度训练与小厂的广度实践哪个更有利于长期职业发展。"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:13Z",
+      "type": "trial.converged",
+      "payload": {
+        "message": "辩论已收敛，提前进入结案陈词",
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:13Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "closing",
+        "current_round": 0,
+        "message": "进入 closing 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:16Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "2f7e1677-88ef-479c-bd70-65113067e096",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "小厂的独立解决问题看似诱人，但缺乏规范指导容易养成野路子习惯，后期纠正成本极高。大厂导师制确保你从第一天起就学习业界最佳实践和工程规范，这种系统化训练是职业发展的护城河。至于分布式、高并发能力，小厂项目根本接触不到，而大厂有海量真实场景让你在安全环境中学习和实践。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:18Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "02933c3b-26a9-4233-a868-b4f5f549ed0f",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方称小厂易养成野路子，但大厂新人同样可能学到过时或僵化的流程。小厂逼你快速试错并决策，这种能力是技术领导力的核心。至于分布式、高并发，完全可在工作2-3年通过系统学习或跳槽补齐，而早期独立解决问题的经验才是不可替代的稀缺资产。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:18Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "deliberation",
+        "current_round": 0,
+        "message": "进入 deliberation 阶段",
+        "previous_phase": "closing"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:21Z",
+      "type": "judge.final_decision",
+      "payload": {
+        "belief_a": 40,
+        "belief_b": 60,
+        "preferred": "option_b",
+        "reasoning": "庭审中双方围绕大厂的体系化深度与小厂的实战广度展开辩论。支持大厂方强调导师制、规范流程和长期职业杠杆；支持小厂方则指出小厂能提供从0到1的核心业务参与、全栈能力和技术领导力培养，且大厂履历溢价正在下降。考虑到计算机专业应届生需要快速积累实战经验和系统性思维，小厂的全栈实战更有利于早期成长和长期技术视野，因此更倾向于小厂。",
+        "recommendation": "建议先加入小厂快速成长"
+      }
+    },
+    {
+      "timestamp": "2026-06-28T01:37:27Z",
+      "type": "verdict.ready",
+      "payload": {
+        "option_a_score": 40,
+        "option_b_score": 60,
+        "summary": "建议先加入小厂快速成长",
+        "verdict_id": "4810d5c9-d697-484b-ad51-4ecb33b87fed"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "final_phase_is_deliberation",
+    "message_counts_correct",
+    "no_duplicate_adjacent_content",
+    "no_fake_evidence_refs",
+    "beliefs_updated_when_evidence_present",
+    "verdict_generated_with_valid_scores",
+    "trial_converged_early"
+  ],
+  "asserts_failed": [
+    "agent prosecutor repeated identical content between cross_exam/r2 and cross_exam/r3",
+    "judge belief_a out of range [0,1]: 40.0000",
+    "judge belief_b out of range [0,1]: 60.0000",
+    "judge belief_a + belief_b != 1: 40.0000 + 60.0000 = 100.0000"
+  ],
+  "started_at": "2026-06-28T09:36:21.646448+08:00",
+  "finished_at": "2026-06-28T09:37:37.170735+08:00",
+  "duration_sec": 75.523512899,
+  "extra": {
+    "test": "TestStandardModeFullFlow"
+  }
+}

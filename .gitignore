@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+backend/vendor/
+frontend/.next/
+frontend/out/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Build outputs
+backend/bin/
+backend/tmp/
+frontend/dist/
+frontend/.vercel
+
+# Logs
+*.log
+logs/
+log/
+
+# OS files
+.DS_Store
+.DS_Store?
+Thumbs.db
+._*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+*.cover
+
+# Database
+*.db
+*.sqlite
+
+# Docker
+.dockerignore
+
+# Local secrets backups
+*.env.bak
+*.env.backup
+secrets/

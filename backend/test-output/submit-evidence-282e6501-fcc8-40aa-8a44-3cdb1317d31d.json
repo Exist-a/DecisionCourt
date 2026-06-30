@@ -1,0 +1,920 @@
+{
+  "session_uuid": "282e6501-fcc8-40aa-8a44-3cdb1317d31d",
+  "title": "集成测试-中途提交证据",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "deliberation",
+  "final_round": 0,
+  "converged": false,
+  "agents": [
+    {
+      "id": "ef6f734c-5af4-490a-92ae-64f511204ba9",
+      "session_id": "b16ac81d-0b4c-4911-bcc4-eb5607c69139",
+      "agent_uuid": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "role": "支持选项 A",
+      "belief_a": 0.796,
+      "belief_b": 0.204,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:14:54.800113+08:00",
+      "updated_at": "2026-06-27T11:15:41.321477+08:00"
+    },
+    {
+      "id": "399e34b5-7b2a-49f6-9752-88c2252e6e28",
+      "session_id": "b16ac81d-0b4c-4911-bcc4-eb5607c69139",
+      "agent_uuid": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "role": "支持选项 B",
+      "belief_a": 0.296,
+      "belief_b": 0.704,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:14:54.802255+08:00",
+      "updated_at": "2026-06-27T11:15:41.322377+08:00"
+    },
+    {
+      "id": "b5072ea3-d83a-4e92-b905-82b004c6eb2d",
+      "session_id": "b16ac81d-0b4c-4911-bcc4-eb5607c69139",
+      "agent_uuid": "c9d6a62f-3ddc-4adb-8a69-fefb6cc11712",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.546,
+      "belief_b": 0.454,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:14:54.803658+08:00",
+      "updated_at": "2026-06-27T11:15:41.325041+08:00"
+    },
+    {
+      "id": "58393d5f-8931-499e-83cd-062f945b2c3c",
+      "session_id": "b16ac81d-0b4c-4911-bcc4-eb5607c69139",
+      "agent_uuid": "601f8307-7499-4437-8c90-89cc2d55ccb7",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.546,
+      "belief_b": 0.454,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:14:54.805457+08:00",
+      "updated_at": "2026-06-27T11:15:41.330481+08:00"
+    },
+    {
+      "id": "aac83547-fad6-492b-b3bb-9285bea2d28b",
+      "session_id": "b16ac81d-0b4c-4911-bcc4-eb5607c69139",
+      "agent_uuid": "c004226b-b1ca-4f08-9756-0b010fe95f8f",
+      "agent_type": "judge",
+      "name": "法官",
+      "role": "主持庭审与最终判决",
+      "belief_a": 0.6,
+      "belief_b": 0.4,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T11:14:54.806619+08:00",
+      "updated_at": "2026-06-27T11:15:58.100898+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "考虑到家庭可支持部分费用，出国留学在经济上并非不可行。计算机专业在海外顶尖院校能接触到更前沿的技术和科研环境，这对长期职业发展非常有利。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"基于背景信息，家庭可支持部分费用，说明经济可行；本科计算机专业出国能接触前沿技术。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "虽然家庭可支持部分费用，但留学总成本依然很高，且存在汇率波动、生活费超支等不确定性。国内读研费用低、奖学金丰富，经济压力小得多。计算机专业国内顶尖院校如清华、浙大等科研实力强劲，与产业结合紧密，就业前景同样优秀。更重要的是，国内读研可以提前积累人脉和实习经验，规避留学带来的文化适应和签证风险。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"首次发言，需清晰亮明支持国内读研的立场，并点出留学风险。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "对方提到经济不确定性，但请注意E001：我已获得RA奖学金，这直接覆盖学费并提供生活费，极大降低了成本波动风险。Top30 CS硕士的海外经历和校友网络，带来的长期薪资溢价远超国内读研。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"直接回应对方面临的经济不确定性论点，强调已有RA奖学金可大幅减轻负担，并点出海外Top30院校的长期回报优势。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "RA奖学金确实能减轻经济压力，但请注意：奖学金通常需要承担助研工作，且每学期需重新评估，并非稳定保障。一旦学业或研究进度不达标，可能失去资助。相比之下，国内读研的学费和生活费明确可控，且国家奖学金和导师补贴覆盖面广，经济风险几乎为零。计算机专业在国内顶尖实验室同样能产出高水平论文，且提前积累国内企业实习经验，就业时更受本土企业青睐。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "RA奖学金虽有评估要求，但E001明确我已获得，说明我符合条件且有能力完成助研工作。Top30 CS硕士的海外经历和校友网络带来的长期薪资溢价，远超国内读研。国内读研虽有奖学金，但竞争激烈且金额有限。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"反驳RA奖学金不稳定的观点，强调其实际价值和可获得性，同时突出海外经历的长期回报。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "RA奖学金每学期需重新评估，一旦导师项目变动或个人表现波动，资助可能中断。而国内读研学费固定，国家奖学金和导师补贴覆盖率高，经济风险几乎为零。计算机专业国内顶尖实验室如清华、浙大在AI、系统等方向产出顶尖论文，且提前积累国内企业实习经验，就业时更受本土企业青睐。海外经历虽有溢价，但不确定性高，国内读研的稳定性和确定性更适合长期规划。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "RA奖学金虽需评估，但E001表明我已通过审核，具备学术能力。海外Top30 CS硕士的校友网络和全球视野带来的长期薪资溢价，远超国内读研。国内奖学金覆盖有限，且实验室竞争激烈，不确定性同样存在。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"针对奖学金不稳定的质疑，强调RA奖学金已证明我的能力，且海外长期回报更高。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "RA奖学金每学期需重新评估，一旦导师项目变动或个人表现波动，资助可能中断，而国内读研学费固定，奖学金覆盖率高，经济风险几乎为零。计算机专业国内顶尖实验室在AI安全等方向产出顶尖论文，且提前积累国内实习经验，就业时更受本土企业青睐。海外薪资溢价需扣除高额生活成本和税收，实际优势有限。",
+      "evidence_refs": [
+        "E002"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方强调RA奖学金稳定性和海外薪资溢价，我需指出其评估风险，并对比国内读研的确定性优势。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "选项A代表",
+      "content": "RA奖学金虽需评估，但E001表明我已通过审核，具备学术能力。海外Top30 CS硕士的校友网络和全球视野带来的长期薪资溢价，远超国内读研的稳定收益。国内奖学金覆盖有限，且实验室竞争激烈，不确定性同样存在。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"针对对方对RA奖学金稳定性的质疑，强调E001奖学金已获得，且海外学历的长期溢价远超国内读研的稳定性收益。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "选项B代表",
+      "content": "国内读研的确定性才是最大优势。RA奖学金每学期评估，导师项目变动或疫情影响都可能中断资助，而国内学费固定、奖学金稳定。计算机国内顶尖实验室在AI安全方向产出顶尖论文，且导师项目与产业结合紧密，实习机会多。海外薪资溢价扣除高额生活成本、税收和签证风险后，实际收益有限。",
+      "evidence_refs": [
+        "E002"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方RA奖学金评估风险，强调国内读研的确定性优势，并指出海外薪资溢价需扣除高成本\"}"
+    }
+  ],
+  "evidences": [
+    {
+      "id": "79c08651-7ae1-4a01-8d93-9b46413d0a4e",
+      "session_id": "b16ac81d-0b4c-4911-bcc4-eb5607c69139",
+      "evidence_id": "E001",
+      "type": "fact",
+      "source": "user",
+      "content": "我已收到美国 Top30 CS 硕士录取，并有 RA 奖学金",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0,
+      "impact_on_option_b": 0,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-27T11:15:04.813509+08:00"
+    },
+    {
+      "id": "057f1b4c-770b-4dd8-ad12-3313c318b004",
+      "session_id": "b16ac81d-0b4c-4911-bcc4-eb5607c69139",
+      "evidence_id": "E002",
+      "type": "data",
+      "source": "user",
+      "content": "国内导师实验室方向与我想做的 AI 安全高度匹配",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.3,
+      "impact_on_option_b": -0.15,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-27T11:15:41.318665+08:00"
+    }
+  ],
+  "verdict": {
+    "ID": "c0726a56-7167-447c-818f-0d6c6f604723",
+    "SessionID": "b16ac81d-0b4c-4911-bcc4-eb5607c69139",
+    "Content": "# 决策判决书\n\n## 一、双方主张\n- 选项A（出国留学）：主张海外Top30 CS硕士能带来前沿技术和长期薪资溢价，且已获RA奖学金降低经济风险。\n- 选项B（国内读研）：主张国内读研经济风险低、奖学金稳定，且导师实验室方向与AI安全高度匹配。\n\n## 二、证据分析\n- E001 [fact]：已获美国Top30 CS硕士录取及RA奖学金。该证据对双方影响均为0.0，但被用于支持A方经济可行性。\n- E002 [data]：国内导师实验室方向与AI安全高度匹配（A影响0.3，B影响-0.1）。该证据有利于A方，但B方未充分引用。\n\n## 三、争议焦点\n1. **RA奖学金的稳定性**：A方认为奖学金已获，证明能力；B方指出每学期需重新评估，存在中断风险。\n2. **长期收益比较**：A方强调海外校友网络和全球视野的薪资溢价；B方强调国内顶尖实验室的确定性和低风险。\n\n## 四、综合评判\n- 经济层面：RA奖学金显著降低留学成本，但存在评估风险；国内读研经济风险几乎为零。\n- 职业发展：海外Top30 CS硕士的长期薪资溢价可能更高，但国内实验室方向高度匹配AI安全，短期科研产出更可控。\n- 证据充分性：双方均未提供具体薪资数据或奖学金中断概率，长期收益比较缺乏量化依据。\n\n## 五、建议\n若申请者能接受RA奖学金的不确定性（如通过额外储蓄缓冲），建议选择出国留学；若更看重稳定性和方向匹配，建议国内读研。",
+    "Summary": "建议优先考虑出国留学，但需注意RA奖学金的不稳定性。",
+    "OptionAScore": 0.65,
+    "OptionBScore": 0.55,
+    "ConsensusPoints": "[\"家庭可支持部分费用\", \"计算机专业背景\"]",
+    "DivergencePoints": "[\"RA奖学金是否稳定可靠\", \"海外经历与国内实验室的长期收益比较\"]",
+    "Recommendation": "若RA奖学金评估风险可控，建议选择出国留学；否则可考虑国内读研。",
+    "UserFeedback": "none",
+    "CreatedAt": "2026-06-27T11:16:10.185909+08:00"
+  },
+  "events": [
+    {
+      "timestamp": "2026-06-27T03:14:54Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:14:56Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "考虑到家庭可支持部分费用，出国留学在经济上并非不可行。计算机专业在海外顶尖院校能接触到更前沿的技术和科研环境，这对长期职业发展非常有利。",
+        "evidence_refs": [],
+        "name": "选项A代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:14:58Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "虽然家庭可支持部分费用，但留学总成本依然很高，且存在汇率波动、生活费超支等不确定性。国内读研费用低、奖学金丰富，经济压力小得多。计算机专业国内顶尖院校如清华、浙大等科研实力强劲，与产业结合紧密，就业前景同样优秀。更重要的是，国内读研可以提前积累人脉和实习经验，规避留学带来的文化适应和签证风险。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:14:58Z",
+      "type": "opening.finished",
+      "payload": {
+        "message": "开庭陈述结束，等待用户确认开始质证"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:04Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "我已收到美国 Top30 CS 硕士录取，并有 RA 奖学金",
+        "created_at": "2026-06-27T11:15:04+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E001",
+        "impact_on_option_a": 0,
+        "impact_on_option_b": 0,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "fact"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:04Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:04Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:04Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c9d6a62f-3ddc-4adb-8a69-fefb6cc11712",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:04Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "601f8307-7499-4437-8c90-89cc2d55ccb7",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:04Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c004226b-b1ca-4f08-9756-0b010fe95f8f",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 0,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:04Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 1,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "opening"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:06Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "对方提到经济不确定性，但请注意E001：我已获得RA奖学金，这直接覆盖学费并提供生活费，极大降低了成本波动风险。Top30 CS硕士的海外经历和校友网络，带来的长期薪资溢价远超国内读研。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:11Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "RA奖学金确实能减轻经济压力，但请注意：奖学金通常需要承担助研工作，且每学期需重新评估，并非稳定保障。一旦学业或研究进度不达标，可能失去资助。相比之下，国内读研的学费和生活费明确可控，且国家奖学金和导师补贴覆盖面广，经济风险几乎为零。计算机专业在国内顶尖实验室同样能产出高水平论文，且提前积累国内企业实习经验，就业时更受本土企业青睐。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:11Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:11Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:11Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c9d6a62f-3ddc-4adb-8a69-fefb6cc11712",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:11Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "601f8307-7499-4437-8c90-89cc2d55ccb7",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:11Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c004226b-b1ca-4f08-9756-0b010fe95f8f",
+        "agent_type": "judge",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:13Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "c004226b-b1ca-4f08-9756-0b010fe95f8f",
+        "belief_a": 0.55,
+        "belief_b": 0.45,
+        "reasoning": "正方提出RA奖学金降低经济风险，反方指出奖学金需重新评估、有不确定性。但正方证据E001明确已获得奖学金，且Top30 CS硕士长期收益高，论点更有力。调整支持度向A倾斜。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:14Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "601f8307-7499-4437-8c90-89cc2d55ccb7",
+        "round": 1,
+        "summary": "本轮总结：出国留学方强调已获RA奖学金覆盖费用，长期薪资溢价高；国内读研方指出奖学金需每学期重新评估，存在不稳定风险，国内费用更可控。双方争议焦点在于RA奖学金的稳定性与长期收益。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:14Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 1,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:24Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "RA奖学金虽有评估要求，但E001明确我已获得，说明我符合条件且有能力完成助研工作。Top30 CS硕士的海外经历和校友网络带来的长期薪资溢价，远超国内读研。国内读研虽有奖学金，但竞争激烈且金额有限。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:29Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "RA奖学金每学期需重新评估，一旦导师项目变动或个人表现波动，资助可能中断。而国内读研学费固定，国家奖学金和导师补贴覆盖率高，经济风险几乎为零。计算机专业国内顶尖实验室如清华、浙大在AI、系统等方向产出顶尖论文，且提前积累国内企业实习经验，就业时更受本土企业青睐。海外经历虽有溢价，但不确定性高，国内读研的稳定性和确定性更适合长期规划。",
+        "evidence_refs": [],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:29Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:29Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:29Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c9d6a62f-3ddc-4adb-8a69-fefb6cc11712",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:29Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "601f8307-7499-4437-8c90-89cc2d55ccb7",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:29Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c004226b-b1ca-4f08-9756-0b010fe95f8f",
+        "agent_type": "judge",
+        "belief_a": 0.55,
+        "belief_b": 0.45,
+        "delta": 0.05,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:30Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "c004226b-b1ca-4f08-9756-0b010fe95f8f",
+        "belief_a": 0.6,
+        "belief_b": 0.4,
+        "reasoning": "正方强调RA奖学金降低了经济风险，且Top30 CS硕士的长期薪资溢价高；反方指出奖学金需每学期评估，存在不确定性，且国内读研经济风险更低。正方论点基于已获得的奖学金事实，更具即时说服力，但反方对奖学金稳定性的质疑也有道理。综合考虑，小幅提升对出国留学的支持。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:33Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "601f8307-7499-4437-8c90-89cc2d55ccb7",
+        "round": 2,
+        "summary": "本轮总结：选项A代表主要论证了已获得RA奖学金且Top30 CS硕士的海外经历和校友网络带来长期薪资溢价，选项B代表则主张RA奖学金存在中断风险而国内读研经济风险低且顶尖实验室产出顶尖，双方争议焦点在于海外读研的经济风险与长期收益的权衡。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:33Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 2,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:41Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "国内导师实验室方向与我想做的 AI 安全高度匹配",
+        "created_at": "2026-06-27T11:15:41+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E002",
+        "impact_on_option_a": 0.3,
+        "impact_on_option_b": -0.15,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "data"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:41Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:41Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:41Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c9d6a62f-3ddc-4adb-8a69-fefb6cc11712",
+        "agent_type": "investigator",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:41Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "601f8307-7499-4437-8c90-89cc2d55ccb7",
+        "agent_type": "clerk",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:41Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c004226b-b1ca-4f08-9756-0b010fe95f8f",
+        "agent_type": "judge",
+        "belief_a": 0.646,
+        "belief_b": 0.354,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:51Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "content": "RA奖学金虽需评估，但E001表明我已通过审核，具备学术能力。海外Top30 CS硕士的校友网络和全球视野带来的长期薪资溢价，远超国内读研。国内奖学金覆盖有限，且实验室竞争激烈，不确定性同样存在。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项A代表",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:55Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "content": "RA奖学金每学期需重新评估，一旦导师项目变动或个人表现波动，资助可能中断，而国内读研学费固定，奖学金覆盖率高，经济风险几乎为零。计算机专业国内顶尖实验室在AI安全等方向产出顶尖论文，且提前积累国内实习经验，就业时更受本土企业青睐。海外薪资溢价需扣除高额生活成本和税收，实际优势有限。",
+        "evidence_refs": [
+          "E002"
+        ],
+        "name": "选项B代表",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:55Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:55Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:55Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c9d6a62f-3ddc-4adb-8a69-fefb6cc11712",
+        "agent_type": "investigator",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:55Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "601f8307-7499-4437-8c90-89cc2d55ccb7",
+        "agent_type": "clerk",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:55Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "c004226b-b1ca-4f08-9756-0b010fe95f8f",
+        "agent_type": "judge",
+        "belief_a": 0.646,
+        "belief_b": 0.354,
+        "delta": 0.096,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:58Z",
+      "type": "judge.belief_update",
+      "payload": {
+        "agent_uuid": "c004226b-b1ca-4f08-9756-0b010fe95f8f",
+        "belief_a": 0.6,
+        "belief_b": 0.4,
+        "reasoning": "双方辩论焦点在于RA奖学金的稳定性与长期收益。支持留学的论点强调RA奖学金已获得、学术能力被认可，以及海外Top30 CS硕士的长期薪资溢价。支持国内读研的论点则指出RA奖学金需每学期重新评估，存在中断风险，而国内读研经济风险低、实验室方向匹配且就业前景好。考虑到E002显示国内导师实验室与AI安全方向高度匹配，这是一个有力证据，且国内读研的经济稳定性论点更具说服力。因此，适当降低对出国留学的支持度，提高对国内读研的支持度。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:59Z",
+      "type": "clerk.round_summary",
+      "payload": {
+        "agent_uuid": "601f8307-7499-4437-8c90-89cc2d55ccb7",
+        "round": 3,
+        "summary": "本轮总结：选项A代表主要论证海外Top30 CS硕士的长期薪资溢价和校友网络优势，并强调RA奖学金已证明学术能力；选项B代表则主张RA奖学金存在中断风险，国内读研经济风险低且实验室方向匹配、能积累实习经验。双方争议焦点在于海外读研的经济风险与长期收益的权衡。"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:15:59Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "closing",
+        "current_round": 0,
+        "message": "进入 closing 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:16:01Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "56734ea2-8ed1-4a6c-9e72-1a867c173eda",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "content": "RA奖学金虽需评估，但E001表明我已通过审核，具备学术能力。海外Top30 CS硕士的校友网络和全球视野带来的长期薪资溢价，远超国内读研的稳定收益。国内奖学金覆盖有限，且实验室竞争激烈，不确定性同样存在。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "选项A代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:16:03Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "4a217a1b-05e5-4830-8fad-dbc1f536dba4",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "content": "国内读研的确定性才是最大优势。RA奖学金每学期评估，导师项目变动或疫情影响都可能中断资助，而国内学费固定、奖学金稳定。计算机国内顶尖实验室在AI安全方向产出顶尖论文，且导师项目与产业结合紧密，实习机会多。海外薪资溢价扣除高额生活成本、税收和签证风险后，实际收益有限。",
+        "evidence_refs": [
+          "E002"
+        ],
+        "name": "选项B代表",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:16:03Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "deliberation",
+        "current_round": 0,
+        "message": "进入 deliberation 阶段",
+        "previous_phase": "closing"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T03:16:10Z",
+      "type": "verdict.ready",
+      "payload": {
+        "option_a_score": 0.65,
+        "option_b_score": 0.55,
+        "summary": "建议优先考虑出国留学，但需注意RA奖学金的不稳定性。",
+        "verdict_id": "c0726a56-7167-447c-818f-0d6c6f604723"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "final_phase_is_deliberation",
+    "message_counts_correct",
+    "no_duplicate_adjacent_content",
+    "no_self_repetition",
+    "no_fake_evidence_refs",
+    "beliefs_updated_when_evidence_present",
+    "judge_bias_compliant",
+    "verdict_generated_with_valid_scores",
+    "user_evidences_persisted",
+    "user_evidence_was_referenced",
+    "no_raw_json_in_messages"
+  ],
+  "asserts_failed": null,
+  "started_at": "2026-06-27T11:14:54.796261+08:00",
+  "finished_at": "2026-06-27T11:16:18.196078+08:00",
+  "duration_sec": 83.397725858,
+  "extra": {
+    "test": "TestSubmitEvidenceDuringCrossExam"
+  }
+}

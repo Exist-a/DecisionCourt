@@ -1,0 +1,779 @@
+{
+  "session_uuid": "7d8f7800-60be-4001-b606-5293e779132a",
+  "title": "集成测试-中途提交证据",
+  "mode": "standard",
+  "max_rounds": 3,
+  "final_phase": "deliberation",
+  "final_round": 0,
+  "converged": false,
+  "agents": [
+    {
+      "id": "2e34e762-f385-4ee9-9180-75ebc3f0bd07",
+      "session_id": "ff27fd12-d9da-4043-8f96-271abde90863",
+      "agent_uuid": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "role": "支持选项 A",
+      "belief_a": 0.796,
+      "belief_b": 0.204,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T08:09:21.593524+08:00",
+      "updated_at": "2026-06-27T08:09:53.504637+08:00"
+    },
+    {
+      "id": "f6ab02b4-8840-4f2b-b89b-acb99feab218",
+      "session_id": "ff27fd12-d9da-4043-8f96-271abde90863",
+      "agent_uuid": "fab60258-4318-48e9-861a-193596d3b265",
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "role": "支持选项 B",
+      "belief_a": 0.296,
+      "belief_b": 0.704,
+      "model": "",
+      "temperature": 0.8,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T08:09:21.59566+08:00",
+      "updated_at": "2026-06-27T08:09:53.505612+08:00"
+    },
+    {
+      "id": "254a5087-6c69-40fd-82b9-6983cf05bc33",
+      "session_id": "ff27fd12-d9da-4043-8f96-271abde90863",
+      "agent_uuid": "2db6d817-d106-4e6e-9f9b-c0aab1d5c10d",
+      "agent_type": "investigator",
+      "name": "调查员",
+      "role": "中立搜证",
+      "belief_a": 0.546,
+      "belief_b": 0.454,
+      "model": "",
+      "temperature": 0.3,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T08:09:21.597086+08:00",
+      "updated_at": "2026-06-27T08:09:53.506393+08:00"
+    },
+    {
+      "id": "3d648629-2a8d-4ff0-b0b0-1564ab3326f5",
+      "session_id": "ff27fd12-d9da-4043-8f96-271abde90863",
+      "agent_uuid": "ab1aae95-c401-46ac-8eb9-6cae5c43ec0c",
+      "agent_type": "clerk",
+      "name": "书记员",
+      "role": "整理判决书",
+      "belief_a": 0.546,
+      "belief_b": 0.454,
+      "model": "",
+      "temperature": 0.2,
+      "system_prompt": "",
+      "status": "active",
+      "created_at": "2026-06-27T08:09:21.5981+08:00",
+      "updated_at": "2026-06-27T08:09:53.507844+08:00"
+    }
+  ],
+  "messages": [
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "尊敬的评审，我方认为出国留学是计算机专业更优选择。国内读研面临考研内卷、学术资源受限等问题，而出国留学能接触国际前沿技术，如AI、量子计算等领域，全球顶尖实验室和教授资源丰富，这对计算机专业发展至关重要。家庭可支持部分费用，说明经济可行。对方可能强调成本或适应问题，但长期回报远超投入。请对方辩友正面回应留学在学术视野和职业竞争力上的优势。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"作为控方，需先建立留学优势，反驳国内读研局限性。\"}"
+    },
+    {
+      "phase": "opening",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "尊敬的评审，我方坚定认为国内读研是更稳妥的选择。出国留学看似光鲜，实则隐藏巨大风险：语言障碍、文化适应、高昂费用，家庭仅能支持部分费用，意味着学生需背负沉重经济压力甚至债务。计算机专业国内顶尖高校如清华、浙大等已具备国际级研究水平，考研虽竞争激烈，但一旦成功，学术资源稳定、导师指导连续，就业前景同样广阔。反观留学，若无法适应或学业受挫，高投入可能血本无归。请对方正视这些现实问题。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"作为辩方律师，首次发言需要明确反对出国留学，支持国内读研，强调风险和不确定性。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "对方提及语言适应、经济压力等风险，但计算机领域如AI、量子计算等前沿方向，国内资源有限，而美国、瑞士等顶尖实验室提供不可替代的实践机会。家庭支持部分费用，剩余可通过奖学金或RA/TA职位覆盖，许多CS硕士项目提供助学金。长期看，留学毕业生在硅谷、大厂起薪远超国内，3-5年即可收回成本。请对方正视：国内读研的‘稳妥’是否意味着错失行业变革的先机？",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"针对对方提出的风险论点，强调留学在计算机前沿领域的独特优势，并用长期回报反驳短期风险。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 1,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "对方强调前沿资源，却选择性忽略：能进入MIT、Stanford等顶尖实验室的学生凤毛麟角，多数留学生只能进入普通院校，资源未必优于国内985高校。国内清华、中科院在AI、量子计算领域已产出多项世界级成果，且导师关系更紧密、课题延续性更强。留学的高成本低回报案例比比皆是，用'少数精英'代表全体，是典型的以偏概全。请对方正视普通留学生的真实处境。",
+      "evidence_refs": [],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"针对对方提出的前沿资源论，指出其忽略留学风险且国内顶尖高校已有足够资源，反驳'错失先机'观点。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "对方以‘精英少数’否定整体价值，但美国Top30 CS硕士项目本身已属全球前列，课程设置、校企合作资源远非国内普通985可比。E001显示我已获录取及RA奖学金，这并非偶然——计算机领域奖学金机会充足，可大幅降低经济压力。多数留学生在项目中通过实验室轮转、企业实习同样能接触前沿技术。请对方正视：国内读研的‘稳妥’是否意味着放弃更广阔的国际平台？",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"反驳对方关于多数留学生只能进入普通院校的观点，强调美国Top30 CS硕士项目本身就有优质资源，且RA奖学金可减轻经济压力。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 2,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "E001的RA奖学金看似利好，实则暗藏陷阱：多数RA要求每周20小时以上工作，且与导师绑定，若研究领域不合或导师关系紧张，学业与收入双受损。美国Top30 CS项目学费加生活费年均约60万人民币，奖学金仅覆盖学费，生活仍需家庭支持。国内清华、中科院的RA同样提供津贴，且无语言文化障碍，稳定性更高。请对方证明奖学金能完全覆盖总支出，而非仅学费。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方用E001强调录取和奖学金，但RA奖学金通常有严苛条件，需连续数年高强度工作，且美国生活成本高，奖学金未必够用。同时，国内顶尖实验室同样有RA机会，风险更小。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "对方质疑奖学金覆盖不全，但美国Top30 CS硕士RA不仅免学费，还提供每月约2000美元生活津贴，加上TA岗位可额外增收。以E001为例，RA奖学金实际涵盖学费+部分生活费，家庭支持仅需补足剩余开销。反观国内RA津贴普遍每月仅1000-3000元人民币，差距悬殊。请对方承认：留学RA的经济回报远高于国内。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方质疑RA奖学金覆盖不全，需用证据说明奖学金+TA可覆盖生活成本，并强调国内RA津贴差距。\"}"
+    },
+    {
+      "phase": "cross_exam",
+      "round": 3,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "对方声称RA提供每月2000美元生活津贴，但未说明这是税前还是税后，也未说明是否需要支付国际学生额外费用。更重要的是，RA每周20小时工作会严重挤占课程和科研时间，可能导致延期毕业，隐形成本极高。国内RA虽津贴较低，但经济压力小，且可全身心投入研究。请对方提供RA奖学金扣除税费后的净收入数据。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方声称RA奖学金覆盖学费和生活费，但未提供具体数据。我需要质疑RA的实际净收益，指出强制工作时间可能影响学业，且奖学金通常不覆盖全部生活成本，家庭仍需承担部分费用。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "prosecutor",
+      "name": "控方律师",
+      "content": "对方纠结税费细节，但美国RA奖学金通常为税后净额，或通过预扣税表调整，实际净收入仍远超国内。更重要的是，E001的Top30 CS项目毕业生平均起薪超10万美元，3年即可收回全部投入。国内RA津贴低且就业起薪仅约20万人民币，长期差距更大。请对方正视经济账的全局比较。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_a\", \"reasoning\": \"对方质疑RA税前税后和额外费用，我需基于E001反驳：RA奖学金通常为税前但无需额外费用，且美国CS硕士短期回报高，能覆盖成本。\"}"
+    },
+    {
+      "phase": "closing",
+      "round": 0,
+      "agent_type": "defender",
+      "name": "辩方律师",
+      "content": "对方反复强调RA经济回报，却回避关键事实：美国Top30 CS硕士年均总花费约8万美元，RA奖学金通常仅覆盖学费和部分生活费，家庭仍需承担剩余费用。以E001为例，若奖学金仅覆盖学费，家庭需支付每年2-3万美元生活费，对‘部分支持’的家庭仍是沉重负担。而国内RA津贴虽低，但学费全免且生活费低廉，经济压力小。请对方明确RA奖学金是否完全覆盖学费+生活费，并给出具体金额。",
+      "evidence_refs": [
+        "E001"
+      ],
+      "metadata": "{\"stance\": \"pro_b\", \"reasoning\": \"对方继续强调RA经济回报，但未回应奖学金实际覆盖的完整性和隐性成本。我需指出RA奖学金可能无法覆盖全部生活支出，且学业压力影响毕业。\"}"
+    }
+  ],
+  "evidences": [
+    {
+      "id": "b5c72c77-a63e-4f54-b3e6-466199bdc81e",
+      "session_id": "ff27fd12-d9da-4043-8f96-271abde90863",
+      "evidence_id": "E001",
+      "type": "fact",
+      "source": "user",
+      "content": "我已收到美国 Top30 CS 硕士录取，并有 RA 奖学金",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0,
+      "impact_on_option_b": 0,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-27T08:09:31.603323+08:00"
+    },
+    {
+      "id": "76105e32-afc0-4282-a26c-85b8c8467a4a",
+      "session_id": "ff27fd12-d9da-4043-8f96-271abde90863",
+      "evidence_id": "E002",
+      "type": "data",
+      "source": "user",
+      "content": "国内导师实验室方向与我想做的 AI 安全高度匹配",
+      "url": "",
+      "submitted_by": "user",
+      "credibility_score": 0.85,
+      "relevance_score": 0.8,
+      "impact_on_option_a": 0.3,
+      "impact_on_option_b": -0.15,
+      "constraint_strength": 0,
+      "status": "admitted",
+      "challenge_reason": "",
+      "created_at": "2026-06-27T08:09:53.500801+08:00"
+    }
+  ],
+  "verdict": {
+    "ID": "75f13421-035c-4a21-adbc-e2b76c4f81c9",
+    "SessionID": "ff27fd12-d9da-4043-8f96-271abde90863",
+    "Content": "# 决策判决书\n\n## 一、双方主张\n\n**选项A（出国留学）主张：**\n- 出国留学能接触国际前沿技术，如AI、量子计算等，国内资源有限。\n- 美国Top30 CS硕士项目课程设置、校企合作资源远非国内普通985可比。\n- E001显示已获录取及RA奖学金，RA奖学金实际涵盖学费+部分生活费，毕业生平均起薪超10万美元。\n\n**选项B（国内读研）主张：**\n- 出国留学存在语言障碍、文化适应、高昂费用等风险，家庭仅能支持部分费用。\n- 多数留学生只能进入普通院校，资源未必优于国内985高校。\n- RA奖学金可能暗藏陷阱：每周20小时以上工作，与导师绑定，若研究领域不合或导师关系紧张，学业与收入双受损。\n- 美国Top30 CS硕士年均总花费约8万美元，RA奖学金通常仅覆盖学费和部分生活费，家庭仍需承担剩余费用。\n\n## 二、证据分析\n\n**E001 [fact]：** 已收到美国Top30 CS硕士录取，并有RA奖学金。双方对事实无争议，但对其影响解读不同。\n- 选项A方认为RA奖学金可覆盖大部分费用，且毕业生起薪高，经济回报可观。\n- 选项B方质疑奖学金覆盖不全，且RA工作可能影响学业，家庭仍需承担剩余费用。\n\n**E002 [data]：** 国内导师实验室方向与AI安全高度匹配。\n- 选项A方未直接回应此证据。\n- 选项B方未充分引用此证据支持自身主张。\n\n## 三、争议焦点\n\n1. **经济负担与回报：** 出国留学的总花费与RA奖学金覆盖范围存在争议，双方对净支出和未来收入预期分歧较大。\n2. **学术资源与风险：** 出国留学能否获得优质资源存在争议，国内读研的学术匹配度（E002）未被充分讨论。\n\n## 四、判决建议\n\n基于现有证据和庭审记录，双方论点均有合理之处，但均未提供充分数据支持（如具体费用明细、毕业生就业统计等）。建议：\n- 若家庭经济状况良好，能承担剩余费用（约每年2-3万美元），且个人适应能力强，可优先考虑出国留学。\n- 若对风险敏感，或希望专注于AI安全方向（E002），国内读研是更稳妥的选择。\n- 建议进一步收集具体费用数据、RA奖学金条款、毕业生就业报告等证据。",
+    "Summary": "建议根据个人风险承受能力和职业规划选择，出国留学机会与风险并存，国内读研更稳妥。",
+    "OptionAScore": 0.55,
+    "OptionBScore": 0.45,
+    "ConsensusPoints": "[\"计算机专业前景良好\", \"家庭可支持部分费用\"]",
+    "DivergencePoints": "[\"出国留学的经济负担与回报\", \"国内读研的学术资源与竞争压力\"]",
+    "Recommendation": "若家庭能承担剩余费用且个人适应能力强，可优先考虑出国留学；否则建议国内读研。",
+    "UserFeedback": "none",
+    "CreatedAt": "2026-06-27T08:10:19.173866+08:00"
+  },
+  "events": [
+    {
+      "timestamp": "2026-06-27T00:09:21Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "opening",
+        "current_round": 0,
+        "message": "进入 opening 阶段",
+        "previous_phase": "idle"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:23Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "尊敬的评审，我方认为出国留学是计算机专业更优选择。国内读研面临考研内卷、学术资源受限等问题，而出国留学能接触国际前沿技术，如AI、量子计算等领域，全球顶尖实验室和教授资源丰富，这对计算机专业发展至关重要。家庭可支持部分费用，说明经济可行。对方可能强调成本或适应问题，但长期回报远超投入。请对方辩友正面回应留学在学术视野和职业竞争力上的优势。",
+        "evidence_refs": [],
+        "name": "控方律师",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:26Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "尊敬的评审，我方坚定认为国内读研是更稳妥的选择。出国留学看似光鲜，实则隐藏巨大风险：语言障碍、文化适应、高昂费用，家庭仅能支持部分费用，意味着学生需背负沉重经济压力甚至债务。计算机专业国内顶尖高校如清华、浙大等已具备国际级研究水平，考研虽竞争激烈，但一旦成功，学术资源稳定、导师指导连续，就业前景同样广阔。反观留学，若无法适应或学业受挫，高投入可能血本无归。请对方正视这些现实问题。",
+        "evidence_refs": [],
+        "name": "辩方律师",
+        "phase": "opening",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:26Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "cross_exam",
+        "current_round": 1,
+        "message": "进入 cross_exam 阶段",
+        "previous_phase": "opening"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:29Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "对方提及语言适应、经济压力等风险，但计算机领域如AI、量子计算等前沿方向，国内资源有限，而美国、瑞士等顶尖实验室提供不可替代的实践机会。家庭支持部分费用，剩余可通过奖学金或RA/TA职位覆盖，许多CS硕士项目提供助学金。长期看，留学毕业生在硅谷、大厂起薪远超国内，3-5年即可收回成本。请对方正视：国内读研的‘稳妥’是否意味着错失行业变革的先机？",
+        "evidence_refs": [],
+        "name": "控方律师",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "我已收到美国 Top30 CS 硕士录取，并有 RA 奖学金",
+        "created_at": "2026-06-27T08:09:31+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E001",
+        "impact_on_option_a": 0,
+        "impact_on_option_b": 0,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "fact"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": null,
+        "round": 1,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": null,
+        "round": 1,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2db6d817-d106-4e6e-9f9b-c0aab1d5c10d",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 1,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "ab1aae95-c401-46ac-8eb9-6cae5c43ec0c",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": null,
+        "round": 1,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "对方强调前沿资源，却选择性忽略：能进入MIT、Stanford等顶尖实验室的学生凤毛麟角，多数留学生只能进入普通院校，资源未必优于国内985高校。国内清华、中科院在AI、量子计算领域已产出多项世界级成果，且导师关系更紧密、课题延续性更强。留学的高成本低回报案例比比皆是，用'少数精英'代表全体，是典型的以偏概全。请对方正视普通留学生的真实处境。",
+        "evidence_refs": [],
+        "name": "辩方律师",
+        "phase": "cross_exam",
+        "round": 1,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2db6d817-d106-4e6e-9f9b-c0aab1d5c10d",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "ab1aae95-c401-46ac-8eb9-6cae5c43ec0c",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 1
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:31Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 1,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:42Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "content": "对方以‘精英少数’否定整体价值，但美国Top30 CS硕士项目本身已属全球前列，课程设置、校企合作资源远非国内普通985可比。E001显示我已获录取及RA奖学金，这并非偶然——计算机领域奖学金机会充足，可大幅降低经济压力。多数留学生在项目中通过实验室轮转、企业实习同样能接触前沿技术。请对方正视：国内读研的‘稳妥’是否意味着放弃更广阔的国际平台？",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "控方律师",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:45Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "content": "E001的RA奖学金看似利好，实则暗藏陷阱：多数RA要求每周20小时以上工作，且与导师绑定，若研究领域不合或导师关系紧张，学业与收入双受损。美国Top30 CS项目学费加生活费年均约60万人民币，奖学金仅覆盖学费，生活仍需家庭支持。国内清华、中科院的RA同样提供津贴，且无语言文化障碍，稳定性更高。请对方证明奖学金能完全覆盖总支出，而非仅学费。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "辩方律师",
+        "phase": "cross_exam",
+        "round": 2,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:45Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.75,
+        "belief_b": 0.25,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:45Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.25,
+        "belief_b": 0.75,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:45Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2db6d817-d106-4e6e-9f9b-c0aab1d5c10d",
+        "agent_type": "investigator",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:45Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "ab1aae95-c401-46ac-8eb9-6cae5c43ec0c",
+        "agent_type": "clerk",
+        "belief_a": 0.5,
+        "belief_b": 0.5,
+        "delta": 0,
+        "round": 2
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:45Z",
+      "type": "round.waiting_for_user",
+      "payload": {
+        "current_round": 2,
+        "max_rounds": 3,
+        "message": "等待确认开始下一轮质证",
+        "next_round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:53Z",
+      "type": "evidence.added",
+      "payload": {
+        "constraint_strength": 0,
+        "content": "国内导师实验室方向与我想做的 AI 安全高度匹配",
+        "created_at": "2026-06-27T08:09:53+08:00",
+        "credibility_score": 0.85,
+        "evidence_id": "E002",
+        "impact_on_option_a": 0.3,
+        "impact_on_option_b": -0.15,
+        "relevance_score": 0.8,
+        "source": "user",
+        "status": "admitted",
+        "submitted_by": "user",
+        "type": "data"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:53Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:53Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:53Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2db6d817-d106-4e6e-9f9b-c0aab1d5c10d",
+        "agent_type": "investigator",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:09:53Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "ab1aae95-c401-46ac-8eb9-6cae5c43ec0c",
+        "agent_type": "clerk",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": null,
+        "round": 2,
+        "trigger": "evidence_added"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:04Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "content": "对方质疑奖学金覆盖不全，但美国Top30 CS硕士RA不仅免学费，还提供每月约2000美元生活津贴，加上TA岗位可额外增收。以E001为例，RA奖学金实际涵盖学费+部分生活费，家庭支持仅需补足剩余开销。反观国内RA津贴普遍每月仅1000-3000元人民币，差距悬殊。请对方承认：留学RA的经济回报远高于国内。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "控方律师",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:06Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "content": "对方声称RA提供每月2000美元生活津贴，但未说明这是税前还是税后，也未说明是否需要支付国际学生额外费用。更重要的是，RA每周20小时工作会严重挤占课程和科研时间，可能导致延期毕业，隐形成本极高。国内RA虽津贴较低，但经济压力小，且可全身心投入研究。请对方提供RA奖学金扣除税费后的净收入数据。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "辩方律师",
+        "phase": "cross_exam",
+        "round": 3,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:06Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:06Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:06Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "2db6d817-d106-4e6e-9f9b-c0aab1d5c10d",
+        "agent_type": "investigator",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:06Z",
+      "type": "belief.updated",
+      "payload": {
+        "agent_id": "ab1aae95-c401-46ac-8eb9-6cae5c43ec0c",
+        "agent_type": "clerk",
+        "belief_a": 0.546,
+        "belief_b": 0.454,
+        "delta": 0.046,
+        "round": 3
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:06Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "closing",
+        "current_round": 0,
+        "message": "进入 closing 阶段",
+        "previous_phase": "cross_exam"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:09Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "70d34c17-e6ce-4096-8779-384b1fdffe22",
+        "agent_type": "prosecutor",
+        "belief_a": 0.796,
+        "belief_b": 0.204,
+        "content": "对方纠结税费细节，但美国RA奖学金通常为税后净额，或通过预扣税表调整，实际净收入仍远超国内。更重要的是，E001的Top30 CS项目毕业生平均起薪超10万美元，3年即可收回全部投入。国内RA津贴低且就业起薪仅约20万人民币，长期差距更大。请对方正视经济账的全局比较。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "控方律师",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_a"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:12Z",
+      "type": "agent.speak",
+      "payload": {
+        "agent_id": "fab60258-4318-48e9-861a-193596d3b265",
+        "agent_type": "defender",
+        "belief_a": 0.296,
+        "belief_b": 0.704,
+        "content": "对方反复强调RA经济回报，却回避关键事实：美国Top30 CS硕士年均总花费约8万美元，RA奖学金通常仅覆盖学费和部分生活费，家庭仍需承担剩余费用。以E001为例，若奖学金仅覆盖学费，家庭需支付每年2-3万美元生活费，对‘部分支持’的家庭仍是沉重负担。而国内RA津贴虽低，但学费全免且生活费低廉，经济压力小。请对方明确RA奖学金是否完全覆盖学费+生活费，并给出具体金额。",
+        "evidence_refs": [
+          "E001"
+        ],
+        "name": "辩方律师",
+        "phase": "closing",
+        "round": 0,
+        "stance": "pro_b"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:12Z",
+      "type": "phase.changed",
+      "payload": {
+        "current_phase": "deliberation",
+        "current_round": 0,
+        "message": "进入 deliberation 阶段",
+        "previous_phase": "closing"
+      }
+    },
+    {
+      "timestamp": "2026-06-27T00:10:19Z",
+      "type": "verdict.ready",
+      "payload": {
+        "option_a_score": 0.55,
+        "option_b_score": 0.45,
+        "summary": "建议根据个人风险承受能力和职业规划选择，出国留学机会与风险并存，国内读研更稳妥。",
+        "verdict_id": "75f13421-035c-4a21-adbc-e2b76c4f81c9"
+      }
+    }
+  ],
+  "asserts_passed": [
+    "final_phase_is_deliberation",
+    "message_counts_correct",
+    "no_duplicate_adjacent_content",
+    "no_self_repetition",
+    "no_fake_evidence_refs",
+    "beliefs_updated_when_evidence_present",
+    "verdict_generated_with_valid_scores",
+    "user_evidences_persisted",
+    "evidence_E001_referenced_by_agent",
+    "no_raw_json_in_messages"
+  ],
+  "asserts_failed": [
+    "evidence E002 was never referenced in cross_exam/closing"
+  ],
+  "started_at": "2026-06-27T08:09:21.590662+08:00",
+  "finished_at": "2026-06-27T08:10:27.18809+08:00",
+  "duration_sec": 65.596273374,
+  "extra": {
+    "test": "TestSubmitEvidenceDuringCrossExam"
+  }
+}
