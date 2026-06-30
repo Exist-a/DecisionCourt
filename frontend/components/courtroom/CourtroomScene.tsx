@@ -692,19 +692,6 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
                     : `进 入 第 ${nextRound} 轮`}
                 </Button>
               )}
-              {/* 调查按钮保留，用于 Agent 搜索功能 */}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const query = prompt("请输入搜索关键词");
-                  if (query) sendAction({ action: "request_search", query });
-                }}
-                className="h-10 rounded-sm border-rule text-inkSoft hover:bg-paper hover:border-inkSoft px-3 font-data tracking-wider text-xs"
-              >
-                <SearchIcon className="w-3.5 h-3.5 mr-1" />
-                调 查
-              </Button>
             </div>
 
             <div className="flex-1 relative">

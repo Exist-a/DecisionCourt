@@ -5,6 +5,7 @@ import (
 
 	"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/agent"
+	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/api"
 	"github.com/decisioncourt/backend/internal/config"
 	"github.com/decisioncourt/backend/internal/courtroom"
@@ -30,14 +31,39 @@ func main() {
 		log.Println("courtroom service will not be available until LLM_API_KEY is set")
 	}
 
+	// Agent Gateway 白盒子集：把所有 LLM 调用过 Recorder，写入
+	// llm_calls 表（model.LLMCall）。即使 LLM 客户端尚未就绪，Recorder
+	// 仍能接到 nil 内层并安全 noop，不阻塞后续装配。
+	recorder := agent_gateway.NewRecorder(agent_gateway.RecorderConfig{
+		Enabled:  llmClient != nil,
+		Provider: config.AppConfig.LLMProvider,
+	}, agent_gateway.NewGORMStore())
+	defaultModel := config.AppConfig.LLMModelV3
+	if defaultModel == "" {
+		defaultModel = "deepseek-chat"
+	}
+	gatewayCfg := agent_gateway.GatewayConfig{
+		Enabled:              config.AppConfig.AgentGateway.Enabled,
+		PromptCompression:    config.AppConfig.AgentGateway.PromptCompression,
+		TokenBudget:          config.AppConfig.AgentGateway.TokenBudget,
+		Throttling:           config.AppConfig.AgentGateway.Throttling,
+		Fallback:             config.AppConfig.AgentGateway.Fallback,
+		FileLogger:           config.AppConfig.AgentGateway.FileLogger,
+		BudgetPerSession:     config.AppConfig.AgentGateway.BudgetPerSession,
+		CompressionThreshold: config.AppConfig.AgentGateway.CompressionThreshold,
+		ThrottlingThreshold:  config.AppConfig.AgentGateway.ThrottlingThreshold,
+		LogDir:               config.AppConfig.AgentGateway.LogDir,
+	}
+	gatewayClient := agent_gateway.NewWithConfig(llmClient, recorder, defaultModel, gatewayCfg)
+
 	hub := api.NewHub()
 	a2aBroadcaster := func(sessionUUID, eventType string, payload map[string]interface{}) {
 		hub.Broadcast(sessionUUID, courtroom.Event{Type: eventType, Payload: payload})
 	}
 	bus := a2a.NewBus(a2a.NewGormRepository(model.DB), a2aBroadcaster)
 	memRepo := private_memory.NewGormRepository(model.DB)
-	orchestrator := agent.NewOrchestrator(llmClient, bus, memRepo)
-	evidenceSvc := evidence.NewService(model.DB, llmClient)
+	orchestrator := agent.NewOrchestrator(gatewayClient, bus, memRepo)
+	evidenceSvc := evidence.NewService(model.DB, gatewayClient)
 	searcher, _ := search.NewProvider(config.AppConfig.SearchProvider, config.AppConfig.BochaAPIKey)
 
 	courtroomSvc := courtroom.NewService(model.DB, orchestrator, evidenceSvc, searcher, bus, hub.Broadcast)

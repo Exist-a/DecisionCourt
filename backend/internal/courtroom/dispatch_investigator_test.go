@@ -2,120 +2,17 @@ package courtroom
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"testing"
 
 	"github.com/decisioncourt/backend/internal/a2a"
-	"github.com/decisioncourt/backend/internal/agent"
-	"github.com/decisioncourt/backend/internal/evidence"
-	"github.com/decisioncourt/backend/internal/investigation"
-	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
-// stubSearcher returns a fixed set of results and records the queries it
-// received so tests can assert that the Investigator was actually invoked.
-type stubSearcher struct {
-	mu      sync.Mutex
-	results []search.Result
-	queries []string
-}
-
-func (s *stubSearcher) Name() string { return "stub" }
-
-func (s *stubSearcher) Search(_ context.Context, q string) ([]search.Result, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.queries = append(s.queries, q)
-	return s.results, nil
-}
-
-func (s *stubSearcher) Queries() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string{}, s.queries...)
-}
-
-// spyEvidenceSvc records every Create call. The point is to assert that
-// DispatchInvestigator NEVER creates Evidence records anymore — findings
-// are written to investigation_findings instead.
-type spyEvidenceSvc struct {
-	*evidence.Service
-	mu     sync.Mutex
-	creates []evidenceCreateCall
-}
-
-type evidenceCreateCall struct {
-	sessionID uuid.UUID
-	content   string
-}
-
-func (s *spyEvidenceSvc) Create(sessionID uuid.UUID, content, evType, source, submittedBy string) (model.Evidence, error) {
-	s.mu.Lock()
-	s.creates = append(s.creates, evidenceCreateCall{sessionID: sessionID, content: content})
-	s.mu.Unlock()
-	return s.Service.Create(sessionID, content, evType, source, submittedBy)
-}
-
-func (s *spyEvidenceSvc) Creates() []evidenceCreateCall {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]evidenceCreateCall{}, s.creates...)
-}
-
-// nopLLM returns empty responses; evidence evaluation will fall back to the
-// keyword-based estimator which keeps the test deterministic.
-type nopLLM struct{}
-
-func (nopLLM) Complete(_ context.Context, _ string, _ []llm.Message, _ llm.CompletionOptions) (string, llm.Usage, error) {
-	return "", llm.Usage{}, fmt.Errorf("noop LLM: not used in dispatch tests")
-}
-
-func (nopLLM) StreamComplete(_ context.Context, _ string, _ []llm.Message, _ llm.CompletionOptions) <-chan llm.StreamChunk {
-	out := make(chan llm.StreamChunk, 1)
-	out <- llm.StreamChunk{Done: true}
-	close(out)
-	return out
-}
-
-// buildDispatchService spins up an isolated Service backed by in-memory
-// repositories. The returned Service uses nil *gorm.DB — tests must avoid
-// any code path that touches DB (zero-result searcher keeps us safe).
-func buildDispatchService(t *testing.T, results []search.Result) (*Service, *spyEvidenceSvc, *a2a.InMemoryRepository, *investigation.InMemoryRepository, *stubSearcher) {
-	t.Helper()
-
-	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
-	bus := a2a.NewBus(a2aRepo, nil)
-
-	innerEvSvc := evidence.NewService(nil, nopLLM{})
-	evSpy := &spyEvidenceSvc{Service: innerEvSvc}
-	searcher := &stubSearcher{results: results}
-	invRepo := investigation.NewInMemoryRepository(nil)
-	invSvc := investigation.NewService(invRepo, bus, searcher)
-
-	orchestrator := agent.NewOrchestrator(nopLLM{}, bus, memRepo)
-
-	svc := &Service{
-		db:               nil,
-		stateMachine:     NewStateMachine(),
-		orchestrator:     orchestrator,
-		evidenceSvc:      evSpy,
-		investigationSvc: invSvc,
-		beliefEngine:     nil,
-		searcher:         searcher,
-		a2aBus:           bus,
-		broadcaster:      func(string, Event) {},
-		activeCalls:      map[string]context.CancelFunc{},
-		sessionLocks:     map[string]*sync.Mutex{},
-	}
-	return svc, evSpy, a2aRepo, invRepo, searcher
-}
+// stubSearcher / spyEvidenceSvc / nopLLM / buildDispatchService / findA2AByType
+// 已迁移到 fakes_test.go 复用，本文件只保留业务断言。
 
 func TestDispatchInvestigator_RejectsInvalidDispatcher(t *testing.T) {
 	svc, _, _, _, _ := buildDispatchService(t, nil)
@@ -234,14 +131,4 @@ func TestDispatchInvestigator_ReturnsFindingAndSummary(t *testing.T) {
 	require.Equal(t, "test", finding.Query)
 	require.Equal(t, 1, finding.ResultCount)
 	require.NotEmpty(t, summary, "summary 必须非空以便 tool 渲染 Observation")
-}
-
-// findA2AByType 辅助：在 A2A 消息列表里找出指定 type 的那一条。
-func findA2AByType(rows []model.A2AMessage, mt a2a.MessageType) *model.A2AMessage {
-	for i := range rows {
-		if rows[i].MessageType == string(mt) {
-			return &rows[i]
-		}
-	}
-	return nil
 }

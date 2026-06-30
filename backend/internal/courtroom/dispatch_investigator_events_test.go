@@ -2,7 +2,6 @@ package courtroom
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 
@@ -12,6 +11,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
+
+// indexOfEvent / containsEventType / findEventByType / failingSearcher / errFake
+// 已迁移到 fakes_test.go 复用，本文件只保留业务断言。
 
 // TestDispatchInvestigator_BroadcastsSearchStartedAndCompleted 是这次 UX
 // 修复的核心测试：前端需要靠 search.started + search.completed 配对事件
@@ -124,36 +126,3 @@ func TestDispatchInvestigator_SearchStartedBeforeSearchCompletedEvenWhenSearcher
 		t.Fatalf("bug: search.completed 没有发出 —— 这就是为什么 dispatch 行的 spinner 永远转")
 	}
 }
-
-func indexOfEvent(events []Event, typ string) int {
-	for i, ev := range events {
-		if ev.Type == typ {
-			return i
-		}
-	}
-	return -1
-}
-
-func containsEventType(events []Event, typ string) bool {
-	return indexOfEvent(events, typ) >= 0
-}
-
-func findEventByType(events []Event, typ string) *Event {
-	for i := range events {
-		if events[i].Type == typ {
-			return &events[i]
-		}
-	}
-	return nil
-}
-
-type failingSearcher struct{ err error }
-
-func (f *failingSearcher) Name() string { return "failing" }
-func (f *failingSearcher) Search(_ context.Context, _ string) ([]search.Result, error) {
-	return nil, f.err
-}
-
-type errFake string
-
-func (e errFake) Error() string { return strings.ReplaceAll(string(e), " ", "_") }

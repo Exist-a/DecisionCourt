@@ -783,20 +783,37 @@ Agent 之间的调用不再通过一个大而全的 `context` 对象直接传递
 
 > 书记员生成判决书时**只能读取公共记录**，不能读取控辩双方的私有记忆，确保判决客观中立。
 
-### 9.4 Agent Gateway（非 MVP，第二阶段）
+### 9.4 Agent Gateway
 
 Agent Gateway 是位于 Agent Orchestration 与 LLM Provider 之间的中间层，专门解决多 Agent 系统中的**成本、效率、可观测性**问题。
 
+> **v0.5+ 范围调整**：白盒子集（统一接入 + 审计落库 + trace 关联）已在 MVP 阶段实装。完整版（Prompt 压缩 / Token 预算 / 限流 / Fallback）已在 v0.5+ 实装，作为可开关的高级能力；模型路由 / 缓存仍留到第二阶段。
+
+#### 9.4.0 v0.5+ 已实装
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| 统一接入（`internal/agent_gateway` 装饰器）| ✅ 已实装 | 所有 `llm.Client` 调用经过 `agent_gateway.NewWithConfig` / `Wrap`，orchestrator / evidence / react_runner 都接入 |
+| 观测与审计（写 `llm_calls` 表）| ✅ 已实装 | 每次调用写一行：model / provider / prompt+completion tokens / latency_ms / status / error_msg |
+| Trace 关联（ctx 注入 session/agent/task）| ✅ 已实装 | `WithTrace` 在每次 `Complete`/`StreamComplete` 前注入；`llm_calls` 可按 session / agent_type 聚合 |
+| Prompt 压缩 | ✅ 已实装 | 预算达到阈值时保留 system + 最近 5 条消息，超长单条截断到 1500 字符；可开关 |
+| Token 预算 | ✅ 已实装 | 按 `session_uuid` 内存维护已用 token；默认 20000/庭审；可开关 |
+| 限流 | ✅ 已实装 | 预算达到阈值时降低 `max_tokens` / temperature；可开关 |
+| Fallback（退避重试）| ✅ 已实装 | 失败 500ms/1s/2s 退避重试 3 次；仅 Complete 生效；可开关 |
+| 文件日志（JSON 追加）| ✅ 已实装 | 输出到 `backend/logs/agent_gateway_YYYY-MM-DD.log`，含压缩/限流/重试/预算快照字段，用于对比实验 |
+| 模型路由 | ⏳ 第二阶段 | 当前 Orchestrator 在关键轮次手工选 R1；自动路由留到下一阶段 |
+| 响应缓存 | ⏳ 第二阶段 | 庭审唯一性场景，缓存价值低 |
+
 #### 9.4.1 核心职责
 
-| 职责 | 说明 |
-|---|---|
-| **模型路由** | 根据任务复杂度选择模型：开场/质证用轻量模型，最终判决/复杂推理用强模型 |
-| **Prompt 压缩** | 对历史上下文进行摘要、去重、截断，减少输入 Token |
-| **Token 预算** | 为每个庭审设定 Token 上限，超预算时触发压缩或降级策略 |
-| **响应缓存** | 缓存相似请求的响应，减少重复调用 |
-| **限流与降级** | API 不稳定时自动切换备用模型或延迟重试 |
-| **调用审计** | 记录每次调用的模型、Token 数、成本、延迟、响应摘要 |
+| 职责 | 说明 | 状态 |
+|---|---|---|
+| **模型路由** | 根据任务复杂度选择模型：开场/质证用轻量模型，最终判决/复杂推理用强模型 | ⏳ 第二阶段 |
+| **Prompt 压缩** | 对历史上下文进行摘要、去重、截断，减少输入 Token | ✅ 已实装 |
+| **Token 预算** | 为每个庭审设定 Token 上限，超预算时触发压缩或降级策略 | ✅ 已实装 |
+| **响应缓存** | 缓存相似请求的响应，减少重复调用 | ⏳ 第二阶段 |
+| **限流与降级** | 超预算时降低 max_tokens / temperature，API 失败时退避重试 | ✅ 已实装 |
+| **调用审计** | 记录每次调用的模型、Token 数、成本、延迟、响应摘要 | ✅ 已实装 |
 
 #### 9.4.2 可量化优化指标
 
@@ -866,7 +883,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 
 ### 10.2 第二阶段（2-3 个月后）
 
-- [ ] **Agent Gateway**：LLM 模型路由、Prompt 压缩、Token 预算与成本追踪、调用审计
+- [x] **Agent Gateway**：统一接入、调用审计、Prompt 压缩、Token 预算与成本追踪、限流、Fallback（退避重试）
 - [ ] 专家证人 Agent
 - [ ] 陪审团多模型投票
 - [ ] 历史庭审记录与再审
@@ -883,7 +900,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | **Agent 编造证据** | 输出不可信 | 强制证据来源字段 / LLM-as-judge 验证 |
 | **WebSearch 引入低质证据** | 污染辩论 | 来源可信度评分、用户可排除证据 |
 | **庭审过程冗长** | 用户体验差 | 用户可选庭审模式 / 智能收敛 / 随时直接判决 |
-| **Token 成本高** | 多轮多 Agent 消耗大 | 简单轮次用小模型，关键轮次用大模型；第二阶段 Agent Gateway 压缩 |
+| **Token 成本高** | 多轮多 Agent 消耗大 | Prompt 压缩、Token 预算、限流（Agent Gateway 已实装，可开关对比） |
 | **用户不知所措** | 不知道提交什么证据 | Agent 主动提问 / 证据模板 / 跳过机制 |
 | **Agent 立场漂移** | 辩论失去对抗性 | 信念引擎 + 强制立场一致性检查 |
 | **Agent 重复发言** | 庭审拖沓 | 新意度检查 + 发言长度限制 |
@@ -916,7 +933,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 - 设计庭审模式选择与智能收敛机制，平衡决策深度与用户体验
 - 实现 Agent 主动提问机制，自动识别信息缺口并引导用户补充关键证据
 - 抽象 WebSearch 提供商接口，开发期使用免费搜索，部署期切换 Tavily 保证质量
-- 设计 Agent Gateway 扩展架构，支持模型路由、Prompt 压缩、Token 预算与可量化成本优化
+- 设计 Agent Gateway 扩展架构，支持模型路由、缓存（v0.5+ 已实装压缩 / 预算 / 限流 / Fallback / 文件日志）
 - 开发交互式观点地图与立场变化曲线，将复杂决策中的证据影响和争议焦点可视化
 - 输出结构化《决策判决书》，包含双方主张、证据链、争议焦点与可执行建议
 ```
@@ -938,7 +955,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | WebSearch | 开发用 SearXNG/DuckDuckGo，部署用 Tavily |
 | 可视化风格 | 极简白底法庭风格 |
 | 部署 | Docker Compose 一键启动 |
-| Agent Gateway（非 MVP）| 模型路由、Prompt 压缩、Token 预算、调用审计 |
+| Agent Gateway（v0.5+） | 统一接入、审计、Prompt 压缩、Token 预算、限流、Fallback |
 
 ---
 
@@ -986,7 +1003,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 
 - ❌ 问题澄清与选项生成
 - ❌ Agent 主动提问
-- ❌ Agent Gateway（第二阶段）
+- ❌ Agent Gateway 完整版中的模型路由 / 响应缓存（留第二阶段）
 - ❌ 专家证人、陪审团、历史庭审、PDF 导出
 
 ### 15.4 当前阻塞

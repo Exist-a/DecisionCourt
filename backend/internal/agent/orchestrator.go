@@ -10,6 +10,7 @@ import (
 
 	"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/agent/tools"
+	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/private_memory"
@@ -159,6 +160,13 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		Timeout:       30 * 1_000_000_000, // 30s; using ns to avoid time import here
 		OnSpeakChunk:  chunkCb,
 		AllowedTools:  nil,
+		// v0.5+: Agent Gateway 白盒子集 — 把 session / agent 注入到
+		// ReActRunner 的 ctx，让每次 think/reflect/speak 调用都能进
+		// llm_calls 表。
+		AgentGatewayTrace: AgentGatewayTrace{
+			SessionUUID: session.SessionUUID,
+			AgentType:   string(self),
+		},
 		// v0.5: wire the private-memory hook so reflect steps carrying a
 		// memory_type + memory_note get persisted as A2A private messages.
 		MemoryHook: o.makeMemoryHook(),
@@ -382,6 +390,24 @@ func (o *Orchestrator) InvestigatorSpeak(
 	return o.speak(ctx, agent, prompt, messages, len(evidences) > 0)
 }
 
+// traceFor 是 v0.5+ 的 Agent Gateway trace 注入点。orchestrator 的每次
+// llmClient.Complete 调用前都用它把 session / agent / task 写到 ctx，
+// 装饰器从 ctx 读出来写 llm_calls 表。如果 ctx 里已经有 trace（外层
+// 比如 ReActRunner 注入过），SessionUUID 继承下来、AgentType/TaskType
+// 以本次调用为准（更内层的调用方权威）。
+func traceFor(ctx context.Context, session model.CourtSession, agentType model.AgentType, taskType string) context.Context {
+	existing := agent_gateway.FromContext(ctx)
+	sid := session.SessionUUID
+	if sid == "" {
+		sid = existing.SessionUUID
+	}
+	return agent_gateway.WithTrace(ctx, agent_gateway.Trace{
+		SessionUUID: sid,
+		AgentType:   string(agentType),
+		TaskType:    taskType,
+	})
+}
+
 func (o *Orchestrator) GenerateVerdict(
 	ctx context.Context,
 	session model.CourtSession,
@@ -395,6 +421,7 @@ func (o *Orchestrator) GenerateVerdict(
 	prompt := ClerkPromptWithJudgeDecision(session, evidences, messages, judgeDecision)
 	log.Printf("[GenerateVerdict] prompt length=%d", len(prompt))
 
+	ctx = traceFor(ctx, session, model.AgentClerk, "verdict")
 	content, _, err := o.llmClient.Complete(ctx, prompt, []llm.Message{}, llm.CompletionOptions{
 		Model:       "",
 		Temperature: 0.3,
@@ -437,6 +464,7 @@ func (o *Orchestrator) ClerkSummary(
 ) (string, error) {
 	prompt := ClerkSummaryPrompt(session, evidences, messages, round)
 
+	ctx = traceFor(ctx, session, model.AgentClerk, "summary")
 	content, _, err := o.llmClient.Complete(ctx, prompt, []llm.Message{}, llm.CompletionOptions{
 		Model:       "",
 		Temperature: 0.3,
@@ -469,6 +497,7 @@ func (o *Orchestrator) JudgeAssess(
 ) (beliefA, beliefB float64, reasoning string, err error) {
 	prompt := JudgePrompt(session, evidences, messages, judge.BeliefA, judge.BeliefB)
 
+	ctx = traceFor(ctx, session, model.AgentJudge, "assess")
 	content, _, err := o.llmClient.Complete(ctx, prompt, []llm.Message{}, llm.CompletionOptions{
 		Model:       "",
 		Temperature: 0.3,
@@ -520,6 +549,7 @@ func (o *Orchestrator) JudgeFinalDecision(
 ) (JudgeDecision, error) {
 	prompt := JudgeFinalPrompt(session, evidences, messages, judge.BeliefA, judge.BeliefB)
 
+	ctx = traceFor(ctx, session, model.AgentJudge, "final")
 	content, _, err := o.llmClient.Complete(ctx, prompt, []llm.Message{}, llm.CompletionOptions{
 		Model:       "",
 		Temperature: 0.2,
@@ -565,7 +595,7 @@ func (o *Orchestrator) speak(
 		})
 	}
 
-	content, _, err := o.llmClient.Complete(ctx, systemPrompt, llmMessages, llm.CompletionOptions{
+	content, _, err := o.llmClient.Complete(traceFor(ctx, model.CourtSession{}, agent.AgentType, "speak"), systemPrompt, llmMessages, llm.CompletionOptions{
 		Model:       "",
 		Temperature: 0.8,
 		MaxTokens:   500,
@@ -579,7 +609,7 @@ func (o *Orchestrator) speak(
 	if err != nil {
 		// Retry once if the output violates evidence rules.
 		retryPrompt := systemPrompt + "\n\n## 重要提醒\n你上一轮输出不合法：" + err.Error() + "。请严格按 JSON 格式重新生成。"
-		retryContent, _, retryErr := o.llmClient.Complete(ctx, retryPrompt, llmMessages, llm.CompletionOptions{
+		retryContent, _, retryErr := o.llmClient.Complete(traceFor(ctx, model.CourtSession{}, agent.AgentType, "speak_retry"), retryPrompt, llmMessages, llm.CompletionOptions{
 			Model:       "",
 			Temperature: 0.7,
 			MaxTokens:   500,
@@ -637,7 +667,7 @@ func (o *Orchestrator) speak(
 	if !isStanceConsistent(agent, output.Stance) {
 		// Retry once with explicit correction hint.
 		retryPrompt := systemPrompt + "\n\n## 重要提醒\n你上一轮输出的 stance 与你当前的信念度不一致。请重新生成，确保 stance 与信念度方向一致。"
-		retryContent, _, retryErr := o.llmClient.Complete(ctx, retryPrompt, llmMessages, llm.CompletionOptions{
+		retryContent, _, retryErr := o.llmClient.Complete(traceFor(ctx, model.CourtSession{}, agent.AgentType, "stance_retry"), retryPrompt, llmMessages, llm.CompletionOptions{
 			Model:       "",
 			Temperature: 0.7,
 			MaxTokens:   500,

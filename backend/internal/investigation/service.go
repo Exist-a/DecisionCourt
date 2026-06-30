@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/model"
@@ -86,7 +85,6 @@ func (s *Service) RecordFinding(
 		Summary:        summary,
 		ResultCount:    len(results),
 		SourceProvider: s.searcher.Name(),
-		CreatedAt:      time.Now().UTC(),
 		RawResult:      resultsToStrings(results),
 	}
 

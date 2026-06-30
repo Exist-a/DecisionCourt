@@ -46,12 +46,13 @@
 └──────────────────────────┬──────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
-│              Agent Gateway（第二阶段）                       │
-│  - 模型路由与选择                                           │
-│  - Prompt 压缩与上下文管理                                  │
-│  - Token 预算与成本追踪                                     │
-│  - 响应缓存与限流                                           │
-│  - 调用审计                                                 │
+│              Agent Gateway（v0.5+ 已实装）                   │
+│  - 统一接入 + 调用审计（llm_calls 表）                       │
+│  - Prompt 压缩（可开关）                                     │
+│  - Token 预算（可开关）                                      │
+│  - 限流与降级（可开关）                                      │
+│  - Fallback 退避重试（可开关）                                │
+│  - JSON 文件日志（按日期切分）                                │
 └──────────────────────────┬──────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
@@ -71,7 +72,7 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**说明**：Agent Gateway 是第二阶段扩展组件，位于 Agent Orchestration 与 LLM Provider 之间。MVP 阶段 Agent Orchestration 直接调用 LLM；第二阶段引入 Gateway，实现可量化的 Token 成本优化和模型路由策略。
+**说明**：Agent Gateway 位于 Agent Orchestration 与 LLM Provider 之间。v0.5+ 已实装白盒子集（统一接入、审计、trace 关联）与高级能力（Prompt 压缩、Token 预算、限流、Fallback 退避重试、JSON 文件日志），均可通过环境变量开关。模型路由与响应缓存仍留到第二阶段。
 
 ---
 
@@ -479,20 +480,29 @@ Prosecutor/Defender   courtroom.Service   a2a.Bus          investigation.Service
 
 代码层面通过 `llm.Client` 接口抽象，切换模型只需改配置。
 
-### 6.4 Agent Gateway 设计（第二阶段）
+### 6.4 Agent Gateway 设计
+
+> **v0.5+ 状态**：白盒子集（统一接入 + 审计 + trace 关联）与高级能力（Prompt 压缩 / Token 预算 / 限流 / Fallback / 文件日志）均已实装，模块位于 `backend/internal/agent_gateway/`，由 `agent_gateway.NewWithConfig(llmClient, recorder, model, cfg)` 装饰。模型路由 / 响应缓存仍留到第二阶段。
+>
+> 装饰链：`llm.NewClient() → agent_gateway.NewWithConfig(...) → agent.NewOrchestrator / evidence.NewService / agent.NewReActRunner`。
+>
+> ctx 注入点：orchestrator 的 `traceFor` 函数 + react_runner 的 `AgentGatewayTrace` RunnerConfig 字段。
+>
+> 环境变量开关：`AGENT_GATEWAY_ENABLED` 总开关，为 true 时默认开启所有子能力；`AGENT_GATEWAY_PROMPT_COMPRESSION` / `TOKEN_BUDGET` / `THROTTLING` / `FALLBACK` / `FILE_LOGGER` 可单独关闭；关闭所有开关时只保留审计落库（白盒子集行为）。
 
 Agent Gateway 是位于 Agent Orchestration 与 LLM Provider 之间的中间层，专门解决多 Agent 系统中的**成本、效率、可观测性**问题。
 
 #### 6.4.1 核心职责
 
-| 职责 | 说明 |
-|---|---|
-| **模型路由** | 根据任务复杂度选择模型：开场/质证用轻量模型，最终判决/复杂推理用强模型 |
-| **Prompt 压缩** | 对历史上下文进行摘要、去重、截断，减少输入 Token |
-| **Token 预算** | 为每个庭审设定 Token 上限，超预算时触发压缩或降级策略 |
-| **响应缓存** | 缓存相似请求的响应，减少重复调用 |
-| **限流与降级** | API 不稳定时自动切换备用模型或延迟重试 |
-| **调用审计** | 记录每次调用的模型、Token 数、成本、延迟、响应摘要 |
+| 职责 | 说明 | 状态 |
+|---|---|---|
+| **模型路由** | 根据任务复杂度选择模型：开场/质证用轻量模型，最终判决/复杂推理用强模型 | ⏳ 第二阶段 |
+| **Prompt 压缩** | 预算达到阈值时，保留 system + 最近 5 条消息；超长单条截断到 1500 字符；开关控制 | ✅ 已实装 |
+| **Token 预算** | 按 `session_uuid` 维护内存已用 token；默认 20000/庭审；开关控制 | ✅ 已实装 |
+| **响应缓存** | 缓存相似请求的响应，减少重复调用 | ⏳ 第二阶段 |
+| **限流与降级** | 超预算时降低 `max_tokens` / `temperature`；API 失败时 500ms/1s/2s 退避重试 3 次 | ✅ 已实装 |
+| **调用审计** | 写 `llm_calls` 表：model / provider / token / latency / status / error / trace | ✅ 已实装 |
+| **文件日志** | `backend/logs/agent_gateway_YYYY-MM-DD.log`，JSON 每行，含压缩/限流/重试/预算字段，用于对比实验 | ✅ 已实装 |
 
 #### 6.4.2 可量化优化指标
 
@@ -768,13 +778,61 @@ JWT_SECRET=xxx
 
 ---
 
-## 11. 风险与备选方案
+## 11. 测试架构与运行规范
+
+### 11.1 测试分层
+
+| 层 | 文件后缀 | build tag | 依赖 | 运行命令 |
+|---|---|---|---|---|
+| 单元测试 | `*_test.go` | （无） | in-memory fake / interface stub | `go test ./...` |
+| 集成测试 | `*_integration_test.go` | `//go:build integration` | 真实 PostgreSQL + 真实 LLM API key（来自 .env） | `go test -tags integration ./...` |
+| 前端测试 | （暂未配置） | — | — | — |
+
+集成测试默认在 `internal/courtroom/` 包内，模拟完整庭审流程（opening → cross_exam → closing → deliberation），每个场景会把状态 JSON 写到 `backend/test-output/<scenario>-<sessionUUID>.json` 供复盘。
+
+### 11.2 测试文件组织约定（courtroom 包参考）
+
+| 类型 | 文件命名 | 内容 |
+|---|---|---|
+| 单元测试 | `service_*_test.go` / `dispatch_*_test.go` | 业务断言，使用 `fakes_test.go` 中的 fake |
+| 共享 fake | `fakes_test.go` | `stubSearcher` / `streamingLLM` / `reactScriptedLLM` / `buildDispatchService` / `buildStreamingSpeakService` 等可复用 fixture |
+| 集成公共 | `integration_helpers_test.go` | `testFixture` / `testState` / 公共断言 helpers |
+| 集成场景 | `integration_full_flow_test.go` / `integration_evidence_test.go` / `integration_round_test.go` | 单个端到端场景，每个对应一种 JSON 产物前缀 |
+
+> **原则**：不要在多个测试文件里重复实现 fake。新建场景前先检查 `fakes_test.go` 是否已经有可复用 fixture。
+
+### 11.3 新增测试 checklist
+
+1. **优先单测**：能用 fake 验证的，不要上升到集成测试。
+2. **集成测试场景**：放 `integration_*_test.go` 后缀，遵守 AGENTS.md §3.2。
+3. **Fake 复用**：放到 `fakes_test.go`，避免散落到具体业务测试文件。
+4. **测试输出**：写到 `backend/test-output/`，该目录已在 `.gitignore`。
+
+### 11.4 运行命令速查
+
+```bash
+# 单元测试（CI 友好，无需 PG / LLM）
+go test ./...
+
+# 单元 + 集成（在 docker 启动 PG 之后）
+go test -tags integration ./...
+
+# 集成子集（例如只跑"中途提交证据"那个 case）
+go test -tags integration -run TestSubmitEvidence ./internal/courtroom/
+
+# 跳过集成
+go test -short ./...
+```
+
+---
+
+## 12. 风险与备选方案
 
 | 风险 | 影响 | 备选方案 |
 |---|---|---|
 | DeepSeek API 不稳定 | 庭审中断 | 快速切换到 Qwen / GLM-4 |
 | SearXNG 搜索结果差 | 证据质量低 | 开发期也接 Tavily 免费层 |
-| Agent 输出过长 | Token 成本高、前端渲染慢 | 限制输出长度，关键轮次才用 R1；第二阶段用 Agent Gateway 压缩 |
+| Agent 输出过长 | Token 成本高、前端渲染慢 | 限制输出长度，关键轮次才用 R1；Agent Gateway Prompt 压缩 / Token 预算 / 限流已实装，可开关对比 |
 | Agent 互相附和或叛变 | 辩论失去对抗性 | A2A 上下文隔离 + 私有记忆池 + 信念引擎 + 立场一致性检查 |
 | 私有记忆越权泄露 | 策略污染、信息博弈 | Orchestrator 访问控制 + 审计日志 + 单元测试 |
 | WebSocket 连接数多 | 服务器压力大 | MVP 限单会话，后期加连接池 |
@@ -782,7 +840,7 @@ JWT_SECRET=xxx
 
 ---
 
-## 12. 已确认的技术选型总结
+## 13. 已确认的技术选型总结
 
 | 层级 | 最终选择 |
 |---|---|
@@ -799,7 +857,7 @@ JWT_SECRET=xxx
 | 记忆模型 | 公共证据板 + 按 Agent 隔离的私有记忆池 |
 | LLM | DeepSeek-V3（默认）+ DeepSeek-R1（关键轮次）|
 | LLM SDK | go-openai（兼容 OpenAI 格式）|
-| Agent Gateway（第二阶段）| 模型路由、Prompt 压缩、Token 预算、调用审计 |
+| Agent Gateway（v0.5+） | 统一接入、审计、Prompt 压缩、Token 预算、限流、Fallback、文件日志 |
 | 搜索（开发）| SearXNG Docker |
 | 搜索（部署）| Tavily API |
 | 部署 | Docker Compose |
@@ -807,16 +865,16 @@ JWT_SECRET=xxx
 
 ---
 
-## 13. 当前状态与下一步
+## 14. 当前状态与下一步
 
-### 13.1 已落地到文档的架构
+### 14.1 已落地到文档的架构
 
 - ✅ A2A 消息总线：消息结构、路由职责、上下文隔离规则。
 - ✅ 私有记忆池：数据表设计、按 Agent 隔离的访问控制、注入逻辑。
 - ✅ 后端目录结构：新增 `internal/a2a` 与 `internal/private_memory` 模块。
 - ✅ 风险与缓解：Agent 附和/叛变、私有记忆泄露的应对方案。
 
-### 13.2 代码现状（截至 2026-06-29）
+### 14.2 代码现状（截至 2026-06-29）
 
 | 设计点 | 状态 | 代码位置 |
 |---|---|---|
@@ -839,9 +897,9 @@ JWT_SECRET=xxx
 | **v0.5+ AgentAvatar 思考脉冲动画** | ✅ 已实装 | `globals.css` `@keyframes ring-think-pulse` 1.6s 呼吸；`.thinking-prosecutor` 绛红 / `.thinking-defender` 深青 |
 | **v0.5+ 前端 envelope 字段名修正** | ✅ 已实装 | `courtroomStore.ts` 读 `p.from`（后端字段名），加 `mapFromToAgentType()` 归一化函数处理 agent UUID 残留 |
 
-### 13.3 后续可改进（不在 MVP 范围）
+### 14.3 后续可改进（不在 MVP 范围）
 
-1. **Agent Gateway 第二阶段**：模型路由、Prompt 压缩、Token 预算与成本追踪、调用审计
+1. **Agent Gateway 第二阶段**：模型路由、响应缓存（v0.5+ 已实装统一接入 / 审计 / Prompt 压缩 / Token 预算 / 限流 / Fallback / 文件日志）
 2. **智能收敛**：连续两轮信念度变化 < 5% 提前进入 closing
 3. **信念引擎动态更新**：当前初始化 + snapshot 已做，未基于证据实时更新
 4. **Bocha 结果引用图谱**：在 InvestigatorPanel 里把搜索结果按相关性排序

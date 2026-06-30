@@ -2,99 +2,16 @@ package courtroom
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/decisioncourt/backend/internal/a2a"
-	"github.com/decisioncourt/backend/internal/agent"
-	"github.com/decisioncourt/backend/internal/evidence"
-	"github.com/decisioncourt/backend/internal/investigation"
-	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
-// streamingLLM 是 courtroom 测试用的"流式 LLM"fake：第一次 Complete
-// 返回决策 JSON，第二次 StreamComplete 按 chunks 顺序发射字符串片段。
-//
-// 这是 courtroom 包内 fixture —— 之所以不在 agent 包复用，是因为 courtroom
-// 测试需要的是「真实 courtroom.Service 接通 + ws broadcast 路径」的端到端
-// 验证，跟 agent 单测的颗粒度不同。
-type streamingLLM struct {
-	decisionJSON string
-	streamChunks []string
-
-	mu              sync.Mutex
-	completeCalls   int
-	streamCalls     int
-	streamedContent string
-}
-
-func (s *streamingLLM) Complete(_ context.Context, _ string, _ []llm.Message, _ llm.CompletionOptions) (string, llm.Usage, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.completeCalls++
-	return s.decisionJSON, llm.Usage{}, nil
-}
-
-func (s *streamingLLM) StreamComplete(_ context.Context, _ string, _ []llm.Message, _ llm.CompletionOptions) <-chan llm.StreamChunk {
-	s.mu.Lock()
-	chunks := append([]string{}, s.streamChunks...)
-	s.streamCalls++
-	s.mu.Unlock()
-
-	out := make(chan llm.StreamChunk, len(chunks)+1)
-	go func() {
-		defer close(out)
-		var collected strings.Builder
-		for _, c := range chunks {
-			collected.WriteString(c)
-			out <- llm.StreamChunk{Content: c}
-			time.Sleep(2 * time.Millisecond)
-		}
-		s.mu.Lock()
-		s.streamedContent = collected.String()
-		s.mu.Unlock()
-		out <- llm.StreamChunk{Done: true}
-	}()
-	return out
-}
-
-// buildStreamingSpeakService 仿照 buildDispatchService，但用 streamingLLM
-// 替换默认 LLM client，便于端到端验证 speakWithReAct 的 chunk 广播路径。
-func buildStreamingSpeakService(t *testing.T, chunks []string) *Service {
-	t.Helper()
-	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
-	bus := a2a.NewBus(a2aRepo, nil)
-	evSvc := evidence.NewService(nil, nopLLM{})
-
-	decision := `{"action":"speak","reasoning":"控方主张 A 长期收益更稳健","content":"","stance":"pro_a","confidence":0.85,"evidence_refs":[]}`
-	llmClient := &streamingLLM{decisionJSON: decision, streamChunks: chunks}
-	orch := agent.NewOrchestrator(llmClient, bus, memRepo)
-
-	invRepo := investigation.NewInMemoryRepository(nil)
-	invSvc := investigation.NewService(invRepo, bus, &stubSearcher{})
-
-	svc := &Service{
-		db:               nil,
-		stateMachine:     NewStateMachine(),
-		orchestrator:     orch,
-		evidenceSvc:      evSvc,
-		investigationSvc: invSvc,
-		beliefEngine:     nil,
-		searcher:         &stubSearcher{},
-		a2aBus:           bus,
-		broadcaster:      func(string, Event) {},
-		activeCalls:      map[string]context.CancelFunc{},
-		sessionLocks:     map[string]*sync.Mutex{},
-	}
-	return svc
-}
+// streamingLLM / buildStreamingSpeakService / nopLLM / stubSearcher
+// 已迁移到 fakes_test.go 复用，本文件只保留业务断言。
 
 // TestServiceSpeakWithReAct_BroadcastsSpeakChunkEvents 是这次流式 UX
 // 改造的端到端测试：律师最终发言时，后端应当把 LLM 的逐个 chunk 转发到
@@ -167,12 +84,4 @@ func TestServiceSpeakWithReAct_BroadcastsSpeakChunkEvents(t *testing.T) {
 			"accumulated 必须单调递增；records[%d]=%q 不长于 prev=%q", i, r.Accumulated, prev)
 		prev = r.Accumulated
 	}
-}
-
-// agentSpeakChunkRecord 是测试用的 chunk 广播记录。
-type agentSpeakChunkRecord struct {
-	Chunk       string
-	Accumulated string
-	AgentID     string
-	AgentType   string
 }

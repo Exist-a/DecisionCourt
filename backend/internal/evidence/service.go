@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/google/uuid"
@@ -107,7 +108,10 @@ func (s *Service) evaluateEvidence(
   "constraint_strength": 0.0  // 范围 [0, 1]，如果是约束条件，语气越强硬值越高；其他类型填 0
 }`, defaultString(context, "无"), optionA, optionB, content, evType)
 
-	resp, _, err := s.llmClient.Complete(nil, prompt, []llm.Message{}, llm.CompletionOptions{
+	resp, _, err := s.llmClient.Complete(agent_gateway.WithTrace(nil, agent_gateway.Trace{
+		AgentType: string(model.AgentClerk),
+		TaskType:  "evidence_eval",
+	}), prompt, []llm.Message{}, llm.CompletionOptions{
 		Model:       "",
 		Temperature: 0.2,
 		MaxTokens:   300,

@@ -31,6 +31,7 @@
 | 智能收敛 | ⏳ | 当前按固定轮数结束，未实现提前收敛 |
 | 真实后端联调 | ⏳ | PostgreSQL 在跑，依赖真实 LLM API key |
 | Docker 验证 | ❌ | Docker 未安装，无法一键启动 |
+| Agent Gateway | ✅ v0.5+ 已实装 | 白盒子集：统一接入 / 审计 / trace；高级能力：Prompt 压缩 / Token 预算 / 限流 / Fallback / JSON 文件日志；模型路由 / 响应缓存留第二阶段 |
 
 **当前阻塞**：
 
@@ -169,7 +170,7 @@ WebSearch + 判决书生成
 | LLM 输出不稳定 | 多次 prompt 调优 + 输出校验 |
 | DeepSeek API 不稳定 | 保留 Qwen / GLM-4 / OpenAI 切换能力 |
 | Agent 互相附和或叛变 | A2A 上下文隔离 + 私有记忆池 + 信念引擎 + 立场一致性检查 |
-| Token 成本超预算 | 快速模式限制轮次和输出长度；第二阶段 Agent Gateway 压缩 |
+| Token 成本超预算 | Agent Gateway Prompt 压缩 / Token 预算 / 限流 已实装，可开关对比；同时保留快速模式限制轮次和输出长度 |
 | Docker 环境复杂 | 提供详细 README 和一键脚本 |
 | 信念引擎动态更新不准确 | 先用简单线性更新，后续根据测试结果调参 |
 

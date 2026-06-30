@@ -8,6 +8,19 @@ import (
 	"github.com/spf13/viper"
 )
 
+type AgentGatewayConfig struct {
+	Enabled              bool    `mapstructure:"AGENT_GATEWAY_ENABLED"`
+	PromptCompression    bool    `mapstructure:"AGENT_GATEWAY_PROMPT_COMPRESSION"`
+	TokenBudget          bool    `mapstructure:"AGENT_GATEWAY_TOKEN_BUDGET"`
+	Throttling           bool    `mapstructure:"AGENT_GATEWAY_THROTTLING"`
+	Fallback             bool    `mapstructure:"AGENT_GATEWAY_FALLBACK"`
+	FileLogger           bool    `mapstructure:"AGENT_GATEWAY_FILE_LOGGER"`
+	BudgetPerSession     int     `mapstructure:"AGENT_GATEWAY_BUDGET_PER_SESSION"`
+	CompressionThreshold float64 `mapstructure:"AGENT_GATEWAY_COMPRESSION_THRESHOLD"`
+	ThrottlingThreshold  float64 `mapstructure:"AGENT_GATEWAY_THROTTLING_THRESHOLD"`
+	LogDir               string  `mapstructure:"AGENT_GATEWAY_LOG_DIR"`
+}
+
 type Config struct {
 	Port        string `mapstructure:"PORT"`
 	DatabaseURL string `mapstructure:"DATABASE_URL"`
@@ -25,6 +38,8 @@ type Config struct {
 	BochaAPIKey    string `mapstructure:"BOCHA_API_KEY"`
 
 	JWTSecret string `mapstructure:"JWT_SECRET"`
+
+	AgentGateway AgentGatewayConfig `mapstructure:",squash"`
 }
 
 var AppConfig Config
@@ -53,6 +68,17 @@ func Load() {
 	viper.SetDefault("TAVILY_API_KEY", "")
 	viper.SetDefault("BOCHA_API_KEY", "")
 	viper.SetDefault("JWT_SECRET", "decisioncourt-secret")
+
+	viper.SetDefault("AGENT_GATEWAY_ENABLED", false)
+	viper.SetDefault("AGENT_GATEWAY_PROMPT_COMPRESSION", false)
+	viper.SetDefault("AGENT_GATEWAY_TOKEN_BUDGET", false)
+	viper.SetDefault("AGENT_GATEWAY_THROTTLING", false)
+	viper.SetDefault("AGENT_GATEWAY_FALLBACK", false)
+	viper.SetDefault("AGENT_GATEWAY_FILE_LOGGER", false)
+	viper.SetDefault("AGENT_GATEWAY_BUDGET_PER_SESSION", 20000)
+	viper.SetDefault("AGENT_GATEWAY_COMPRESSION_THRESHOLD", 0.7)
+	viper.SetDefault("AGENT_GATEWAY_THROTTLING_THRESHOLD", 0.8)
+	viper.SetDefault("AGENT_GATEWAY_LOG_DIR", "logs")
 
 	viper.SetEnvPrefix("")
 	viper.AutomaticEnv()

@@ -65,10 +65,6 @@ func (sm *StateMachine) ValidateAction(phase model.CourtPhase, action string) er
 	case "skip_agent":
 		// always allowed
 		return nil
-	case "request_search":
-		if phase != model.PhaseEvidence && phase != model.PhaseCrossExam && phase != model.PhaseOpening {
-			return fmt.Errorf("can only search during evidence, opening or cross_exam phase")
-		}
 	case "dispatch_investigator":
 		// Same rules as request_search: a side can only dispatch while the
 		// trial is still active (not closing/deliberation/verdict).

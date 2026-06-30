@@ -156,7 +156,6 @@ export interface UserActionRequest {
   action:
     | "direct_verdict"
     | "skip_agent"
-    | "request_search"
     | "answer_question"
     | "pause"
     | "resume"

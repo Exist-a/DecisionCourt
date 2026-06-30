@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
 )
@@ -54,12 +55,46 @@ type StepHook func(step Step)
 // skipped and the JSON-mode decision's content field is used as-is.
 type SpeakChunkCallback func(chunk, accumulated string)
 
+// AgentGatewayTrace carries session / agent / task metadata for the
+// Agent Gateway recorder (v0.5+). Zero value is treated as disabled and
+// the runner falls back to inheriting trace from ctx.
+type AgentGatewayTrace struct {
+	SessionUUID string
+	AgentType   string
+	TaskType    string
+}
+
+// injectGatewayTrace 在每次 LLM 调用前对 ctx 注入 trace。taskType 由
+// 调用方按当前 ReAct 阶段传入（think / reflect / speak / speak_stream）。
+func (r *ReActRunner) injectGatewayTrace(ctx context.Context, taskType string) context.Context {
+	if r.cfg.AgentGatewayTrace.SessionUUID == "" &&
+		r.cfg.AgentGatewayTrace.AgentType == "" &&
+		r.cfg.AgentGatewayTrace.TaskType == "" {
+		return ctx
+	}
+	existing := agent_gateway.FromContext(ctx)
+	sid := r.cfg.AgentGatewayTrace.SessionUUID
+	if sid == "" {
+		sid = existing.SessionUUID
+	}
+	return agent_gateway.WithTrace(ctx, agent_gateway.Trace{
+		SessionUUID: sid,
+		AgentType:   r.cfg.AgentGatewayTrace.AgentType,
+		TaskType:    taskType,
+	})
+}
+
 // RunnerConfig tunes the ReAct loop. Zero values fall back to the
 // recommended defaults (max 4 iterations, max 3 reflects, 30s timeout).
 type RunnerConfig struct {
 	MaxIterations int
 	MaxReflects   int
 	Timeout       time.Duration
+	// AgentGatewayTrace (v0.5+), if non-zero, makes the runner inject
+	// session / agent / task into ctx before every LLM call. This wires
+	// ReActRunner to the Agent Gateway recorder so its 20+ steps per
+	// speaker show up in llm_calls with correct trace fields.
+	AgentGatewayTrace AgentGatewayTrace
 	// AllowedTools, if non-empty, restricts the runner to invoking only
 	// tools whose Name() appears in the list. This is defense-in-depth: the
 	// runner itself rejects unknown tools anyway.
@@ -176,7 +211,7 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 		}
 
 		stepStart := time.Now()
-		content, _, err := r.llm.Complete(ctx, r.systemBase, messages, llm.CompletionOptions{
+		content, _, err := r.llm.Complete(r.injectGatewayTrace(ctx, "react_think"), r.systemBase, messages, llm.CompletionOptions{
 			Model:       "",
 			Temperature: 0.7,
 			MaxTokens:   500,
@@ -198,7 +233,7 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 				),
 			}
 			retryMsgs := append(append([]llm.Message{}, messages...), hint)
-			retryContent, _, retryErr := r.llm.Complete(ctx, r.systemBase, retryMsgs, llm.CompletionOptions{
+			retryContent, _, retryErr := r.llm.Complete(r.injectGatewayTrace(ctx, "react_think_retry"), r.systemBase, retryMsgs, llm.CompletionOptions{
 				Model:       "",
 				Temperature: 0.5,
 				MaxTokens:   500,
@@ -340,7 +375,7 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 					),
 				}
 				retryMsgs := append(append([]llm.Message{}, messages...), hint)
-				retryContent, _, retryErr := r.llm.Complete(ctx, r.systemBase, retryMsgs, llm.CompletionOptions{
+				retryContent, _, retryErr := r.llm.Complete(r.injectGatewayTrace(ctx, "react_reflect_retry"), r.systemBase, retryMsgs, llm.CompletionOptions{
 					Model:       "",
 					Temperature: 0.5,
 					MaxTokens:   500,
@@ -430,7 +465,7 @@ func (r *ReActRunner) streamSpeakContent(
 	streamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	ch := r.llm.StreamComplete(streamCtx, streamSys, msgs, llm.CompletionOptions{
+	ch := r.llm.StreamComplete(r.injectGatewayTrace(streamCtx, "react_speak_stream"), streamSys, msgs, llm.CompletionOptions{
 		JSONMode:    true,
 		Temperature: 0.5,
 		MaxTokens:   1000,

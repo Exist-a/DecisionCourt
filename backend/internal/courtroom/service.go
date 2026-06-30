@@ -393,9 +393,6 @@ func (s *Service) ProcessUserAction(
 			}
 		}(session)
 		return nil
-	case "request_search":
-		query, _ := payload["query"].(string)
-		return s.runSearch(ctx, session, query)
 	case "dispatch_investigator":
 		dispatcher, _ := payload["dispatcher"].(string)
 		query, _ := payload["query"].(string)
@@ -648,6 +645,9 @@ func (s *Service) runCrossExamRound(ctx context.Context, session model.CourtSess
 			return err
 		}
 		s.broadcastAgentSpeak(session.SessionUUID, *prosecutor, model.PhaseCrossExam, session.CurrentRound, speaker)
+		// v0.5+: 发言后按 stance / confidence 微调控方信念，避免
+		// isConverged 仅因 delta=0 而误判提前结束。
+		s.applySpeakToBelief(session.ID, *prosecutor, speaker)
 	}
 
 	// Reload messages
@@ -667,9 +667,20 @@ func (s *Service) runCrossExamRound(ctx context.Context, session model.CourtSess
 			return err
 		}
 		s.broadcastAgentSpeak(session.SessionUUID, *defender, model.PhaseCrossExam, session.CurrentRound, speaker)
+		// v0.5+: 发言后按 stance / confidence 微调辩护方信念，避免
+		// isConverged 仅因 delta=0 而误判提前结束。
+		s.applySpeakToBelief(session.ID, *defender, speaker)
 	}
 
 	s.clearCancel(session.SessionUUID)
+
+	// v0.5+: 发言后调用 applySpeakToBelief 已直接更新了 DB；这里需要
+	// 重新拉取最新的 agents，让 recordBeliefSnapshots 用发言后的新
+	// belief 计算 delta 并写 BeliefSnapshot（避免 delta 误判为 0）。
+	agents, _, _, err = s.loadSessionData(session.ID)
+	if err != nil {
+		return err
+	}
 
 	// Update belief snapshots
 	if err := s.recordBeliefSnapshots(session, agents); err != nil {
@@ -755,51 +766,6 @@ func (s *Service) runCrossExamRound(ctx context.Context, session model.CourtSess
 			"next_round":    nextRound,
 			"max_rounds":    session.MaxRounds,
 			"message":       "等待确认开始下一轮质证",
-		},
-	})
-
-	return nil
-}
-
-func (s *Service) runSearch(ctx context.Context, session model.CourtSession, query string) error {
-	s.broadcastEvent(session.SessionUUID, Event{
-		Type: "search.started",
-		Payload: map[string]interface{}{
-			"agent_id": "investigator",
-			"query":    query,
-		},
-	})
-
-	results, err := s.searcher.Search(ctx, query)
-	if err != nil {
-		return err
-	}
-
-	evidenceIDs := []string{}
-	createdEvidences := []model.Evidence{}
-	for _, r := range results {
-		ev, err := s.evidenceSvc.Create(session.ID, r.Content, "data", "web_search", "investigator")
-		if err != nil {
-			return err
-		}
-		evidenceIDs = append(evidenceIDs, ev.EvidenceID)
-		createdEvidences = append(createdEvidences, ev)
-	}
-
-	// Update agent beliefs for each created evidence.
-	for _, ev := range createdEvidences {
-		if err := s.updateBeliefsAndBroadcast(session, ev); err != nil {
-			return err
-		}
-	}
-
-	s.broadcastEvent(session.SessionUUID, Event{
-		Type: "search.completed",
-		Payload: map[string]interface{}{
-			"agent_id":      "investigator",
-			"query":         query,
-			"result_count":  len(results),
-			"evidence_ids":  evidenceIDs,
 		},
 	})
 
@@ -1142,6 +1108,89 @@ func (s *Service) transitionPhase(session *model.CourtSession, phase model.Court
 	})
 
 	return nil
+}
+
+// applySpeakToBelief 在每次控辩发言后按 stance / confidence 微调 agent
+// 自身信念，避免 isConverged 仅因 delta=0 而误判提前结束。
+//
+// 设计要点（v0.5+）：
+//   - 只对 prosecutor / defender 生效；judge 由 JudgeAssess 单独更新；
+//     investigator / clerk 不持有立场，跳过。
+//   - stance=pro_a → 强化 belief_a；stance=pro_b → 强化 belief_b；
+//     stance=challenge / neutral → 不更新（中立发言不改变立场）。
+//   - confidence ∈ [0, 1] 控制幅度：baseStep=0.05，幅度 = baseStep * confidence。
+//   - belief_a + belief_b 不强制归一为 1.0；保持 belief_a 单调变化，
+//     belief_b = 1 - belief_a 与 belief engine 现有实现保持一致。
+//   - 失败不回传：信念更新是 best-effort，写库失败时记 log 但不中断
+//     庭审流程（已通过 saveAgentMessage 持久化发言）。
+func (s *Service) applySpeakToBelief(sessionID uuid.UUID, ag model.Agent, speaker agent.Speaker) {
+	if ag.AgentType != model.AgentProsecutor && ag.AgentType != model.AgentDefender {
+		return
+	}
+	var direction float64 // +1 强化 belief_a；-1 强化 belief_b
+	switch speaker.Stance {
+	case "pro_a":
+		direction = +1
+	case "pro_b":
+		direction = -1
+	default:
+		// challenge / neutral / 空：不更新。
+		return
+	}
+	conf := speaker.Confidence
+	if conf < 0 {
+		conf = 0
+	}
+	if conf > 1 {
+		conf = 1
+	}
+	const baseStep = 0.05
+	delta := baseStep * conf * direction
+
+	newA := ag.BeliefA + delta
+	if newA < 0.05 {
+		newA = 0.05
+	}
+	if newA > 0.95 {
+		newA = 0.95
+	}
+	newB := 1 - newA
+	newA = math.Round(newA*1000) / 1000
+	newB = math.Round(newB*1000) / 1000
+
+	if err := s.db.Model(&ag).Updates(map[string]interface{}{
+		"belief_a": newA,
+		"belief_b": newB,
+	}).Error; err != nil {
+		log.Printf("[applySpeakToBelief] update agent %s belief failed: %v", ag.AgentType, err)
+		return
+	}
+
+	// 同步给前端的 store；不写 BeliefSnapshot，runCrossExamRound 后续
+	// 的 recordBeliefSnapshots 会基于最新 agents 切片生成快照并广播。
+	s.broadcastEvent(s.lookupSessionUUIDByID(sessionID), Event{
+		Type: "belief.updated",
+		Payload: map[string]interface{}{
+			"agent_id":   ag.AgentUUID,
+			"agent_type": ag.AgentType,
+			"round":      0, // 前端 store.belief.updated 不依赖 round 字段
+			"belief_a":   newA,
+			"belief_b":   newB,
+			"delta":      newA - ag.BeliefA,
+		},
+	})
+}
+
+// lookupSessionUUIDByID 是 applySpeakToBelief 的辅助：根据 session 的
+// 主键 ID 查出公开的 session_uuid（用于 broadcast event 的房间 key）。
+// service 通常已经在内存中有 session，但本函数只接收 ID，因此做一次
+// 轻量查询；如失败则返回空串，broadcast 走 fallback。
+func (s *Service) lookupSessionUUIDByID(sessionID uuid.UUID) string {
+	var session model.CourtSession
+	if err := s.db.Select("session_uuid").Where("id = ?", sessionID).First(&session).Error; err != nil {
+		return ""
+	}
+	return session.SessionUUID
 }
 
 func (s *Service) saveAgentMessage(

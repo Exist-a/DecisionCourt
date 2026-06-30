@@ -1,12 +1,9 @@
-//go:build integration
-
 package courtroom
 
 import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/agent"
@@ -14,14 +11,12 @@ import (
 	"github.com/decisioncourt/backend/internal/evidence"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/private_memory"
-	"github.com/decisioncourt/backend/internal/search"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
-// reactScriptedLLM / speakJSON / toolJSON live in
-// service_react_helpers_test.go so both unit and integration tests share
-// the same fixtures.
+// reactScriptedLLM / speakJSON / toolJSON / stubSearcher 已迁移到
+// fakes_test.go，本文件仅保留业务断言。
 
 // TestServiceSpeakWithReAct_FullFlow wires Service.speakWithReAct end to
 // end with in-memory repositories and a scripted LLM, then asserts:
@@ -172,8 +167,3 @@ func TestServiceSpeakWithReAct_NilDispatchNeverCallsInvestigator(t *testing.T) {
 	require.Equal(t, "直接陈述", speaker.Content)
 	require.Equal(t, 1, llmClient.calls)
 }
-
-// Silence unused import warnings when search isn't directly referenced
-// (kept here for parity with buildDispatchService and future cases).
-var _ = search.Provider(nil)
-var _ time.Duration

@@ -37,6 +37,9 @@ Thumbs.db
 coverage/
 *.cover
 
+# Test artifacts（集成测试输出的 UUID-named JSON 快照；本地保留，仓库不追踪）
+backend/test-output/
+
 # Database
 *.db
 *.sqlite
