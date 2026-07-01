@@ -272,3 +272,92 @@
   width: 100%;
   height: 100%;
 }
+
+/* ============= v0.5+ Verdict 页面打印样式 ============= */
+/* 用户点击"导出 PDF"时 window.print() 触发，整页按纸张尺寸重排。 */
+/* 设计目标：A4 单栏打印，背景白色，隐藏交互元素。 */
+@media print {
+  /* 1. 隐藏交互/装饰元素 */
+  .print\:hidden,
+  button,
+  .seal-stamp {
+    display: none !important;
+  }
+
+  /* 2. 强制白底 + 黑色文字（覆盖 paper 暖色调，方便打印省墨） */
+  body,
+  .paper-overlay,
+  .bg-paper,
+  .bg-paperDeep,
+  .bg-white {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* 3. 移除动画 + 阴影 + 圆角（打印不需要） */
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* 4. 卡片：去掉背景色和边框宽度，只保留主分割线 */
+  .shadow-paper,
+  .shadow-paper-lg,
+  .border-rule {
+    box-shadow: none !important;
+    border-color: #999999 !important;
+  }
+
+  /* 5. 颜色: 控/辩/审三色用深色印刷（玫红/蓝/琥珀 → 黑/深灰/深灰） */
+  .text-prosecution,
+  .text-prosecution-ink,
+  .bg-prosecution,
+  .border-prosecution {
+    color: #000000 !important;
+    background: transparent !important;
+    border-color: #000000 !important;
+  }
+  .text-defense,
+  .text-defense-ink,
+  .bg-defense,
+  .border-defense {
+    color: #333333 !important;
+    background: transparent !important;
+    border-color: #333333 !important;
+  }
+  .text-judge,
+  .text-gold,
+  .bg-judge,
+  .border-judge {
+    color: #555555 !important;
+    background: transparent !important;
+    border-color: #555555 !important;
+  }
+
+  /* 6. 评分条：黑色实心 */
+  .bg-prosecution,
+  .bg-defense {
+    background: #000000 !important;
+  }
+
+  /* 7. 关键：每个 section 自然分页 */
+  section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* 8. 庭审流程容器：不要限制 max-height，让所有 transcript 都能打印 */
+  .max-h-\[480px\] {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* 9. 页边距 */
+  @page {
+    margin: 1.5cm 1cm;
+  }
+}

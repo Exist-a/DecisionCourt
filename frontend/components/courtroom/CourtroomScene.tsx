@@ -13,6 +13,8 @@ import { EvidenceBoard } from "./EvidenceBoard";
 import { MessageHistory } from "./MessageHistory";
 import { InvestigatorPanel } from "./InvestigatorPanel";
 import { MemoryAuditPanel } from "./MemoryAuditPanel";
+import { ConvergenceBadge } from "./ConvergenceBadge";
+import { BeliefTrajectoryTab } from "./BeliefTrajectoryTab";
 import { PhaseGuide } from "./PhaseGuide";
 import { HelpPopover } from "./HelpPopover";
 import { Button } from "@/components/ui/button";
@@ -33,24 +35,12 @@ import {
   MessagesSquare,
   Search as SearchIcon,
   Brain,
+  Activity,
 } from "lucide-react";
 
 interface CourtroomSceneProps {
   sessionId: string;
 }
-
-const phaseLabels: Record<string, string> = {
-  idle: "立案",
-  clarification: "问题澄清",
-  option_generation: "选项生成",
-  opening: "开庭陈述",
-  evidence: "举证阶段",
-  cross_exam: "质证阶段",
-  closing: "结案陈词",
-  deliberation: "判决生成中",
-  verdict: "判决已生成",
-  appeal: "上诉/再审",
-};
 
 function getCurrentSpeakerName(
   agents: Agent[],
@@ -72,6 +62,8 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     activeInvestigation,
     memoryEntries,
     realCourthouseMode,
+    beliefDiffs,
+    convergenceInfo,
     setSession,
     setAgents,
     addEvidence,
@@ -79,6 +71,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     setPendingUserAction,
     setVerdict,
     toggleRealCourthouseMode,
+    setBeliefDiffs,
   } = useCourtroomStore();
 
   const [ws, setWs] = useState<ReturnType<typeof createCourtWebSocket> | null>(
@@ -96,10 +89,11 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   const [verdictReady, setVerdictReady] = useState(false);
   const [waitingForNextRound, setWaitingForNextRound] = useState(false);
   const [nextRound, setNextRound] = useState(2);
-  // 右侧面板 Tab：庭审记录 vs 调查活动 vs 策略笔记。默认庭审记录。
+  // 右侧面板 Tab：庭审记录 vs 调查活动 vs 策略笔记 vs 信念轨迹。默认庭审记录。
   // v0.5 新增"策略笔记" tab，渲染 A2A 私有消息流（详见 memory-a2a-redesign.md §PR 4）。
+  // v0.6 新增"信念轨迹" tab，渲染 belief_diffs 时间线 + 收敛徽章。
   const [sidebarTab, setSidebarTab] = useState<
-    "messages" | "investigator" | "memory"
+    "messages" | "investigator" | "memory" | "belief"
   >("messages");
 
   // Load initial data and connect WebSocket
@@ -160,6 +154,19 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
         }
       } catch (err) {
         console.warn("[Courtroom] failed to load investigations (endpoint may be missing):", err);
+      }
+
+      // v0.6 信念轨迹历史：失败时不阻断 UI（老版本没这个端点）。
+      // 成功时把整张 belief_diffs 表塞进 store，让 reconnection 场景
+      // 也能恢复完整时间线，不需要等新一轮 belief.diff 事件。
+      try {
+        const diffRes = await api.getBeliefDiffs(sessionId);
+        if (!mounted) return;
+        if (diffRes.code === 0 && Array.isArray(diffRes.data.diffs)) {
+          setBeliefDiffs(diffRes.data.diffs);
+        }
+      } catch (err) {
+        console.warn("[Courtroom] failed to load belief diffs (endpoint may be missing):", err);
       }
     }
 
@@ -362,6 +369,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {convergenceInfo && <ConvergenceBadge info={convergenceInfo} />}
             <HelpPopover />
             {session.current_phase === "idle" ? (
               <Button
@@ -637,17 +645,42 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
                 </span>
               )}
             </button>
+            <button
+              role="tab"
+              aria-selected={sidebarTab === "belief"}
+              onClick={() => setSidebarTab("belief")}
+              className={`flex-1 px-3 py-2 text-[11px] font-data tracking-[0.15em] uppercase flex items-center justify-center gap-1.5 border-b-2 ${
+                sidebarTab === "belief"
+                  ? "border-seal text-ink"
+                  : "border-transparent text-inkFaint hover:text-ink"
+              }`}
+              data-sidebar-tab="belief"
+              data-testid="belief-tab-button"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              信念轨迹
+              {beliefDiffs.length > 0 && (
+                <span className="ml-0.5 px-1 rounded-sm bg-paper text-inkFaint text-[9px] font-data tracking-normal">
+                  {beliefDiffs.length}
+                </span>
+              )}
+            </button>
           </div>
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {sidebarTab === "messages" ? (
               <MessageHistory messages={messages} />
             ) : sidebarTab === "investigator" ? (
               <InvestigatorPanel />
-            ) : (
+            ) : sidebarTab === "memory" ? (
               <MemoryAuditPanel
                 entries={memoryEntries}
                 redactedMode={realCourthouseMode}
                 onToggleRedacted={toggleRealCourthouseMode}
+              />
+            ) : (
+              <BeliefTrajectoryTab
+                diffs={beliefDiffs}
+                convergenceInfo={convergenceInfo}
               />
             )}
           </div>

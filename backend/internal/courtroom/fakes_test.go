@@ -213,7 +213,7 @@ func buildDispatchService(t *testing.T, results []search.Result) (*Service, *spy
 	invRepo := investigation.NewInMemoryRepository(nil)
 	invSvc := investigation.NewService(invRepo, bus, searcher)
 
-	orchestrator := agent.NewOrchestrator(nopLLM{}, bus, memRepo)
+	orchestrator := agent.NewOrchestratorLegacy(nopLLM{}, bus, memRepo)
 
 	svc := &Service{
 		db:               nil,
@@ -242,7 +242,7 @@ func buildStreamingSpeakService(t *testing.T, chunks []string) *Service {
 
 	decision := `{"action":"speak","reasoning":"控方主张 A 长期收益更稳健","content":"","stance":"pro_a","confidence":0.85,"evidence_refs":[]}`
 	llmClient := &streamingLLM{decisionJSON: decision, streamChunks: chunks}
-	orch := agent.NewOrchestrator(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
 
 	invRepo := investigation.NewInMemoryRepository(nil)
 	invSvc := investigation.NewService(invRepo, bus, &stubSearcher{})

@@ -55,6 +55,14 @@ type Service struct {
 	// tests can inject an in-memory loader to keep unit tests free of a
 	// live Postgres dependency.
 	SessionLoader func(sessionUUID string) (model.CourtSession, error)
+	// v0.6 belief engine plumbing. May be nil; the legacy UpdateAgents path
+	// is taken when either is nil so older deployments keep working.
+	diffRepo  belief.DiffRepository
+	weakenRepo belief.WeakenRepository
+	// stableRounds tracks the consecutive drift-low rounds per session for
+	// the v0.6 multi-signal convergence check. Backed by sync.Map because
+	// it's touched from runCrossExamRound goroutines and the new REST path.
+	stableRounds sync.Map // map[uuid.UUID]int
 }
 
 func NewService(
@@ -99,6 +107,27 @@ func (s *Service) getSessionLock(sessionUUID string) *sync.Mutex {
 // /investigations REST endpoint. Returns nil if not configured.
 func (s *Service) InvestigationService() *investigation.Service {
 	return s.investigationSvc
+}
+
+// WithBeliefRepositories wires the v0.6 belief engine repositories. Safe to
+// call once at startup; not goroutine-safe with concurrent live trials.
+// Returns the receiver so callers can chain: NewService(...).WithBeliefRepositories(...).
+//
+// When both repositories are non-nil the courtroom service uses the new
+// Engine.UpdateWithDiff path and emits belief.diff events. When either is
+// nil it transparently falls back to the legacy Engine.UpdateAgents path
+// so existing deployments don't need to flip a feature flag.
+func (s *Service) WithBeliefRepositories(diffRepo belief.DiffRepository, weakenRepo belief.WeakenRepository) *Service {
+	s.diffRepo = diffRepo
+	s.weakenRepo = weakenRepo
+	return s
+}
+
+// GetDiffRepository exposes the v0.6 diff repository so the API handler
+// can serve the GET /belief-diffs endpoint without re-wiring. Returns nil
+// when not configured (older deployments).
+func (s *Service) GetDiffRepository() belief.DiffRepository {
+	return s.diffRepo
 }
 
 func (s *Service) withCancel(ctx context.Context, sessionUUID string) (context.Context, context.CancelFunc) {
@@ -329,7 +358,7 @@ func (s *Service) SubmitEvidence(
 	})
 
 	// Update agent beliefs based on the new evidence.
-	if err := s.updateBeliefsAndBroadcast(session, evidence); err != nil {
+	if err := s.updateBeliefsAndBroadcast(ctx, session, evidence); err != nil {
 		return evidence, err
 	}
 
@@ -554,18 +583,23 @@ func (s *Service) resumeClosing(session model.CourtSession) error {
 }
 
 func (s *Service) isConverged(session model.CourtSession, agents []model.Agent) (bool, error) {
-	// Need at least 3 rounds of cross exam before considering convergence.
+	// v0.6 fast path: if belief engine is wired with the multi-signal
+	// convergence check, delegate to it. This is the production path.
+	if s.beliefEngine != nil {
+		return s.isConvergedV06(session, agents)
+	}
+
+	// Legacy v0.5 rule: 3+ rounds, 60% of max rounds, and the last 3
+	// snapshots for both prosecutor and defender must each have |Δ| < 0.03.
 	if session.CurrentRound < 3 {
 		return false, nil
 	}
-	// Avoid premature convergence: at least 60% of max rounds.
 	minRounds := int(math.Max(2, float64(session.MaxRounds)*0.6))
 	if session.CurrentRound < minRounds {
 		return false, nil
 	}
 
 	for _, a := range agents {
-		// Only check prosecutor and defender for convergence.
 		if a.AgentType != model.AgentProsecutor && a.AgentType != model.AgentDefender {
 			continue
 		}
@@ -590,6 +624,168 @@ func (s *Service) isConverged(session model.CourtSession, agents []model.Agent) 
 	}
 
 	return true, nil
+}
+
+// isConvergedV06 runs the v0.6 multi-signal convergence check. The four
+// signals in priority order are:
+//   1. Reasoning oscillation  (PROCLAIM 2026)
+//   2. Mutual consensus       (both sides extreme on same side)
+//   3. Belief drift low       (N consecutive rounds of <5% movement)
+//   4. Max-rounds fallback    (5 rounds in standard mode)
+//
+// It also updates the per-session stableRounds counter used by signal #3
+// and broadcasts a belief.convergence event with the structured reason
+// when the trial should converge.
+//
+// Returns (true, nil) when any signal fires; the caller is responsible
+// for transitioning to closing.
+func (s *Service) isConvergedV06(session model.CourtSession, agents []model.Agent) (bool, error) {
+	// Need at least 2 rounds of cross exam — below that, oscillation is
+	// just "the lawyer hasn't made their second point yet".
+	if session.CurrentRound < 2 {
+		return s.updateStableCounter(session.ID, false, false)
+	}
+
+	cfg := belief.DefaultConvergenceConfig()
+
+	// Build the per-round snapshot view the engine expects. The engine
+	// uses prevSnapshots vs currSnapshots to compute the per-agent max
+	// delta for the drift-low signal.
+	currSnapshots, err := s.recentSnapshots(session.ID, session.CurrentRound)
+	if err != nil {
+		return false, err
+	}
+	prevSnapshots, err := s.recentSnapshots(session.ID, session.CurrentRound-1)
+	if err != nil {
+		return false, err
+	}
+
+	// Build the agentType lookup (UUID → AgentType) the consensus signal needs.
+	agentTypes := make(map[uuid.UUID]model.AgentType, len(agents))
+	for _, a := range agents {
+		agentTypes[a.ID] = a.AgentType
+	}
+
+	// Pull the two most recent distinct-agent speak messages for the
+	// oscillation Jaccard check.
+	recentMessages := s.recentSpeakMessages(session.ID, 8)
+
+	stableCounter := s.loadStableCounter(session.ID)
+	decision := s.beliefEngine.CheckConvergence(
+		session.CurrentRound,
+		prevSnapshots, currSnapshots,
+		recentMessages, agentTypes,
+		stableCounter, cfg,
+	)
+
+	// Update the stable counter so the next round has accurate state.
+	_, _ = s.updateStableCounter(session.ID, decision.Reason == "belief_stable", decision.IsConverged())
+
+	if !decision.IsConverged() {
+		return false, nil
+	}
+
+	// Broadcast a structured event so the frontend can show a
+	// ConvergenceBadge with the human reason.
+	s.broadcastEvent(session.SessionUUID, Event{
+		Type: "belief.convergence",
+		Payload: map[string]interface{}{
+			"reason":         decision.Reason,
+			"round":          decision.RoundsElapsed,
+			"converged":      true,
+			"reason_message": humanConvergenceMessage(decision.Reason, decision.RoundsElapsed),
+		},
+	})
+
+	return true, nil
+}
+
+// recentSnapshots returns BeliefSnapshot rows for one round, ordered by
+// CreatedAt ASC. Empty slice on miss — never returns an error to the
+// caller for the obvious "no snapshots yet" case.
+func (s *Service) recentSnapshots(sessionID uuid.UUID, round int) ([]model.BeliefSnapshot, error) {
+	if round <= 0 || s.db == nil {
+		return nil, nil
+	}
+	var snapshots []model.BeliefSnapshot
+	if err := s.db.Where("session_id = ? AND round = ?", sessionID, round).
+		Order("created_at ASC").
+		Find(&snapshots).Error; err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
+
+// recentSpeakMessages returns the last N speak messages for the session,
+// used by the oscillation Jaccard check. Returns nil when db is unset
+// (in-memory test fixture).
+func (s *Service) recentSpeakMessages(sessionID uuid.UUID, limit int) []model.Message {
+	if limit <= 0 {
+		limit = 8
+	}
+	if s.db == nil {
+		return nil
+	}
+	var rows []model.Message
+	s.db.Where("session_id = ? AND action_type = ?", sessionID, "speak").
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&rows)
+	// The engine expects chronological order; reverse.
+	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
+		rows[i], rows[j] = rows[j], rows[i]
+	}
+	return rows
+}
+
+// loadStableCounter reads the drift-low consecutive counter for a session.
+// Returns 0 when not yet recorded.
+func (s *Service) loadStableCounter(sessionID uuid.UUID) int {
+	if v, ok := s.stableRounds.Load(sessionID); ok {
+		if n, ok := v.(int); ok {
+			return n
+		}
+	}
+	return 0
+}
+
+// updateStableCounter bumps the per-session drift counter.
+//
+//   - firedThisRound: signalsDriftLow fired this round
+//   - converged: the trial converged this round (reset on success)
+//
+// We increment when firedThisRound is true and converged is false
+// (still exploring). On converge we reset so a fresh session starts at 0.
+// On a non-fire round we reset to 0.
+func (s *Service) updateStableCounter(sessionID uuid.UUID, firedThisRound, converged bool) (bool, error) {
+	if converged {
+		s.stableRounds.Store(sessionID, 0)
+		return false, nil
+	}
+	if firedThisRound {
+		prev := s.loadStableCounter(sessionID)
+		s.stableRounds.Store(sessionID, prev+1)
+		return false, nil
+	}
+	s.stableRounds.Store(sessionID, 0)
+	return false, nil
+}
+
+// humanConvergenceMessage turns the engine's machine reason code into a
+// one-line Chinese caption for the ConvergenceBadge UI.
+func humanConvergenceMessage(reason string, round int) string {
+	switch reason {
+	case "reasoning_oscillation":
+		return fmt.Sprintf("第 %d 轮检测到律师发言高度重复，辩论已陷入循环，触发提前判决", round)
+	case "consensus":
+		return fmt.Sprintf("第 %d 轮控辩双方已达成一致立场，触发提前判决", round)
+	case "belief_stable":
+		return fmt.Sprintf("第 %d 轮连续两轮信念变化小于 5%%，信念已稳定，触发提前判决", round)
+	case "max_rounds":
+		return fmt.Sprintf("已达最大轮次 %d 轮，强制结案", round)
+	default:
+		return fmt.Sprintf("第 %d 轮已收敛，触发提前判决", round)
+	}
 }
 
 func findAgentByID(agents []model.Agent, agentID *uuid.UUID) *model.Agent {
@@ -1015,6 +1211,7 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		}
 		result = map[string]interface{}{
 			"summary":         fmt.Sprintf("建议选择%s（基于法官信念度直接裁决）", preferredName),
+			"trial_summary":   fmt.Sprintf("本场庭审共 %d 轮。LLM 生成失败，依据法官信念度直接裁决，未生成过程纪要。", session.CurrentRound),
 			"option_a_score":  judgeDecision.BeliefA,
 			"option_b_score":  judgeDecision.BeliefB,
 			"consensus_points": []string{},
@@ -1033,6 +1230,7 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		SessionID:        session.ID,
 		Content:          getString(result, "content"),
 		Summary:          getString(result, "summary"),
+		TrialSummary:     getString(result, "trial_summary"),
 		OptionAScore:     getFloat(result, "option_a_score"),
 		OptionBScore:     getFloat(result, "option_b_score"),
 		Recommendation:   getString(result, "recommendation"),
@@ -1064,6 +1262,7 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		Payload: map[string]interface{}{
 			"verdict_id":      verdict.ID,
 			"summary":         verdict.Summary,
+			"trial_summary":   verdict.TrialSummary,
 			"option_a_score":  verdict.OptionAScore,
 			"option_b_score":  verdict.OptionBScore,
 		},
@@ -1076,6 +1275,141 @@ func (s *Service) hasVerdict(sessionID interface{}) bool {
 	var count int64
 	s.db.Model(&model.Verdict{}).Where("session_id = ?", sessionID).Count(&count)
 	return count > 0
+}
+
+// ExportSession returns a self-contained snapshot of a completed trial
+// suitable for the user to download (JSON) or print (PDF via browser).
+//
+// Scope:
+//   - session metadata
+//   - verdict (including trial_summary)
+//   - all evidences the user submitted
+//   - all messages in trial order (public transcript)
+//   - all A2A messages visible to "user" (public + own private memory)
+//
+// The a2a_messages payload intentionally includes private memory entries
+// the user already saw via MemoryAuditPanel during the trial — exporting
+// them lets users take their "private strategy notes" with them when they
+// leave the platform. Opposing-side private notes (e.g. defender's
+// strategy_note when viewer=user) are NOT included because the SQL
+// isolation in a2a.Bus.ListVisibleTo already filters them out.
+//
+// Errors return an empty map + error; caller should turn that into 5xx.
+func (s *Service) ExportSession(ctx context.Context, session model.CourtSession) (map[string]interface{}, error) {
+	out := map[string]interface{}{
+		"export_version": "v1",
+		"exported_at":    time.Now().UTC(),
+		"session": map[string]interface{}{
+			"session_uuid":  session.SessionUUID,
+			"title":         session.Title,
+			"option_a":      session.OptionA,
+			"option_b":      session.OptionB,
+			"context":       session.Context,
+			"mode":          session.Mode,
+			"max_rounds":    session.MaxRounds,
+			"current_phase": session.CurrentPhase,
+			"current_round": session.CurrentRound,
+			"status":        session.Status,
+			"converged":     session.Converged,
+			"created_at":    session.CreatedAt,
+			"updated_at":    session.UpdatedAt,
+		},
+	}
+
+	// 1) verdict
+	var verdict model.Verdict
+	if err := s.db.WithContext(ctx).Where("session_id = ?", session.ID).First(&verdict).Error; err == nil {
+		out["verdict"] = map[string]interface{}{
+			"summary":           verdict.Summary,
+			"trial_summary":     verdict.TrialSummary,
+			"option_a_score":    verdict.OptionAScore,
+			"option_b_score":    verdict.OptionBScore,
+			"consensus_points":  verdict.ConsensusPoints,
+			"divergence_points": verdict.DivergencePoints,
+			"recommendation":    verdict.Recommendation,
+			"content":           verdict.Content,
+			"created_at":        verdict.CreatedAt,
+		}
+	}
+
+	// 2) evidences
+	evidences := []model.Evidence{}
+	if err := s.db.WithContext(ctx).Where("session_id = ?", session.ID).
+		Order("created_at asc").Find(&evidences).Error; err == nil {
+		evItems := make([]map[string]interface{}, 0, len(evidences))
+		for _, e := range evidences {
+			evItems = append(evItems, map[string]interface{}{
+				"evidence_id":        e.EvidenceID,
+				"type":               e.Type,
+				"source":             e.Source,
+				"content":            e.Content,
+				"credibility_score":  e.CredibilityScore,
+				"impact_on_option_a": e.ImpactOnOptionA,
+				"impact_on_option_b": e.ImpactOnOptionB,
+				"status":             e.Status,
+				"created_at":         e.CreatedAt,
+			})
+		}
+		out["evidences"] = evItems
+	} else {
+		out["evidences"] = []map[string]interface{}{}
+	}
+
+	// 3) messages (trial transcript) — agent_type 通过 LEFT JOIN agents 拿
+	type messageWithType struct {
+		model.Message
+		AgentType string `gorm:"column:agent_type"`
+	}
+	var msgs []messageWithType
+	if err := s.db.WithContext(ctx).
+		Table("messages m").
+		Select("m.*, a.agent_type as agent_type").
+		Joins("LEFT JOIN agents a ON a.id = m.agent_id").
+		Where("m.session_id = ?", session.ID).
+		Order("m.round asc, m.created_at asc").
+		Scan(&msgs).Error; err == nil {
+		msgItems := make([]map[string]interface{}, 0, len(msgs))
+		for _, m := range msgs {
+			msgItems = append(msgItems, map[string]interface{}{
+				"agent_type":  m.AgentType,
+				"phase":       m.Phase,
+				"round":       m.Round,
+				"action_type": m.ActionType,
+				"content":     m.Content,
+				"created_at":  m.CreatedAt,
+			})
+		}
+		out["messages"] = msgItems
+	} else {
+		log.Printf("[ExportSession] messages query failed: %v", err)
+		out["messages"] = []map[string]interface{}{}
+	}
+
+	// 4) a2a messages — viewer = "user". Includes:
+	//    - all public messages (transcript + investigation findings)
+	//    - private messages where user is the recipient
+	//    Excludes: private messages addressed to prosecutor/defender/etc.
+	a2aRows, err := s.a2aBus.ListVisibleTo(ctx, session.ID, "user")
+	if err != nil {
+		return nil, fmt.Errorf("export: list a2a messages: %w", err)
+	}
+	a2aItems := make([]map[string]interface{}, 0, len(a2aRows))
+	for _, m := range a2aRows {
+		a2aItems = append(a2aItems, map[string]interface{}{
+			"message_uuid": m.MessageUUID,
+			"round":        m.Round,
+			"phase":        m.Phase,
+			"from_agent":   m.FromAgent,
+			"to_agent":     m.ToAgent,
+			"message_type": m.MessageType,
+			"visibility":   m.Visibility,
+			"payload":      m.Payload,
+			"created_at":   m.CreatedAt,
+		})
+	}
+	out["a2a_messages"] = a2aItems
+
+	return out, nil
 }
 
 func (s *Service) transitionPhase(session *model.CourtSession, phase model.CourtPhase, round int) error {
@@ -1201,9 +1535,12 @@ func (s *Service) saveAgentMessage(
 	speaker agent.Speaker,
 ) error {
 	metadata, _ := json.Marshal(map[string]interface{}{
-		"reasoning": speaker.Reasoning,
-		"stance":    speaker.Stance,
+		"reasoning":  speaker.Reasoning,
+		"stance":     speaker.Stance,
+		"agent_type": agent.AgentType, // v0.6: 让前端 GetMessages 直接拿到 agent_type
 	})
+	log.Printf("[v0.6][saveAgentMessage] session=%s agentType=%s phase=%s round=%d agentID=%s len(content)=%d",
+		sessionID, agent.AgentType, phase, round, agent.ID, len(speaker.Content))
 
 	msg := model.Message{
 		SessionID:    sessionID,
@@ -1214,6 +1551,9 @@ func (s *Service) saveAgentMessage(
 		EvidenceRefs: speaker.EvidenceRefs,
 		ActionType:   "speak",
 		Metadata:     string(metadata),
+	}
+	if s.db == nil {
+		return nil
 	}
 	return s.db.Create(&msg).Error
 }
@@ -1259,10 +1599,22 @@ func (s *Service) recordBeliefSnapshots(session model.CourtSession, agents []mod
 	return nil
 }
 
-func (s *Service) updateBeliefsAndBroadcast(session model.CourtSession, evidence model.Evidence) error {
+func (s *Service) updateBeliefsAndBroadcast(ctx context.Context, session model.CourtSession, evidence model.Evidence) error {
 	var agents []model.Agent
-	if err := s.db.Where("session_id = ?", session.ID).Find(&agents).Error; err != nil {
-		return err
+	if s.db != nil {
+		if err := s.db.Where("session_id = ?", session.ID).Find(&agents).Error; err != nil {
+			return err
+		}
+	}
+
+	log.Printf("[v0.6][updateBeliefsAndBroadcast] session=%s evidence=%s agents=%d diffRepo=%v engine=%v",
+		session.SessionUUID, evidence.ID, len(agents), s.diffRepo != nil, s.beliefEngine != nil)
+
+	// v0.6 fast path: if both repos are wired, run the Bayesian-log-odds
+	// engine with anchoring + weaken edges and emit a structured belief.diff
+	// event per moved agent. Falls back to the legacy UpdateAgents otherwise.
+	if s.diffRepo != nil && s.beliefEngine != nil {
+		return s.updateBeliefsWithDiff(ctx, session, agents, evidence)
 	}
 
 	updated := s.beliefEngine.UpdateAgents(agents, evidence)
@@ -1294,6 +1646,120 @@ func (s *Service) updateBeliefsAndBroadcast(session model.CourtSession, evidence
 	}
 
 	return nil
+}
+
+// updateBeliefsWithDiff is the v0.6 belief-update path. It uses the Bayesian
+// log-odds engine (Engine.UpdateWithDiff) which also writes BeliefDiff rows
+// and returns one diff per agent that actually moved. The diffs are
+// persisted by the engine itself; we additionally broadcast a
+// belief.diff WebSocket event per diff so the frontend can render the
+// BeliefDiffCard timeline in real time.
+//
+// We use the session's public UUID (SessionUUID) for the room key and the
+// integer PK (session.ID) for the DiffRepository row FK — the model has a
+// uuid.UUID ID field so we adapt with a GORM "where" lookup if needed;
+// here we use the model.Evidence.ID which is a uuid.UUID so it matches.
+func (s *Service) updateBeliefsWithDiff(ctx context.Context, session model.CourtSession, agents []model.Agent, evidence model.Evidence) error {
+	// Load existing weaken declarations so the engine can apply them.
+	weakens, err := s.weakenRepo.ListByEvidence(ctx, session.ID, evidence.ID)
+	if err != nil {
+		// Non-fatal: log and continue with an empty weaken list. We never
+		// want a query hiccup to brick the entire evidence submission.
+		log.Printf("[updateBeliefsWithDiff] list weakens failed (continuing empty): %v", err)
+		weakens = nil
+	}
+
+	// Copy the agents slice so the in-memory mutation doesn't leak back to
+	// the caller (matches the legacy UpdateAgents convention).
+	agentsCopy := append([]model.Agent(nil), agents...)
+
+	updated, diffs, err := s.beliefEngine.UpdateWithDiff(
+		ctx, s.diffRepo, session.ID,
+		session.CurrentRound, string(model.PhaseEvidence),
+		agentsCopy, evidence, weakens,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Persist the new agent beliefs and broadcast a belief.updated event per
+	// moved agent. We pair by AgentUUID to find the original model.Agent
+	// primary key for the Updates() call.
+	priorByUUID := make(map[string]float64, len(agents))
+	for _, a := range agents {
+		priorByUUID[a.AgentUUID] = a.BeliefA
+	}
+
+	for _, a := range updated {
+		// Skip neutral roles — they should not be persisted or broadcast.
+		if a.AgentType == model.AgentInvestigator || a.AgentType == model.AgentClerk {
+			continue
+		}
+		delta := a.BeliefA - priorByUUID[a.AgentUUID]
+		// Persist the new belief back to the agents table. Skip when db
+		// is nil (in-memory test fixture) — the engine already mutated
+		// the in-memory agent and the diff repo captured the audit row.
+		if s.db != nil {
+			if err := s.db.Model(&a).Updates(map[string]interface{}{
+				"belief_a": a.BeliefA,
+				"belief_b": a.BeliefB,
+			}).Error; err != nil {
+				return err
+			}
+		}
+
+		s.broadcastEvent(session.SessionUUID, Event{
+			Type: "belief.updated",
+			Payload: map[string]interface{}{
+				"agent_id":   a.AgentUUID,
+				"agent_type": a.AgentType,
+				"round":      session.CurrentRound,
+				"belief_a":   a.BeliefA,
+				"belief_b":   a.BeliefB,
+				"delta":      math.Round(delta*10000) / 10000,
+				"trigger":    "evidence_added",
+			},
+		})
+	}
+
+	// Broadcast one belief.diff event per diff so the frontend timeline
+	// can render the BeliefDiffCard in real time. Each event carries the
+	// full audit fields so a replayer can reconstruct the session offline.
+	for _, d := range diffs {
+		s.broadcastEvent(session.SessionUUID, Event{
+			Type: "belief.diff",
+			Payload: map[string]interface{}{
+				"id":                d.ID,
+				"session_id":        d.SessionID,
+				"round":             d.Round,
+				"phase":             d.Phase,
+				"agent_type":        string(d.AgentType),
+				"evidence_id":       evidenceIDPtrString(d.EvidenceID),
+				"source":            d.Source,
+				"direction":         d.Direction,
+				"prior_belief_a":    d.PriorBeliefA,
+				"posterior_belief_a": d.PosteriorBeliefA,
+				"delta_belief_a":    d.DeltaBeliefA,
+				"prior_logit":       d.PriorLogit,
+				"posterior_logit":   d.PosteriorLogit,
+				"evidence_weight":   d.EvidenceWeight,
+				"weaken_factor":     d.WeakenFactor,
+				"reason":            d.Reason,
+				"created_at":        d.CreatedAt,
+			},
+		})
+	}
+
+	return nil
+}
+
+// evidenceIDPtrString formats a *uuid.UUID as a string for WS payloads.
+// Returns "" if the pointer is nil.
+func evidenceIDPtrString(id *uuid.UUID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }
 
 func (s *Service) loadSessionData(sessionID uuid.UUID) ([]model.Agent, []model.Evidence, []model.Message, error) {

@@ -7,6 +7,7 @@ import (
 	"github.com/decisioncourt/backend/internal/agent"
 	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/api"
+	"github.com/decisioncourt/backend/internal/belief"
 	"github.com/decisioncourt/backend/internal/config"
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/evidence"
@@ -53,6 +54,16 @@ func main() {
 		CompressionThreshold: config.AppConfig.AgentGateway.CompressionThreshold,
 		ThrottlingThreshold:  config.AppConfig.AgentGateway.ThrottlingThreshold,
 		LogDir:               config.AppConfig.AgentGateway.LogDir,
+
+		// v2 Token Budget
+		RejectWhenExhausted:    config.AppConfig.AgentGateway.RejectWhenExhausted,
+		BudgetSlidingWindowSec: config.AppConfig.AgentGateway.BudgetSlidingWindowSec,
+
+		// v2 Prompt Compression
+		SmartCompression:       config.AppConfig.AgentGateway.SmartCompression,
+		KeepRecentForcedN:      config.AppConfig.AgentGateway.KeepRecentForcedN,
+		SummaryInsertThreshold: config.AppConfig.AgentGateway.SummaryInsertThreshold,
+		ScoreThreshold:         config.AppConfig.AgentGateway.ScoreThreshold,
 	}
 	gatewayClient := agent_gateway.NewWithConfig(llmClient, recorder, defaultModel, gatewayCfg)
 
@@ -62,11 +73,18 @@ func main() {
 	}
 	bus := a2a.NewBus(a2a.NewGormRepository(model.DB), a2aBroadcaster)
 	memRepo := private_memory.NewGormRepository(model.DB)
-	orchestrator := agent.NewOrchestrator(gatewayClient, bus, memRepo)
+	orchestrator := agent.NewOrchestrator(gatewayClient, bus, memRepo, nil, nil)
 	evidenceSvc := evidence.NewService(model.DB, gatewayClient)
 	searcher, _ := search.NewProvider(config.AppConfig.SearchProvider, config.AppConfig.BochaAPIKey)
 
 	courtroomSvc := courtroom.NewService(model.DB, orchestrator, evidenceSvc, searcher, bus, hub.Broadcast)
+	// v0.6 belief engine: wire the diff + weaken repos so the courtroom
+	// service uses the Bayesian-log-odds engine + multi-signal convergence
+	// and emits belief.diff / belief.convergence events.
+	courtroomSvc.WithBeliefRepositories(
+		belief.NewGormDiffRepository(model.DB),
+		belief.NewGormWeakenRepository(model.DB),
+	)
 	handler := api.NewHandler(courtroomSvc, courtroomSvc.InvestigationService())
 	wsServer := api.NewWebSocketServer(hub, courtroomSvc)
 

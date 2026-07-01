@@ -120,6 +120,14 @@ type RunnerConfig struct {
 	// runner cannot know on its own. Required when MemoryHook is set;
 	// otherwise it is ignored.
 	MemoryMeta MemoryMeta
+	// WeakenHook (v0.6), if non-nil, fires whenever a reflect (or speak)
+	// step's AgentOutput carries ≥1 valid WeakenDeclaration (HasWeaken()).
+	// The orchestrator wires this to EmitWeakenFromOutput to persist the
+	// declaration as a row in evidence_weaken_links; subsequent belief
+	// updates then attenuate that evidence's impact. Nil is safe and
+	// disables weaken persistence — useful for callers that don't yet
+	// integrate with belief v0.6.
+	WeakenHook WeakenHook
 }
 
 // ReActRunner runs a Thought→Action→Observation loop on top of an LLM
@@ -321,6 +329,16 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 				if err := r.cfg.MemoryHook(ctx, out, r.cfg.MemoryMeta); err != nil {
 					// memory persistence failure must not break the loop
 					_ = err // intentionally swallowed; orchestrator logs
+				}
+			}
+
+			// v0.6: symmetric fire for weaken declarations. We do NOT short-
+			// circuit on MemoryHook failure — weaken persistence is fully
+			// independent of memory persistence so a flaky A2A bus should
+			// never freeze the belief layer.
+			if r.cfg.WeakenHook != nil && out.HasWeaken() {
+				if err := r.cfg.WeakenHook(ctx, out, r.cfg.MemoryMeta); err != nil {
+					_ = err // weaken persistence failure is best-effort
 				}
 			}
 

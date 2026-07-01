@@ -23,7 +23,7 @@ func TestBuildEpisodicMemoryBlock_NoPriorMemory_ReturnsEmpty(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestrator(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
 
 	block := orch.buildEpisodicMemoryBlock(context.Background(), uuid.New(), "prosecutor")
 	require.Equal(t, "", block, "no memory should yield empty block, not an empty heading")
@@ -33,7 +33,7 @@ func TestBuildEpisodicMemoryBlock_NilInputs_ReturnsEmpty(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestrator(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
 
 	// nil/empty inputs to buildEpisodicMemoryBlock must short-circuit
 	require.Equal(t, "", orch.buildEpisodicMemoryBlock(context.Background(), uuid.Nil, ""))
@@ -81,7 +81,7 @@ func TestBuildEpisodicMemoryBlock_FormatsAllRowsChronologically(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestrator(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
 
 	sessionID := uuid.New()
 	// Insert out of order to confirm sort
@@ -109,7 +109,7 @@ func TestBuildEpisodicMemoryBlock_OtherAgentsMemoryNotVisible(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestrator(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
 
 	sessionID := uuid.New()
 	writePrivateMemo(t, bus, sessionID, "defender", "strategy_note", 1, "DEFENDER SECRET MEMO")
@@ -124,7 +124,7 @@ func TestBuildEpisodicMemoryBlock_MalformedPayloadSkipped(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestrator(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
 
 	sessionID := uuid.New()
 	// Good row
@@ -156,7 +156,7 @@ func TestBuildEpisodicMemoryBlock_LongContentTruncated(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestrator(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
 
 	sessionID := uuid.New()
 	longContent := strings.Repeat("这是很长的策略笔记。", 100) // 1000+ chars
@@ -230,7 +230,7 @@ func TestProsecutorSpeakWithReAct_PriorMemoryInjectedIntoSystemPrompt(t *testing
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	orch := NewOrchestrator(&capturingLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&capturingLLM{}, bus, memRepo)
 
 	// Seed 3 private strategy notes into the bus BEFORE the LLM call
 	sessionID := uuid.New()
@@ -285,7 +285,7 @@ func TestDefenderSpeakWithReAct_OwnMemoryInjected_OpponentsExcluded(t *testing.T
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	orch := NewOrchestrator(&capturingLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&capturingLLM{}, bus, memRepo)
 
 	sessionID := uuid.New()
 	// Defender's own memory (should appear)
@@ -323,7 +323,7 @@ func TestProsecutorSpeakWithReAct_NoPriorMemory_BlockAbsent(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	orch := NewOrchestrator(&capturingLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&capturingLLM{}, bus, memRepo)
 
 	llmClient := &capturingLLM{scripts: []string{
 		speakOutputJSON("first time", "开场陈述", "pro_a", 0.7),

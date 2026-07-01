@@ -1,6 +1,7 @@
 package evidence
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -80,7 +81,7 @@ func (s *Service) ListBySession(sessionID uuid.UUID) ([]model.Evidence, error) {
 func (s *Service) evaluateEvidence(
 	optionA string,
 	optionB string,
-	context string,
+	ctxStr string,
 	content string,
 	evType string,
 ) (impactA, impactB, credibility, relevance, constraintStrength float64) {
@@ -106,9 +107,9 @@ func (s *Service) evaluateEvidence(
   "credibility_score": 0.0,   // 范围 [0, 1]，证据可信度
   "relevance_score": 0.0,     // 范围 [0, 1]，与决策问题的相关性
   "constraint_strength": 0.0  // 范围 [0, 1]，如果是约束条件，语气越强硬值越高；其他类型填 0
-}`, defaultString(context, "无"), optionA, optionB, content, evType)
+}`, defaultString(ctxStr, "无"), optionA, optionB, content, evType)
 
-	resp, _, err := s.llmClient.Complete(agent_gateway.WithTrace(nil, agent_gateway.Trace{
+	resp, _, err := s.llmClient.Complete(agent_gateway.WithTrace(context.Background(), agent_gateway.Trace{
 		AgentType: string(model.AgentClerk),
 		TaskType:  "evidence_eval",
 	}), prompt, []llm.Message{}, llm.CompletionOptions{

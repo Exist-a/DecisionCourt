@@ -40,7 +40,7 @@ func TestServiceSpeakWithReAct_FullFlow(t *testing.T) {
 		speakJSON("基于搜索证据的论点", "pro_a", 0.85),
 	}}
 
-	orch := agent.NewOrchestrator(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
 	searcher := &stubSearcher{results: nil} // 0 results keeps DB-less path clean
 	evidenceSvc := evidence.NewService(nil, llmClient)
 
@@ -136,7 +136,7 @@ func TestServiceSpeakWithReAct_NilDispatchNeverCallsInvestigator(t *testing.T) {
 	llmClient := &reactScriptedLLM{scripts: []string{
 		speakJSON("直接陈述", "pro_a", 0.7),
 	}}
-	orch := agent.NewOrchestrator(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
 
 	svc := &Service{
 		db:           nil,

@@ -505,6 +505,58 @@ GET /api/v1/courtrooms/:session_uuid/investigations
 - `findings` 数组为空时返回 `[]`，**不**返回 `null`
 - 找不到庭审时返回 404 `{"code":1002,...}`
 
+#### 3.5.2 获取信念变化审计（v0.6）
+
+```http
+GET /api/v1/courtrooms/:session_uuid/belief-diffs
+GET /api/v1/courtrooms/:session_uuid/belief-diffs?agent=prosecutor
+GET /api/v1/courtrooms/:session_uuid/belief-diffs?round=2
+```
+
+**Query 参数**（均可选）：
+- `agent`：按 agent_type 过滤，取值 `prosecutor` | `defender` | `investigator` | `clerk` | `judge`
+- `round`：按 round 过滤（正整数）
+
+**响应**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "diffs": [
+      {
+        "id": "diff-uuid-1",
+        "round": 2,
+        "phase": "evidence",
+        "agent_type": "prosecutor",
+        "evidence_id": "ev-uuid-1",
+        "source": "evidence",
+        "direction": "supports_a",
+        "prior_belief_a": 0.75,
+        "posterior_belief_a": 0.78,
+        "delta_belief_a": 0.03,
+        "prior_logit": 1.0986,
+        "posterior_logit": 1.2736,
+        "evidence_weight": 0.504,
+        "weaken_factor": 1.0,
+        "reason": "新证据：选项 A 的关键优势",
+        "created_at": "2026-07-01T10:15:30Z"
+      }
+    ],
+    "count": 1
+  }
+}
+```
+
+**说明**：
+- `diffs` 数组按 `round, created_at` 升序（旧 → 新）
+- `weaken_factor` < 1.0 表示该条证据被对方律师通过 weaken 边削弱过
+- `source` 为 `evidence` / `weaken` / `anchor_pull`，锚定回拉是 v0.6 引擎自带特性
+- `diffs` 数组为空时返回 `[]`，**不**返回 `null`
+- 找不到庭审时返回 404 `{"code":1002,...}`
+- 不存在的 `round` 过滤值返回 400 `{"code":1001,...}`
+- 后端 belief 引擎未启用（diffRepo == nil）时返回 200 + 空数组（向后兼容老部署）
+
 #### 3.6 判决书
 
 #### 3.6.1 获取判决书
@@ -550,6 +602,98 @@ POST /api/v1/courtrooms/:session_uuid/verdict/feedback
 ```
 
 **说明**：`feedback` 可选 `helpful` / `not_helpful`。
+
+#### 3.6.3 庭审导出（v0.5+ 新增）
+
+```http
+GET /api/v1/courtrooms/:session_uuid/export
+```
+
+**说明**：返回自包含的庭审 JSON 快照，verdict 页面"导出 JSON"按钮调用。`Content-Disposition: attachment` 强制浏览器下载。
+
+**响应 Payload**（节选）：
+
+```json
+{
+  "export_version": "v1",
+  "exported_at": "2026-07-01T10:30:00Z",
+  "session": {
+    "session_uuid": "court_abc123",
+    "title": "跳槽 vs 留下",
+    "option_a": "接受创业公司 offer",
+    "option_b": "留在现在的大厂",
+    "context": "...",
+    "mode": "standard",
+    "max_rounds": 3,
+    "current_phase": "verdict",
+    "current_round": 3,
+    "status": "completed",
+    "converged": false,
+    "created_at": "2026-07-01T10:00:00Z",
+    "updated_at": "2026-07-01T10:25:00Z"
+  },
+  "verdict": {
+    "summary": "建议接受创业公司 offer...",
+    "trial_summary": "控方在第 2 轮抛出 E001 的数据来源质疑...",
+    "option_a_score": 0.68,
+    "option_b_score": 0.52,
+    "consensus_points": "[\"财务缓冲充足\"]",
+    "divergence_points": "[\"收入稳定性\"]",
+    "recommendation": "接受 offer...",
+    "content": "# 决策判决书\n\n## 一、双方主张...",
+    "created_at": "2026-07-01T10:25:00Z"
+  },
+  "evidences": [
+    {
+      "evidence_id": "E001",
+      "type": "fact",
+      "source": "user",
+      "content": "...",
+      "credibility_score": 0.9,
+      "impact_on_option_a": 0.7,
+      "impact_on_option_b": -0.3,
+      "status": "admitted",
+      "created_at": "2026-07-01T10:05:00Z"
+    }
+  ],
+  "messages": [
+    {
+      "agent_type": "prosecutor",
+      "phase": "opening",
+      "round": 0,
+      "action_type": "speak",
+      "content": "...",
+      "created_at": "2026-07-01T10:01:00Z"
+    }
+  ],
+  "a2a_messages": [
+    {
+      "message_uuid": "msg_xxx",
+      "round": 2,
+      "phase": "cross_exam",
+      "from_agent": "prosecutor",
+      "to_agent": "prosecutor",
+      "message_type": "strategy_note",
+      "visibility": "private",
+      "payload": "{...}",
+      "created_at": "2026-07-01T10:15:00Z"
+    }
+  ]
+}
+```
+
+**关键约束**：
+1. **`a2a_messages` 字段只含 `ListVisibleTo("user")` 能看到的** —— 通过 `a2a.Bus.ListVisibleTo(sessionID, "user")` 复用 SQL 隔离，**对家 private memory（辩方/控方发给自己的）不会泄漏到导出文件**
+2. **`Content-Disposition: attachment; filename="decisioncourt-<uuid>-<ts>.json"`** —— 浏览器自动下载
+3. **失败返回 5xx**（code 1500）—— 用户在 verdict 页面看到"导出失败"提示
+
+**为什么不后端生成 PDF**：
+- 后端加 PDF 库（`gofpdf` / `unidoc`）= ~30MB 依赖 + 维护成本
+- 浏览器原生 PDF 质量足够（用户打印用）
+- 当前用户量下，PDF 导出使用率 < 5%，不值得优化
+- 客户端 `window.print()` 配合 `@media print` 样式即可
+
+---
 
 ---
 
@@ -707,6 +851,67 @@ Agent 发言事件。
   "timestamp": "2026-06-24T12:02:00Z"
 }
 ```
+
+#### 4.3.4a belief.diff（v0.6 新增）
+
+单条信念变化的结构化 diff，每条证据被引擎应用到某 agent 时广播一次。
+前端 BeliefDiffCard 渲染成时间线条目；可重放/审计。
+
+```json
+{
+  "type": "belief.diff",
+  "payload": {
+    "id": "diff-uuid-1",
+    "session_id": "session-uuid",
+    "round": 2,
+    "phase": "evidence",
+    "agent_type": "prosecutor",
+    "evidence_id": "ev-uuid-1",
+    "source": "evidence",
+    "direction": "supports_a",
+    "prior_belief_a": 0.75,
+    "posterior_belief_a": 0.78,
+    "delta_belief_a": 0.03,
+    "prior_logit": 1.0986,
+    "posterior_logit": 1.2736,
+    "evidence_weight": 0.504,
+    "weaken_factor": 1.0,
+    "reason": "新证据：选项 A 的关键优势",
+    "created_at": "2026-07-01T10:15:30Z"
+  },
+  "timestamp": "2026-07-01T10:15:30Z"
+}
+```
+
+字段语义：
+- `source`: `evidence` / `weaken` / `anchor_pull`
+- `direction`: `supports_a` / `supports_b` / `neutral`
+- `weaken_factor` < 1.0 表示该条证据被对方 weaken 边削弱
+- `prior_logit` / `posterior_logit` 是 log-odds 域值，可用于离线重放
+
+#### 4.3.4b belief.convergence（v0.6 新增）
+
+当 v0.6 多信号收敛判断触发时广播一次（之后 trial 结束）。
+前端 ConvergenceBadge 渲染四种原因对应的颜色/图标。
+
+```json
+{
+  "type": "belief.convergence",
+  "payload": {
+    "reason": "reasoning_oscillation",
+    "round": 3,
+    "converged": true,
+    "reason_message": "第 3 轮检测到律师发言高度重复，辩论已陷入循环，触发提前判决"
+  },
+  "timestamp": "2026-07-01T10:18:00Z"
+}
+```
+
+`reason` 取值（按优先级）：
+1. `reasoning_oscillation` — 律师发言高度重复
+2. `consensus` — 控辩双方都偏向同一侧
+3. `belief_stable` — 连续 N 轮单轮最大 Δ < 0.05
+4. `max_rounds` — 达到最大轮次兜底
 
 ---
 

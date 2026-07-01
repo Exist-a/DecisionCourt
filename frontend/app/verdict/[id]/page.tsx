@@ -14,6 +14,9 @@ import {
   Scale,
   Bookmark,
   MessageSquare,
+  Download,
+  FileText,
+  Loader2,
 } from "lucide-react";
 import { BehindTheScenesPanel } from "@/components/courtroom/BehindTheScenesPanel";
 import type { Message } from "@/types";
@@ -39,6 +42,9 @@ export default function VerdictPage() {
   const [sealLanded, setSealLanded] = useState(false);
   // 庭审对话记录
   const [messages, setMessages] = useState<Message[]>([]);
+  // v0.5+：导出按钮 loading / 错误态
+  const [exportingJSON, setExportingJSON] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (storeVerdict) return;
@@ -111,6 +117,24 @@ export default function VerdictPage() {
     return () => clearTimeout(t);
   }, [verdict, sealLanded]);
 
+  // v0.5+：导出 JSON —— 调后端 export 端点，浏览器下载。
+  const handleExportJSON = async () => {
+    setExportingJSON(true);
+    setExportError(null);
+    try {
+      await api.exportSession(sessionId);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "导出失败");
+    } finally {
+      setExportingJSON(false);
+    }
+  };
+
+  // v0.5+：导出 PDF —— 客户端 window.print() 配合 globals.css 里的 print 样式。
+  const handleExportPDF = () => {
+    api.printVerdictAsPDF();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-paper text-ink flex items-center justify-center paper-overlay">
@@ -171,11 +195,46 @@ export default function VerdictPage() {
               </p>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-inkFaint font-data">
-            <Bookmark className="w-3 h-3" />
-            Case No. DC-{verdict.verdict_id?.slice(0, 8) ?? "—"}
+          <div className="hidden md:flex items-center gap-3">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-inkFaint font-data">
+              <Bookmark className="w-3 h-3" />
+              Case No. DC-{verdict.verdict_id?.slice(0, 8) ?? "—"}
+            </div>
+            {/* v0.5+：导出按钮 — 屏幕可见，打印时自动隐藏（@media print） */}
+            <div className="flex items-center gap-1.5 print:hidden">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportJSON}
+                disabled={exportingJSON}
+                className="bg-white border border-rule text-ink hover:bg-paper rounded-sm h-8 px-3 text-[11px] font-data tracking-wider"
+                title="导出庭审完整数据为 JSON 文件（含双方公开记录 + 你能看到的私有策略笔记）"
+              >
+                {exportingJSON ? (
+                  <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                ) : (
+                  <Download className="w-3 h-3 mr-1.5" />
+                )}
+                导出 JSON
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportPDF}
+                className="bg-white border border-rule text-ink hover:bg-paper rounded-sm h-8 px-3 text-[11px] font-data tracking-wider"
+                title="通过浏览器打印对话框保存为 PDF"
+              >
+                <FileText className="w-3 h-3 mr-1.5" />
+                导出 PDF
+              </Button>
+            </div>
           </div>
         </div>
+        {exportError && (
+          <div className="container mx-auto max-w-4xl px-6 pb-2 text-[11px] text-prosecution-ink font-data print:hidden">
+            导出失败：{exportError}
+          </div>
+        )}
       </header>
 
       {/* ============= Hero · 印章落印 ============= */}
@@ -362,6 +421,28 @@ export default function VerdictPage() {
             </div>
             <p className="text-display text-base leading-relaxed text-paper/95">
               {verdict.recommendation}
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* ============= v0.5+ 庭审纪要 ============= */}
+      {/* 与 verdict.summary（采纳建议）不同：这里给用户"庭审中发生了什么"
+          的 1-2 句叙事，让用户能复述整场过程而不必滚 transcript。 */}
+      {verdict.trial_summary && (
+        <section className="container mx-auto max-w-4xl px-6 pb-6">
+          <div className="bg-paperDeep border-l-2 border-judge px-6 py-5 relative">
+            <div className="flex items-baseline justify-between mb-3">
+              <h3 className="text-display text-base font-semibold text-ink flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-judge" />
+                庭 审 纪 要
+              </h3>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-inkFaint font-data">
+                Trial Summary
+              </span>
+            </div>
+            <p className="text-display text-[14px] text-ink leading-loose">
+              {verdict.trial_summary}
             </p>
           </div>
         </section>

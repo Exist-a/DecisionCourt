@@ -3,7 +3,7 @@
 > **让 AI 像法庭一样帮你把复杂决策看全、看透、看出可执行结论。**
 
 [![MVP Status](https://img.shields.io/badge/status-MVP%20Complete-brightgreen)](./docs/decisioncourt-prd.md)
-[![Backend Tests](https://img.shields.io/badge/backend%20tests-147%20passing-success)](./backend)
+[![Backend Tests](https://img.shields.io/badge/backend%20tests-167%20passing-success)](./backend)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](#许可证)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev)
@@ -14,8 +14,61 @@
 
 ---
 
+## 🌟 亮点：Agent Gateway 压缩策略对比
+
+> **一句话**：DecisionCourt 的 Agent Gateway 用 v2 **"评分 + 原子组 + 贪心打包 + 兜底摘要"** 替代 v0.5+ 的"硬丢最近 5 条"，在多角色庭审场景下既省钱又保住了因果链。
+
+### 实验数据（同一条 12 轮庭审 transcript：19 条消息，4763 字符 ≈ 1190 tokens）
+
+跑 [`TestCompressionEval_StrategyComparison`](./backend/internal/agent_gateway/compression_eval_test.go) 三种配置对比：
+
+| 策略 | applied | 消息 19 → | chars 4763 → | tokens 节省 | 节省比 | 信息密度 |
+|---|---|---|---|---|---|---|
+| **禁用压缩**（baseline） | ❌ | 19 | 4763 | 0 | 0.0% | — |
+| **Legacy keep-5**（v0.5+） | ✅ | 6 | 1415 | 837 | **70.3%** | 235 chars/msg |
+| **Smart 评分压缩**（v2） | ✅ | **14** | 3264 | 374 | 31.4% | 233 chars/msg |
+
+### 关键发现
+
+1. **Legacy 数字更漂亮，但代价是丢证据、丢法官推理**。
+   Legacy 把 19 条砍到 6 条看似省钱，但把 cross-exam 中的关键 evidence、judge assess、tool_call 整组都一起扔了。**下一轮 LLM 调用就会产生幻觉或自相矛盾**。
+
+2. **Smart 留更多条，但每条都是"高价值"**。
+   - 识别了 **17 个原子组**（基于 tool_call_id / evidence_id Metadata），保留其中 **10 个**
+   - 强制保留最近 **3 条**（防"丢光"）
+   - 丢弃 > 5 条时插入 **1 条 earlier-context 摘要 note**，列出 evidence_id / @prosecutor 等可信锚点
+   - 信息密度 = 233 chars/msg ≈ Legacy（235 chars/msg）—— 区别仅在**保留消息数**
+
+3. **DecisionCourt 庭审场景推荐 Smart**；客服/coding 这类上下文价值均匀的场景推荐 Legacy。
+
+### 工程意义（单庭审估算，假设 10 次需要压缩的 LLM 调用）
+
+| 策略 | 单庭审节省 tokens | DeepSeek 现行价折算 |
+|---|---|---|
+| Legacy | ~8,370 | ≈ ¥0.84 |
+| Smart | ~3,740 | ≈ ¥0.37 |
+
+智能体多花的"成本"换来不丢事实链 —— 对一份可执行判决书而言，这笔账是值得的。
+
+### 复现方法
+
+```bash
+cd backend
+go test ./internal/agent_gateway/... -run TestCompressionEval_StrategyComparison -v
+```
+
+### 完整文档链
+
+- 设计文档：[`.trae/documents/compression-eval-baseline.md`](./.trae/documents/compression-eval-baseline.md) — 完整基线 benchmark
+- 压缩策略：[`.trae/documents/prompt-compression-courtscenario.md`](./.trae/documents/prompt-compression-courtscenario.md)
+- 预算设计：[`.trae/documents/token-budget-design.md`](./.trae/documents/token-budget-design.md)
+- 总体设计：[`.trae/documents/agent-gateway-advanced.md`](./.trae/documents/agent-gateway-advanced.md)
+
+---
+
 ## 目录
 
+- [🌟 亮点：Agent Gateway 压缩策略对比](#亮点agent-gateway-压缩策略对比)
 - [项目特色](#项目特色)
 - [快速开始](#快速开始)
 - [架构总览](#架构总览)
@@ -335,7 +388,7 @@ cd backend
 go test ./internal/... -v
 ```
 
-**当前状态**：147 项测试全部通过，覆盖：
+**当前状态**：167 项测试全部通过，覆盖：
 
 - `internal/a2a`：12 项（Bus 路由 + ContextView 投影 + SessionUUID 房间钥匙回归测试）
 - `internal/private_memory`：9 项（隔离性 + Orchestrator 集成）
@@ -344,6 +397,7 @@ go test ./internal/... -v
 - `internal/courtroom`：State Machine + DispatchInvestigator + Speak Streaming
 - `internal/search`：Bocha / DuckDuckGo Provider
 - `internal/api`：Hub 流式时序
+- `internal/agent_gateway`：**63 项**（Token Budget v2 多维 / sliding / OnWarning / Reject + Prompt 压缩 v2 评分 / 原子组 / GreedyPack / 兜底摘要 + Gateway reject-when-exhausted 集成 + 三策略压缩对比 baseline）
 
 ### 端到端样本
 
@@ -366,6 +420,10 @@ go test ./internal/... -v
 进行中的设计演进位于 [`.trae/documents/`](./.trae/documents)：
 
 - [memory-a2a-redesign.md](./.trae/documents/memory-a2a-redesign.md) — v0.5 记忆系统 + A2A 重设计
+- [agent-gateway-advanced.md](./.trae/documents/agent-gateway-advanced.md) — v0.5+/v2 Agent Gateway 装饰器详细设计
+- [token-budget-design.md](./.trae/documents/token-budget-design.md) — Token Budget 重设计决策稿（D1-D6 全锁定）
+- [prompt-compression-courtscenario.md](./.trae/documents/prompt-compression-courtscenario.md) — Prompt 压缩 v2 重设计（针对庭审 5 大痛点）
+- [compression-eval-baseline.md](./.trae/documents/compression-eval-baseline.md) — v2 vs v0.5+ 压缩策略基线 benchmark
 
 ---
 
@@ -382,10 +440,14 @@ go test ./internal/... -v
 - 极简白底法庭风格 UI + 凹陷输入框
 - Docker Compose 一键启动
 - MemoryAuditPanel（前端可审计）+ 幕后视角页
+- **Agent Gateway v0.5+**（白盒子集：统一接入 / 审计落库 / trace 关联 + 高级能力：Prompt 压缩 / Token 预算 / 限流 / Fallback / 文件日志）
+- **Agent Gateway v2 升级**（Token Budget 多维 + sliding 5min + OnWarning + RejectWhenExhausted；Prompt Compression 评分+原子组+贪心打包+兜底摘要）
 
 ### 🚧 第二阶段（不在 MVP）
 
-- Agent Gateway（模型路由 + Prompt 压缩 + Token 预算）
+- Agent Gateway 模型路由（v2 已落地压缩 + 预算，路由仍待）
+- Agent Gateway Redis 多实例存储
+- Agent Gateway Retry jitter + 错误分类
 - 问题澄清与选项生成
 - Agent 主动提问
 - 专家证人 / 陪审团

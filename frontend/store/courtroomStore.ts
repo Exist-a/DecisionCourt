@@ -14,6 +14,8 @@ import type {
   CourtEvent,
   MemoryEntry,
   MemoryKind,
+  BeliefDiff,
+  ConvergenceInfo,
 } from "@/types";
 
 const phaseLabels: Record<CourtPhase, string> = {
@@ -119,6 +121,21 @@ interface CourtroomState {
    */
   realCourthouseMode: boolean;
 
+  /**
+   * v0.6 belief engine: chronological list of all BeliefDiff rows
+   * received via WebSocket. The frontend BeliefDiffCard renders the most
+   * recent N entries. Persisted by the backend in belief_diffs table;
+   * re-hydrated on session restore via GET /belief-diffs.
+   */
+  beliefDiffs: BeliefDiff[];
+
+  /**
+   * v0.6 convergence: the most recent ConvergenceInfo emitted by the
+   * engine. null when the trial is still in progress. Once set, it
+   * stays set (UI shows a ConvergenceBadge next to the verdict).
+   */
+  convergenceInfo: ConvergenceInfo | null;
+
   setSession: (session: CourtSession) => void;
   setAgents: (agents: Agent[]) => void;
   updateAgentBelief: (
@@ -200,6 +217,17 @@ interface CourtroomState {
    * Pure UI state — does NOT touch the backend or LLM context.
    */
   toggleRealCourthouseMode: () => void;
+  /**
+   * v0.6 belief engine setters.
+   *
+   * - appendBeliefDiff: insert a single diff at the right chronological
+   *   position. Idempotent on id.
+   * - setBeliefDiffs: bulk-load on session restore.
+   * - setConvergenceInfo: replace the current convergence state.
+   */
+  appendBeliefDiff: (diff: BeliefDiff) => void;
+  setBeliefDiffs: (diffs: BeliefDiff[]) => void;
+  setConvergenceInfo: (info: ConvergenceInfo | null) => void;
   reset: () => void;
 }
 
@@ -290,6 +318,8 @@ const initialState = {
   investigationEvents: [] as InvestigationEvent[],
   memoryEntries: [] as MemoryEntry[],
   realCourthouseMode: false,
+  beliefDiffs: [] as BeliefDiff[],
+  convergenceInfo: null as CourtroomState["convergenceInfo"],
 };
 
 export const useCourtroomStore = create<CourtroomState>((set, get) => ({
@@ -462,6 +492,32 @@ export const useCourtroomStore = create<CourtroomState>((set, get) => ({
 
   toggleRealCourthouseMode: () =>
     set((state) => ({ realCourthouseMode: !state.realCourthouseMode })),
+
+  appendBeliefDiff: (diff) =>
+    set((state) => {
+      // Idempotency on id (reconnect / replay safety).
+      if (state.beliefDiffs.some((d) => d.id === diff.id)) {
+        return state;
+      }
+      const next = [...state.beliefDiffs, diff];
+      next.sort(
+        (a, b) =>
+          a.round - b.round ||
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+      return { beliefDiffs: next };
+    }),
+
+  setBeliefDiffs: (diffs) =>
+    set(() => ({
+      beliefDiffs: [...diffs].sort(
+        (a, b) =>
+          a.round - b.round ||
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      ),
+    })),
+
+  setConvergenceInfo: (info) => set({ convergenceInfo: info }),
 
   reset: () => set(initialState),
 }));
@@ -764,6 +820,68 @@ export function applyCourtEvent(event: CourtEvent) {
 
     case "verdict.ready": {
       // Verdict is fetched separately and applied via setVerdict.
+      break;
+    }
+
+    case "belief.diff": {
+      const p = event.payload as {
+        id: string;
+        round: number;
+        phase: string;
+        agent_type: Agent["agent_type"];
+        evidence_id?: string;
+        source: "evidence" | "weaken" | "anchor_pull";
+        direction: "supports_a" | "supports_b" | "neutral";
+        prior_belief_a: number;
+        posterior_belief_a: number;
+        delta_belief_a: number;
+        prior_logit: number;
+        posterior_logit: number;
+        evidence_weight: number;
+        weaken_factor: number;
+        reason: string;
+        created_at: string;
+      };
+      store.appendBeliefDiff({
+        id: p.id,
+        round: p.round,
+        phase: p.phase,
+        agent_type: p.agent_type,
+        evidence_id: p.evidence_id || undefined,
+        source: p.source,
+        direction: p.direction,
+        prior_belief_a: p.prior_belief_a,
+        posterior_belief_a: p.posterior_belief_a,
+        delta_belief_a: p.delta_belief_a,
+        prior_logit: p.prior_logit,
+        posterior_logit: p.posterior_logit,
+        evidence_weight: p.evidence_weight,
+        weaken_factor: p.weaken_factor,
+        reason: p.reason,
+        created_at: p.created_at,
+      });
+      break;
+    }
+
+    case "belief.convergence": {
+      const p = event.payload as {
+        reason:
+          | "reasoning_oscillation"
+          | "consensus"
+          | "belief_stable"
+          | "max_rounds";
+        round: number;
+        converged: boolean;
+        reason_message: string;
+      };
+      if (p.converged) {
+        store.setConvergenceInfo({
+          reason: p.reason,
+          round: p.round,
+          reason_message: p.reason_message,
+          detectedAt: event.timestamp,
+        });
+      }
       break;
     }
 

@@ -29,6 +29,11 @@ type LogEntry struct {
 	CompressionAfterCount int       `json:"compression_after_count"`
 	CompressionBeforeLength int     `json:"compression_before_length"`
 	CompressionAfterLength int      `json:"compression_after_length"`
+	CompressionStrategy   string    `json:"compression_strategy,omitempty"`
+	CompressionAtomicGroups int     `json:"compression_atomic_groups,omitempty"`
+	CompressionAtomicKept int       `json:"compression_atomic_kept,omitempty"`
+	CompressionRecentForced int     `json:"compression_recent_forced,omitempty"`
+	CompressionSummarized int       `json:"compression_summarized_blocks,omitempty"`
 	Throttled             bool      `json:"throttled"`
 	ThrottleExempted      bool      `json:"throttle_exempted"`
 	ThrottleExemptReason  string    `json:"throttle_exempt_reason"`
@@ -39,6 +44,11 @@ type LogEntry struct {
 	BudgetUsed            int       `json:"budget_used"`
 	BudgetTotal           int       `json:"budget_total"`
 	BudgetRatio           float64   `json:"budget_ratio"`
+	BudgetInputTokens     int       `json:"budget_input_tokens,omitempty"`
+	BudgetOutputTokens    int       `json:"budget_output_tokens,omitempty"`
+	BudgetCostUSD         float64   `json:"budget_cost_usd,omitempty"`
+	BudgetSlidingTokens   int       `json:"budget_sliding_tokens,omitempty"`
+	BudgetWarningLevel    string    `json:"budget_warning_level,omitempty"`
 }
 
 // FileLogger 把 Agent Gateway 运行日志以 JSON 每行追加到文件，按日期切分。

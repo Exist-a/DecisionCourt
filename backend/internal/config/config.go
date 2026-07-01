@@ -19,6 +19,16 @@ type AgentGatewayConfig struct {
 	CompressionThreshold float64 `mapstructure:"AGENT_GATEWAY_COMPRESSION_THRESHOLD"`
 	ThrottlingThreshold  float64 `mapstructure:"AGENT_GATEWAY_THROTTLING_THRESHOLD"`
 	LogDir               string  `mapstructure:"AGENT_GATEWAY_LOG_DIR"`
+
+	// === Token Budget v2 ===
+	RejectWhenExhausted     bool `mapstructure:"AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED"`
+	BudgetSlidingWindowSec  int  `mapstructure:"AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC"`
+
+	// === Prompt Compression v2 ===
+	SmartCompression        bool    `mapstructure:"AGENT_GATEWAY_SMART_COMPRESSION"`
+	KeepRecentForcedN       int     `mapstructure:"AGENT_GATEWAY_KEEP_RECENT_FORCED_N"`
+	SummaryInsertThreshold  int     `mapstructure:"AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD"`
+	ScoreThreshold          float64 `mapstructure:"AGENT_GATEWAY_SCORE_THRESHOLD"`
 }
 
 type Config struct {
@@ -79,6 +89,14 @@ func Load() {
 	viper.SetDefault("AGENT_GATEWAY_COMPRESSION_THRESHOLD", 0.7)
 	viper.SetDefault("AGENT_GATEWAY_THROTTLING_THRESHOLD", 0.8)
 	viper.SetDefault("AGENT_GATEWAY_LOG_DIR", "logs")
+
+	// v2 defaults
+	viper.SetDefault("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", false)
+	viper.SetDefault("AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC", 300)
+	viper.SetDefault("AGENT_GATEWAY_SMART_COMPRESSION", false)
+	viper.SetDefault("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3)
+	viper.SetDefault("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 5)
+	viper.SetDefault("AGENT_GATEWAY_SCORE_THRESHOLD", 0.3)
 
 	viper.SetEnvPrefix("")
 	viper.AutomaticEnv()

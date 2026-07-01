@@ -129,7 +129,7 @@ func setupFixture(t *testing.T) *testFixture {
 	db := model.DB
 	bus := a2a.NewBus(a2a.NewGormRepository(db), nil)
 	memRepo := private_memory.NewGormRepository(db)
-	orchestrator := agent.NewOrchestrator(llmClient, bus, memRepo)
+	orchestrator := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
 	evidenceSvc := evidence.NewService(db, llmClient)
 	searcher, err := search.NewProvider(config.AppConfig.SearchProvider, config.AppConfig.BochaAPIKey)
 	require.NoError(t, err)

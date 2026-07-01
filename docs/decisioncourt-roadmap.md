@@ -27,8 +27,9 @@
 | LLM 流式 | ✅ | 后端 StreamComplete + 渐进 JSON 提取 + 前端 `flushSync` 强制 commit |
 | 调查员视觉 | ✅ | `InvestigatorPanel.tsx` + Avatar isSearching + 状态机 dispatch→report 升级 |
 | Bocha 搜索 | ✅ | `internal/search/bocha.go` 实装，HTTP 200 实测 |
-| 信念动态更新 | ⏳ | 已初始化并记录 snapshot，未基于证据实时更新 |
-| 智能收敛 | ⏳ | 当前按固定轮数结束，未实现提前收敛 |
+| 信念动态更新 | ✅ v0.6 | 贝叶斯 log-odds + 锚定（Bayesian Engine 2026 / ScioMind 2026）+ confirmation/contradiction sign + weaken 边，写入 `belief_diffs` 表 |
+| 智能收敛 | ✅ v0.6 | 四信号多信号收敛：推理震荡（PROCLAIM 2026 最高优）> 双方共识 > 信念稳定 > 最大轮次兜底，广播 `belief.convergence` 事件带结构化原因 |
+| 信念审计 trail | ✅ v0.6 | `belief_diffs` 表 + `GET /belief-diffs` REST + 前端 BeliefDiffCard + 离线可重放 |
 | 真实后端联调 | ⏳ | PostgreSQL 在跑，依赖真实 LLM API key |
 | Docker 验证 | ❌ | Docker 未安装，无法一键启动 |
 | Agent Gateway | ✅ v0.5+ 已实装 | 白盒子集：统一接入 / 审计 / trace；高级能力：Prompt 压缩 / Token 预算 / 限流 / Fallback / JSON 文件日志；模型路由 / 响应缓存留第二阶段 |

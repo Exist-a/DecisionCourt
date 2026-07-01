@@ -288,6 +288,7 @@ func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.
 	b.WriteString("请严格按以下 JSON 格式输出：\n")
 	b.WriteString(fmt.Sprintf(`{
   "summary": "一句话总结建议，必须与法官裁决一致",
+  "trial_summary": "1-2 句话的庭审过程纪要：双方核心攻防 + 关键转折点（不要复述最终裁决，重点是庭审中发生了什么）。例如：控方在第 2 轮抛出 E001 的数据来源质疑，辩方未及时回应导致失分；最终比分在第 3 轮才拉开。",
   "option_a_score": %.2f,
   "option_b_score": %.2f,
   "consensus_points": ["共识点1", "共识点2"],

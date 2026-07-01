@@ -168,6 +168,66 @@
 - `session_id` + `agent_id` + `round`（联合唯一）
 - `session_id` + `round`（拉取整轮快照）
 
+### 3.5a belief_diffs（信念变化 diff，v0.6 新增）
+
+每次贝叶斯 log-odds 引擎把一条 evidence 应用到某个 agent 时，生成一行。
+用于审计、可视化（BeliefDiffCard）、离线回放。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | UUID PK | 自增主键 |
+| `session_id` | UUID FK | 所属庭审 |
+| `round` | INT | 轮数 |
+| `phase` | VARCHAR(50) | 阶段（`evidence` / `cross_exam` / `closing`） |
+| `agent_type` | VARCHAR(50) | Agent 类型 |
+| `evidence_id` | UUID NULL | 触发该 diff 的 evidence（anchor_pull 类型时为 NULL） |
+| `source` | VARCHAR(20) | `evidence` / `weaken` / `anchor_pull` |
+| `direction` | VARCHAR(20) | `supports_a` / `supports_b` / `neutral` |
+| `prior_belief_a` | DECIMAL(5,4) | 更新前 belief_a |
+| `posterior_belief_a` | DECIMAL(5,4) | 更新后 belief_a |
+| `delta_belief_a` | DECIMAL(5,4) | posterior − prior |
+| `prior_logit` | DECIMAL(8,4) | 更新前 logit（用于离线重放） |
+| `posterior_logit` | DECIMAL(8,4) | 更新后 logit |
+| `evidence_weight` | DECIMAL(5,4) | 该 evidence 对该 agent 的有效权重（cred·rel·|impact|·(1−weaken)） |
+| `weaken_factor` | DECIMAL(5,4) | 1 − max(weaken strength targeting that agent) |
+| `reason` | TEXT | 触发原因（默认截取 evidence.content 80 字） |
+| `created_at` | TIMESTAMP | 默认 `now()` |
+
+**索引**：
+- `session_id`（按庭审拉时间线）
+- `session_id` + `agent_type`（按角色过滤）
+- `session_id` + `round`（按轮次过滤）
+
+**为什么是 DECIMAL(5,4) 而不是 FLOAT**：
+- belief_a 范围 [0, 1]，4 位小数与 UI 显示一致
+- DECIMAL 保证 0.0500 == 0.0500 严格比较（前端 BeliefDiffCard 按 prior/posterior 相等跳过重复行）
+
+### 3.5b evidence_weaken_links（质疑边，v0.6 新增）
+
+异构论辩图谱专利（CN202610034750）的实现：律师可以主动质疑某条 evidence 对某个目标 agent 的影响。
+每次质疑写入一行，多个 weaken 边叠加时取 max。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | UUID PK | 自增主键 |
+| `session_id` | UUID FK | 所属庭审 |
+| `evidence_id` | UUID FK | 被质疑的 evidence |
+| `aggressor_msg` | UUID NULL | 发起质疑的消息（可空） |
+| `aggressor_agent` | VARCHAR(32) | 质疑方 agent_type（`prosecutor` / `defender`） |
+| `target_agent` | VARCHAR(32) | 目标 agent_type（被削弱的 agent） |
+| `weaken_strength` | DECIMAL(4,2) | 削弱强度 [0, 1] |
+| `rationale` | TEXT | 质疑理由 |
+| `created_at` | TIMESTAMP | 默认 `now()` |
+
+**索引**：
+- `session_id` + `evidence_id`（按证据查所有 weaken）
+- `session_id`（按庭审全量审计）
+
+**与 belief_diffs 的关系**：
+- weaken 边写入是"声明"，不直接生成 belief_diff
+- 下次 engine.UpdateWithDiff 跑 evidence 时，会读所有 `evidence_weaken_links WHERE evidence_id = X AND target_agent = Y` 取 max，然后把 `w *= (1 - max)`
+- weaken 边本身可以通过 REST 端点写入（v0.7+ UI）
+
 ---
 
 ### 3.6 verdicts（判决书）
@@ -179,7 +239,8 @@
 | `id` | UUID PK | 自增主键 |
 | `session_id` | UUID FK UNIQUE | 所属庭审（一对一） |
 | `content` | TEXT | 完整判决书 Markdown |
-| `summary` | TEXT | 一句话总结 |
+| `summary` | TEXT | 一句话总结（采纳建议） |
+| **`trial_summary`** | **TEXT** | **v0.5+ 新增：1-2 句庭审过程纪要（双方核心攻防 + 关键转折点）。与 `summary` 不同：summary 给"该选什么"，trial_summary 给"庭审里发生了什么"。老 verdict 此列为空字符串** |
 | `option_a_score` | FLOAT | 选项 A 综合得分 [0, 1] |
 | `option_b_score` | FLOAT | 选项 B 综合得分 [0, 1] |
 | `consensus_points` | JSONB | 共识点列表 |
@@ -187,6 +248,11 @@
 | `recommendation` | TEXT | 可执行建议 |
 | `user_feedback` | VARCHAR(20) | 用户反馈：`helpful` / `not_helpful` / `none` |
 | `created_at` | TIMESTAMP | 创建时间 |
+
+**v0.5+ 迁移说明**：
+- `trial_summary` 列由 GORM AutoMigrate 自动添加（`type:text`），无需手写 migration
+- 老 verdict 行 `trial_summary = ''`，前端 `v-if` 不渲染"庭审纪要"卡片
+- 重新生成 verdict 时（用户点"上诉/再审"）自动填充新字段
 
 ---
 

@@ -14,6 +14,26 @@ type GatewayConfig struct {
 	CompressionThreshold float64
 	ThrottlingThreshold  float64
 	LogDir               string
+
+	// === Token Budget v2 扩展 ===
+	// RejectWhenExhausted 控制 budget 达到 100% 时 Gateway.Complete 的行为。
+	//   true  → 返回 ErrBudgetExhausted（推荐；与业内网关一致，避免无谓账单）
+	//   false → 现状：仍调用 inner，由 Throttler 强降 MaxTokens=100
+	// 默认 false 以保留 v0.5+ 行为；上线时建议 true。
+	RejectWhenExhausted bool
+	// BudgetSlidingWindowSec budget sliding 时间窗（秒），0 → 默认 300。
+	BudgetSlidingWindowSec int
+
+	// === Prompt Compression v2 扩展 ===
+	// SmartCompression 启用"评分 + 原子组 + 贪心打包 + 兜底摘要"四阶段。
+	// 默认 false → 保持 v0.5+ 的 keep-5 旧策略。
+	SmartCompression bool
+	// KeepRecentForcedN 评分策略下，强制保留最近 N 条，不参与评分淘汰。
+	KeepRecentForcedN int
+	// SummaryInsertThreshold 丢弃数量超过该阈值时插入一条"earlier context"摘要。
+	SummaryInsertThreshold int
+	// ScoreThreshold 低于该分不进入保留集。
+	ScoreThreshold float64
 }
 
 // IsPromptCompressionEnabled 返回压缩是否生效。
@@ -77,5 +97,25 @@ func (c GatewayConfig) Normalize() GatewayConfig {
 	if out.LogDir == "" {
 		out.LogDir = "logs"
 	}
+	// v2 默认值
+	if out.BudgetSlidingWindowSec <= 0 {
+		out.BudgetSlidingWindowSec = 300 // 5min
+	}
+	if out.KeepRecentForcedN <= 0 {
+		out.KeepRecentForcedN = 3
+	}
+	if out.SummaryInsertThreshold <= 0 {
+		out.SummaryInsertThreshold = 5
+	}
+	if out.ScoreThreshold <= 0 {
+		out.ScoreThreshold = 0.3
+	}
 	return out
+}
+
+// IsSmartCompressionEnabled 决定是否启用"评分压缩"v2。
+// SmartCompression 必须显式 true；不回退到 Enable / childDefault（破坏性升级，
+// 需用户在 .env 显式开启）。
+func (c GatewayConfig) IsSmartCompressionEnabled() bool {
+	return c.Enabled && c.SmartCompression
 }

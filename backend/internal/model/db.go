@@ -173,6 +173,10 @@ type Verdict struct {
 	SessionID        uuid.UUID `gorm:"type:uuid;uniqueIndex;not null"`
 	Content          string    `gorm:"type:text"`
 	Summary          string    `gorm:"type:text"`
+	// TrialSummary 是庭审过程纪要（1-2 句叙事：双方核心攻防 + 关键转折点）。
+	// 与 Summary（采纳建议）不同，TrialSummary 让用户"读完之后能复述整场庭审发生了什么"。
+	// v0.5+ UX 增量；由 ClerkAgent 在 verdict 生成时输出。
+	TrialSummary     string    `gorm:"type:text"`
 	OptionAScore     float64   `gorm:"type:float;default:0"`
 	OptionBScore     float64   `gorm:"type:float;default:0"`
 	ConsensusPoints  string    `gorm:"type:jsonb;default:'[]'"`
@@ -265,6 +269,8 @@ func Connect() error {
 		&Evidence{},
 		&Message{},
 		&BeliefSnapshot{},
+		&BeliefDiff{},
+		&EvidenceWeakenLink{},
 		&Verdict{},
 		&LLMCall{},
 		&SearchLog{},

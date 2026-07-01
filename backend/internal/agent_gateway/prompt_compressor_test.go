@@ -8,7 +8,7 @@ import (
 )
 
 func TestPromptCompressor_NoOpWhenNormal(t *testing.T) {
-	pc := NewPromptCompressor()
+	pc := NewPromptCompressor(SmartCompressionConfig{})
 	msgs := []llm.Message{
 		{Role: "user", Content: "hello"},
 	}
@@ -22,7 +22,7 @@ func TestPromptCompressor_NoOpWhenNormal(t *testing.T) {
 }
 
 func TestPromptCompressor_TrimsLongMessages(t *testing.T) {
-	pc := NewPromptCompressor()
+	pc := NewPromptCompressor(SmartCompressionConfig{})
 	msgs := make([]llm.Message, 12)
 	for i := range msgs {
 		msgs[i] = llm.Message{Role: "user", Content: "msg"}
@@ -40,7 +40,7 @@ func TestPromptCompressor_TrimsLongMessages(t *testing.T) {
 }
 
 func TestPromptCompressor_TrimsLongContent(t *testing.T) {
-	pc := NewPromptCompressor()
+	pc := NewPromptCompressor(SmartCompressionConfig{})
 	long := strings.Repeat("a", compressMaxMsgLen+1)
 	msgs := []llm.Message{{Role: "user", Content: long}}
 	out, info := pc.Compress(msgs, BudgetSnapshot{Status: StatusThrottle})
@@ -56,7 +56,7 @@ func TestPromptCompressor_TrimsLongContent(t *testing.T) {
 }
 
 func TestPromptCompressor_KeepsSystemAtFront(t *testing.T) {
-	pc := NewPromptCompressor()
+	pc := NewPromptCompressor(SmartCompressionConfig{})
 	msgs := make([]llm.Message, 12)
 	msgs[0] = llm.Message{Role: "system", Content: "sys-prompt"}
 	for i := 1; i < len(msgs); i++ {
@@ -69,7 +69,7 @@ func TestPromptCompressor_KeepsSystemAtFront(t *testing.T) {
 }
 
 func TestPromptCompressor_EmptyMessages(t *testing.T) {
-	pc := NewPromptCompressor()
+	pc := NewPromptCompressor(SmartCompressionConfig{})
 	out, info := pc.Compress(nil, BudgetSnapshot{Status: StatusCompress})
 	if len(out) != 0 {
 		t.Errorf("want empty, got %d", len(out))

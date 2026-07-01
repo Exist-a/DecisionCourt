@@ -2,13 +2,18 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type Handler struct {
@@ -62,6 +67,10 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		api.GET("/courtrooms/:session_uuid/agents", h.GetAgents)
 		api.GET("/courtrooms/:session_uuid/verdict", h.GetVerdict)
 		api.GET("/courtrooms/:session_uuid/investigations", h.GetInvestigations)
+		api.GET("/courtrooms/:session_uuid/export", h.ExportSession)
+		// v0.6 belief engine: structured belief-diff audit trail.
+		// Supports ?agent=prosecutor|defender|... and ?round=N filters.
+		api.GET("/courtrooms/:session_uuid/belief-diffs", h.GetBeliefDiffs)
 	}
 }
 
@@ -209,7 +218,49 @@ func (h *Handler) GetMessages(c *gin.Context) {
 	var messages []model.Message
 	model.DB.Where("session_id = ?", session.ID).Order("created_at asc").Find(&messages)
 
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"messages": messages}})
+	// v0.6: 提一条 agent_type 到顶层（Message 模型本身没这列，从
+	// metadata.agent_type 取），让前端按 agent 过滤/展示不用 join。
+	out := make([]gin.H, 0, len(messages))
+	for _, m := range messages {
+		row := gin.H{
+			"id":            m.ID,
+			"session_id":    m.SessionID,
+			"agent_id":      m.AgentID,
+			"phase":         m.Phase,
+			"round":         m.Round,
+			"content":       m.Content,
+			"evidence_refs": m.EvidenceRefs,
+			"action_type":   m.ActionType,
+			"metadata":      m.Metadata,
+			"created_at":    m.CreatedAt,
+			"agent_type":    extractAgentTypeFromMetadata(m.Metadata, m.AgentID),
+		}
+		out = append(out, row)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"messages": out}})
+}
+
+// extractAgentTypeFromMetadata reads metadata.agent_type when present
+// (set by saveAgentMessage since v0.6). Falls back to looking up the
+// agent row to get its AgentType for legacy rows. Returns "" if nothing.
+func extractAgentTypeFromMetadata(metadataJSON string, agentID *uuid.UUID) string {
+	if metadataJSON != "" {
+		var md struct {
+			AgentType string `json:"agent_type"`
+		}
+		if err := json.Unmarshal([]byte(metadataJSON), &md); err == nil && md.AgentType != "" {
+			return md.AgentType
+		}
+	}
+	if agentID == nil {
+		return ""
+	}
+	var ag model.Agent
+	if err := model.DB.Select("agent_type").Where("id = ?", *agentID).First(&ag).Error; err == nil {
+		return string(ag.AgentType)
+	}
+	return ""
 }
 
 func (h *Handler) GetEvidences(c *gin.Context) {
@@ -258,6 +309,140 @@ func (h *Handler) GetVerdict(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": verdictResponse(verdict)})
+}
+
+// ExportSession returns a self-contained JSON dump of the trial. Used by
+// the verdict page's "导出 JSON" button. The user can take this file
+// away to keep their private strategy notes after the session ends.
+//
+// Visibility is enforced via a2a.Bus.ListVisibleTo("user") so the export
+// only includes a2a_messages the user was already allowed to see during
+// the trial (public transcript + own private memory). Opposing-side
+// private notes are NOT included — that's the SQL isolation guarantee.
+//
+// Supported formats:
+//   - json (default): full structured dump
+//   - json+download: same payload, but Content-Disposition forces download
+//
+// PDF export is intentionally NOT done server-side: the verdict page
+// uses the browser's print dialog (`window.print()`) with a print
+// stylesheet to get a printable PDF. This avoids adding a Go PDF lib
+// dependency for a feature used by < 5% of users.
+func (h *Handler) ExportSession(c *gin.Context) {
+	sessionUUID := c.Param("session_uuid")
+
+	session, ok := h.lookupSession(sessionUUID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"code": 1002, "message": "庭审不存在"})
+		return
+	}
+
+	payload, err := h.service.ExportSession(c.Request.Context(), session)
+	if err != nil {
+		log.Printf("[ExportSession] failed for %s: %v", sessionUUID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1500, "message": "导出失败"})
+		return
+	}
+
+	// Always include session_uuid as a query-string echo so the frontend
+	// can name the file with the case id.
+	filename := fmt.Sprintf("decisioncourt-%s-%s.json",
+		sessionUUID,
+		time.Now().UTC().Format("20060102-150405"))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	c.JSON(http.StatusOK, payload)
+}
+
+// GetBeliefDiffs returns the v0.6 structured belief-diff audit trail for a
+// session. Each row is one engine update step (one evidence piece applied
+// to one agent) with full before/after math: prior/posterior logits, delta,
+// evidence weight, weaken factor, and the human-readable reason.
+//
+// Query params (all optional):
+//   - agent=prosecutor|defender|investigator|clerk|judge : filter by agent type
+//   - round=N                                            : filter to one round
+//
+// When the belief repo is not configured (older deployment), we return
+// an empty list rather than 500 — the frontend treats this as "no diffs
+// recorded yet" and falls back to the legacy belief trajectory.
+func (h *Handler) GetBeliefDiffs(c *gin.Context) {
+	sessionUUID := c.Param("session_uuid")
+
+	session, ok := h.lookupSession(sessionUUID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"code": 1002, "message": "庭审不存在"})
+		return
+	}
+
+	if h.service == nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"diffs": []gin.H{}, "count": 0}})
+		return
+	}
+
+	repo := h.service.GetDiffRepository()
+	if repo == nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"diffs": []gin.H{}, "count": 0}})
+		return
+	}
+
+	agentFilter := c.Query("agent")
+	roundStr := c.Query("round")
+
+	var rows []model.BeliefDiff
+	var err error
+
+	switch {
+	case agentFilter != "":
+		rows, err = repo.ListBySessionAndAgent(c.Request.Context(), session.ID, model.AgentType(agentFilter))
+	case roundStr != "":
+		round, parseErr := strconv.Atoi(roundStr)
+		if parseErr != nil || round < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": "round 参数非法"})
+			return
+		}
+		rows, err = repo.ListBySessionAndRound(c.Request.Context(), session.ID, round)
+	default:
+		rows, err = repo.ListBySession(c.Request.Context(), session.ID)
+	}
+	if err != nil {
+		log.Printf("list belief diffs failed for %s: %v", sessionUUID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1500, "message": "查询信念变化失败"})
+		return
+	}
+
+	items := make([]gin.H, 0, len(rows))
+	for _, d := range rows {
+		items = append(items, beliefDiffResponse(d))
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"diffs": items, "count": len(items)}})
+}
+
+func beliefDiffResponse(d model.BeliefDiff) gin.H {
+	return gin.H{
+		"id":                 d.ID,
+		"round":              d.Round,
+		"phase":              d.Phase,
+		"agent_type":         string(d.AgentType),
+		"evidence_id":        evidenceUUIDString(d.EvidenceID),
+		"source":             d.Source,
+		"direction":          d.Direction,
+		"prior_belief_a":     d.PriorBeliefA,
+		"posterior_belief_a": d.PosteriorBeliefA,
+		"delta_belief_a":     d.DeltaBeliefA,
+		"prior_logit":        d.PriorLogit,
+		"posterior_logit":    d.PosteriorLogit,
+		"evidence_weight":    d.EvidenceWeight,
+		"weaken_factor":      d.WeakenFactor,
+		"reason":             d.Reason,
+		"created_at":         d.CreatedAt,
+	}
+}
+
+func evidenceUUIDString(id *uuid.UUID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }
 
 // GetInvestigations returns all investigation findings for a session,
@@ -318,6 +503,7 @@ func verdictResponse(v model.Verdict) gin.H {
 		"session_id":        v.SessionID,
 		"content":           v.Content,
 		"summary":           v.Summary,
+		"trial_summary":     v.TrialSummary,
 		"option_a_score":    v.OptionAScore,
 		"option_b_score":    v.OptionBScore,
 		"consensus_points":  v.ConsensusPoints,

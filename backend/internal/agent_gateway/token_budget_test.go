@@ -84,13 +84,20 @@ func TestTokenBudget_EmptySession(t *testing.T) {
 
 func TestTokenBudget_DefaultThresholds(t *testing.T) {
 	tb := NewTokenBudget(0, 0, 0)
-	if tb.limitPerSession != 20000 {
-		t.Errorf("default limit: want 20000 got %d", tb.limitPerSession)
+	if tb == nil || tb.store == nil {
+		t.Fatalf("tb.store must not be nil after construction")
 	}
-	if tb.compressRatio != 0.7 {
-		t.Errorf("default compress ratio: want 0.7 got %.2f", tb.compressRatio)
+	mem, ok := tb.store.(*MemStore)
+	if !ok {
+		t.Fatalf("default store should be *MemStore, got %T", tb.store)
 	}
-	if tb.throttleRatio != 0.8 {
-		t.Errorf("default throttle ratio: want 0.8 got %.2f", tb.throttleRatio)
+	if mem.limitTotal != 20000 {
+		t.Errorf("default limit: want 20000 got %d", mem.limitTotal)
+	}
+	if mem.compressR != 0.7 {
+		t.Errorf("default compress ratio: want 0.7 got %.2f", mem.compressR)
+	}
+	if mem.throttleR != 0.8 {
+		t.Errorf("default throttle ratio: want 0.8 got %.2f", mem.throttleR)
 	}
 }

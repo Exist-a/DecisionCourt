@@ -66,6 +66,11 @@ func IsKnownMemoryKind(k MemoryKind) bool {
 // MemoryHook so the orchestrator can persist it as a private A2A message.
 // The fields default to "" so callers and tests that pre-date v0.5 keep
 // working unchanged.
+//
+// v0.6 addendum: Weaken is an OPTIONAL v0.6 field. Each entry declares that
+// the agent wants to attack an existing evidence piece's transmission
+// rather than its truth (per the 异构论辩图谱 patent). The runner fires
+// WeakenHook so the orchestrator can persist it to evidence_weaken_links.
 type AgentOutput struct {
 	Reasoning    string                 `json:"reasoning"`
 	Content      string                 `json:"content"`
@@ -81,6 +86,34 @@ type AgentOutput struct {
 	// MemoryNote (v0.5) — the content of the memory entry. Free-form text;
 	// the runner passes it through verbatim into the A2A payload.
 	MemoryNote string `json:"memory_note,omitempty"`
+	// Weaken (v0.6) — list of evidence pieces the agent wants to neutralise.
+	// See WeakenDeclaration below.
+	Weaken []WeakenDeclaration `json:"weaken,omitempty"`
+}
+
+// WeakenDeclaration is a single "weakening edge" declared by an LLM agent.
+// The ReAct runner forwards every non-empty declaration to the WeakenHook so
+// the orchestrator can persist it as a row in evidence_weaken_links; the
+// belief engine reads those rows when applying future evidence impact.
+//
+// All fields are required; the runner's ApplyOutputToMemoryHook path
+// performs validation/clamping before persisting.
+type WeakenDeclaration struct {
+	// EvidenceID is the *display_id* (e.g. "E001") the user sees in the
+	// EvidenceBoard, NOT the DB UUID. The hook resolves it to the actual
+	// UUID via the session's evidence list before Inserting.
+	EvidenceID string `json:"evidence_id"`
+	// Target is the agent whose belief the weaken should attenuate. Use
+	// "prosecutor" or "defender"; investigator / clerk weaken declarations
+	// are silently dropped (those agents don't anchor strongly enough for
+	// weakening to matter).
+	Target string `json:"target"`
+	// Strength is a 0..1 attenuation amount. 0.4 = "this evidence should
+	// carry 60% of its normal weight when affecting Target".
+	Strength float64 `json:"strength"`
+	// Rationale is a short free-text reason shown on the verdict page's
+	// audit card. Optional.
+	Rationale string `json:"rationale,omitempty"`
 }
 
 // NormalizeAction fills in the default Action so legacy callers (and tests
@@ -97,6 +130,47 @@ func (o *AgentOutput) NormalizeAction() {
 // firing the MemoryHook to avoid no-op invocations.
 func (o *AgentOutput) HasMemory() bool {
 	return IsKnownMemoryKind(o.MemoryType) && strings.TrimSpace(o.MemoryNote) != ""
+}
+
+// HasWeaken reports whether the output carries at least one valid
+// WeakenDeclaration. We treat a declaration as valid when EvidenceID is
+// non-empty, Target is prosecutor or defender, and Strength is in (0, 1).
+// Hooks use this before persisting to avoid no-op database writes.
+func (o *AgentOutput) HasWeaken() bool {
+	for _, w := range o.Weaken {
+		if isValidWeaken(w) {
+			return true
+		}
+	}
+	return false
+}
+
+// isValidWeaken is a small predicate used by HasWeaken and the WeakenHook
+// to drop obviously-broken entries.
+func isValidWeaken(w WeakenDeclaration) bool {
+	if strings.TrimSpace(w.EvidenceID) == "" {
+		return false
+	}
+	if w.Target != "prosecutor" && w.Target != "defender" {
+		return false
+	}
+	if w.Strength <= 0 || w.Strength > 1 {
+		return false
+	}
+	return true
+}
+
+// ValidWeakenDeclarations returns a slice containing only the entries that
+// pass isValidWeaken. Both hooks and tests call this so the loud-failure
+// path ("this entry would have crashed") is centralised.
+func (o *AgentOutput) ValidWeakenDeclarations() []WeakenDeclaration {
+	out := make([]WeakenDeclaration, 0, len(o.Weaken))
+	for _, w := range o.Weaken {
+		if isValidWeaken(w) {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // Speaker represents an Agent ready to speak in the courtroom.

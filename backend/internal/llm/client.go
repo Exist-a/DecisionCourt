@@ -49,6 +49,13 @@ type Client interface {
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Metadata 是 Agent Gateway 评分 / 原子组识别用的可选标签，不会发送到上游 LLM。
+	//   已知 keys：
+	//     agent_type    "judge" / "prosecutor" / "defender" / ...
+	//     tool_call_id  标记 assistant(tool_calls) 与 tool 结果配对
+	//     evidence_id   标记证据引用
+	//   不序列化到 JSON（避免影响上游解析）。
+	Metadata map[string]string `json:"-"`
 }
 
 type openAIClient struct {

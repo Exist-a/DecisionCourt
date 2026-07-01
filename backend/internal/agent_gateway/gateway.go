@@ -10,6 +10,7 @@ package agent_gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/decisioncourt/backend/internal/llm"
@@ -46,10 +47,18 @@ func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg Gat
 		logger     *FileLogger
 	)
 	if cfg.IsTokenBudgetEnabled() {
-		budget = NewTokenBudget(cfg.BudgetPerSession, cfg.CompressionThreshold, cfg.ThrottlingThreshold)
+		// v2：构造 MemStore 时携带 limit + cost + 阈值 + sliding 时长
+		slidingWindow := time.Duration(cfg.BudgetSlidingWindowSec) * time.Second
+		store := NewMemStore(cfg.BudgetPerSession, 0, cfg.CompressionThreshold, cfg.ThrottlingThreshold, slidingWindow)
+		budget = NewTokenBudgetWithStore(store)
 	}
 	if cfg.IsPromptCompressionEnabled() {
-		compressor = NewPromptCompressor()
+		compressor = NewPromptCompressor(SmartCompressionConfig{
+			Enabled:                cfg.IsSmartCompressionEnabled(),
+			KeepRecentForcedN:      cfg.KeepRecentForcedN,
+			SummaryInsertThreshold: cfg.SummaryInsertThreshold,
+			ScoreThreshold:         cfg.ScoreThreshold,
+		})
 	}
 	if cfg.IsThrottlingEnabled() {
 		throttler = NewThrottler()
@@ -90,8 +99,23 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 	}
 	tr := FromContext(ctx)
 
-	// 1. 预算检查
+	// 1. 预算检查（同时在 v2 模式下触发 OnWarning hooks）
 	bs := g.budgetSnapshot(ctx, tr.SessionUUID)
+
+	// 1b. v2 预算耗尽拒绝（D4 决策）
+	if g.cfg.RejectWhenExhausted && bs.Status == StatusExhausted {
+		err := fmt.Errorf("%w (session=%s ratio=%.2f)", ErrBudgetExhausted, tr.SessionUUID, bs.Ratio)
+		// 仍写一条审计日志，让业务可以事后看 budget_exhausted 拒绝记录
+		g.recorder.Record(CallInput{
+			Trace:   tr,
+			Model:   model,
+			Usage:   Usage{},
+			Latency: 0,
+			Status:  StatusError,
+			Err:     err,
+		})
+		return "", llm.Usage{}, err
+	}
 
 	// 2. Prompt 压缩
 	compInfo := CompressionInfo{BeforeCount: len(messages)}
@@ -128,7 +152,10 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 
 	// 5. 记录使用到预算
 	if g.budget != nil && tr.SessionUUID != "" {
-		g.budget.RecordUsage(ctx, tr.SessionUUID, usage.TotalTokens)
+		g.budget.AddUsage(ctx, tr.SessionUUID, BudgetUsage{
+			InputTokens:  usage.PromptTokens,
+			OutputTokens: usage.CompletionTokens,
+		})
 	}
 
 	// 6. 审计落库
@@ -164,6 +191,14 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 	// 1. 预算检查
 	bs := g.budgetSnapshot(ctx, tr.SessionUUID)
 
+	// 1b. v2 预算耗尽拒绝（流式：直接 emit Done+Err 然后关 channel）
+	if g.cfg.RejectWhenExhausted && bs.Status == StatusExhausted {
+		err := fmt.Errorf("%w (session=%s ratio=%.2f)", ErrBudgetExhausted, tr.SessionUUID, bs.Ratio)
+		out <- llm.StreamChunk{Done: true, Err: err}
+		close(out)
+		return out
+	}
+
 	// 2. 压缩
 	compInfo := CompressionInfo{BeforeCount: len(messages)}
 	if g.compressor != nil && bs.Status != StatusNormal {
@@ -194,13 +229,15 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 
 		usage := llm.Usage{}
 		if g.budget != nil && tr.SessionUUID != "" {
-			// 流式返回没有 token 计数，按输出字符数估算 1 token ≈ 4 字符
+			// 流式返回没有 token 计数，按输出字符数估算 1 token ≈ 4 字符。
+			// v2 多维：把估算值全部记到 OutputTokens（LLM 没办法在流上拿到真实 usage）。
 			approx := len(totalContent) / 4
 			if approx < 1 {
 				approx = 0
 			}
 			usage.TotalTokens = approx
-			g.budget.RecordUsage(ctx, tr.SessionUUID, approx)
+			usage.CompletionTokens = approx
+			g.budget.AddUsage(ctx, tr.SessionUUID, BudgetUsage{OutputTokens: approx})
 		}
 
 		g.recorder.Record(CallInput{
@@ -256,6 +293,11 @@ func (g *Gateway) writeFileLog(ctx context.Context, tr Trace, model string, usag
 		CompressionAfterCount:  compInfo.AfterCount,
 		CompressionBeforeLength: compInfo.BeforeLength,
 		CompressionAfterLength:  compInfo.AfterLength,
+		CompressionStrategy:    compInfo.Strategy,
+		CompressionAtomicGroups: compInfo.AtomicGroups,
+		CompressionAtomicKept:  compInfo.AtomicGroupsKept,
+		CompressionRecentForced: compInfo.RecentForcedKept,
+		CompressionSummarized:  compInfo.SummarizedBlocks,
 		Throttled:              throttleInfo.Applied,
 		ThrottleExempted:       throttleInfo.Exempted,
 		ThrottleExemptReason:   throttleInfo.ExemptReason,
@@ -266,6 +308,11 @@ func (g *Gateway) writeFileLog(ctx context.Context, tr Trace, model string, usag
 		BudgetUsed:             bs.Used,
 		BudgetTotal:            bs.Total,
 		BudgetRatio:            bs.Ratio,
+		BudgetInputTokens:      bs.InputTokens,
+		BudgetOutputTokens:     bs.OutputTokens,
+		BudgetCostUSD:          bs.CostUSD,
+		BudgetSlidingTokens:    bs.SlidingTokens,
+		BudgetWarningLevel:     bs.WarningLevel,
 	}
 	if err := g.fileLogger.Write(entry); err != nil {
 		// 仅吞掉错误；避免日志失败拖死主流程

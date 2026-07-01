@@ -124,6 +124,13 @@ export interface Verdict {
   session_uuid: string;
   content: string;
   summary: string;
+  /**
+   * 庭审过程纪要（v0.5+ UX 增量）。
+   * 与 summary（采纳建议）不同：trial_summary 是 1-2 句叙事，
+   * 告诉用户"庭审中双方怎么攻防、关键转折点在哪"。
+   * 老 verdict（v0.5 之前生成）没有此字段，可能为空字符串。
+   */
+  trial_summary?: string;
   option_a_score: number;
   option_b_score: number;
   consensus_points: string[] | string;
@@ -344,6 +351,78 @@ export interface A2AMessageEvent extends CourtEvent {
 }
 
 // ============================================================
+// v0.6 Belief Engine — 信念引擎结构化审计
+// ============================================================
+//
+// 后端在 v0.6 把「证据 → 信念变化」的每一步都写入 belief_diffs 表，
+// 同时通过 belief.diff 事件推给前端。前端 BeliefDiffCard 渲染单条
+// diff 卡片；StanceChart 增加收敛判断（基于 belief.convergence）。
+//
+// 详见 .trae/documents/belief-engine-v06.md（待写）。
+export type BeliefDiffSource = "evidence" | "weaken" | "anchor_pull";
+export type BeliefDirection = "supports_a" | "supports_b" | "neutral";
+
+/**
+ * BeliefDiff is the frontend-friendly projection of one row in
+ * belief_diffs. Each row = one (evidence piece, agent) pair from the
+ * Bayesian-log-odds engine. Frontend BeliefDiffCard renders it as a
+ * one-line timeline entry: "0.75 → 0.78 (Δ+0.03, weight=0.50)".
+ */
+export interface BeliefDiff {
+  id: string;
+  round: number;
+  phase: string;
+  agent_type: AgentType;
+  evidence_id?: string;
+  source: BeliefDiffSource;
+  direction: BeliefDirection;
+  prior_belief_a: number;
+  posterior_belief_a: number;
+  delta_belief_a: number;
+  prior_logit: number;
+  posterior_logit: number;
+  evidence_weight: number;
+  /** 1 - max(weaken strength) targeting this agent for this evidence.
+   *  1.0 = no weakening, 0.0 = fully blocked. */
+  weaken_factor: number;
+  reason: string;
+  created_at: string;
+}
+
+/**
+ * ConvergenceInfo is the v0.6 multi-signal convergence reason emitted
+ * by belief.convergence. UI shows it as a ConvergenceBadge next to the
+ * trial summary.
+ */
+export interface ConvergenceInfo {
+  reason:
+    | "reasoning_oscillation"
+    | "consensus"
+    | "belief_stable"
+    | "max_rounds";
+  round: number;
+  /** Human-readable Chinese caption for tooltips / a11y. */
+  reason_message: string;
+  /** Wall-clock time when the convergence was detected. */
+  detectedAt: string;
+}
+
+export interface BeliefDiffEvent extends CourtEvent {
+  type: "belief.diff";
+  payload: BeliefDiff;
+}
+
+export interface BeliefConvergenceEvent extends CourtEvent {
+  type: "belief.convergence";
+  payload: {
+    reason: ConvergenceInfo["reason"];
+    round: number;
+    converged: boolean;
+    reason_message: string;
+  };
+}
+
+// ============================================================
 // v0.5 Episodic Memory — 前端私有策略笔记类型
 // ============================================================
 //
@@ -415,6 +494,8 @@ export interface VerdictReadyEvent extends CourtEvent {
   payload: {
     verdict_id: string;
     summary: string;
+    /** v0.5+ 新增：庭审过程纪要（老 payload 可能没有这个字段） */
+    trial_summary?: string;
     option_a_score: number;
     option_b_score: number;
   };

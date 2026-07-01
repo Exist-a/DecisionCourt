@@ -105,7 +105,7 @@ func TestProsecutorSpeakWithReAct_DispatchesSearchThenSpeaks(t *testing.T) {
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	orch := NewOrchestrator(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
 
 	dispatch := &reactDispatch{fid: "finding-fake-1", summary: "[1] A; [2] B"}
 	hook := &captureHook{}
@@ -173,7 +173,7 @@ func TestProsecutorSpeakWithReAct_DirectSpeakProducesSameSideEffects(t *testing.
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	orch := NewOrchestrator(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
 	ag := model.Agent{ID: uuid.New(), AgentType: model.AgentProsecutor, BeliefA: 0.75}
 	session := model.CourtSession{ID: uuid.New(), SessionUUID: "sess-direct", OptionA: "A", OptionB: "B"}
 
@@ -200,7 +200,7 @@ func TestProsecutorSpeakWithReAct_NilDispatchRunsWithoutTool(t *testing.T) {
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	orch := NewOrchestrator(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
 	ag := model.Agent{ID: uuid.New(), AgentType: model.AgentDefender, BeliefA: 0.25, BeliefB: 0.75}
 	session := model.CourtSession{ID: uuid.New(), SessionUUID: "sess-nil", OptionA: "A", OptionB: "B"}
 
@@ -222,7 +222,7 @@ func TestProsecutorSpeakWithReAct_DispatchErrorDoesNotAbort(t *testing.T) {
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	orch := NewOrchestrator(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
 	dispatch := &reactDispatch{err: assertError("search provider unavailable")}
 	hook := &captureHook{}
 
@@ -247,7 +247,7 @@ func TestProsecutorSpeakWithReAct_WritesPrivateStrategyNoteAfterSpeak(t *testing
 	}}
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2a.NewInMemoryRepository(nil), nil)
-	orch := NewOrchestrator(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
 
 	agID := uuid.New()
 	ag := model.Agent{ID: agID, AgentType: model.AgentDefender, BeliefA: 0.25}
@@ -285,7 +285,7 @@ func TestProsecutorSpeakWithReAct_RespectsTimeout(t *testing.T) {
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	_ = NewOrchestrator(llmClient, bus, memRepo)
+	_ = NewOrchestratorLegacy(llmClient, bus, memRepo)
 	dispatch := &reactDispatch{fid: "finding-fake-1"}
 	hook := &captureHook{}
 

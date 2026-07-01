@@ -15,9 +15,11 @@ import (
 )
 
 // fakeBudgetLLM 可以控制每次返回的 usage，用于预算测试。
+// 为了匹配 v2 Token Budget 的多维计数（InputTokens / OutputTokens），这里把
+// total 拆成 600/200 这样的真实比例（避免仅设 Total 时被认作 0）。
 type fakeBudgetLLM struct {
-	mu          sync.Mutex
-	calls       int
+	mu           sync.Mutex
+	calls        int
 	usagePerCall llm.Usage
 }
 
@@ -37,7 +39,7 @@ func (f *fakeBudgetLLM) StreamComplete(_ context.Context, _ string, _ []llm.Mess
 
 func TestGateway_Advanced_BudgetCompressThrottleAndLog(t *testing.T) {
 	dir := t.TempDir()
-	inner := &fakeBudgetLLM{usagePerCall: llm.Usage{TotalTokens: 800}}
+	inner := &fakeBudgetLLM{usagePerCall: llm.Usage{PromptTokens: 600, CompletionTokens: 200, TotalTokens: 800}}
 	rec := NewRecorder(RecorderConfig{Enabled: false, Provider: "deepseek"}, nil)
 	cfg := GatewayConfig{
 		Enabled:           true,

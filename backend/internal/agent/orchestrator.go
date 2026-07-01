@@ -11,6 +11,7 @@ import (
 	"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/agent/tools"
 	"github.com/decisioncourt/backend/internal/agent_gateway"
+	"github.com/decisioncourt/backend/internal/belief"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/private_memory"
@@ -18,23 +19,45 @@ import (
 )
 
 type Orchestrator struct {
-	llmClient  llm.Client
-	a2aBus     *a2a.Bus
-	memoryRepo private_memory.Repository
+	llmClient   llm.Client
+	a2aBus      *a2a.Bus
+	memoryRepo  private_memory.Repository
+	weakenRepo  belief.WeakenRepository
+	evidenceLkp EvidenceResolver
 }
 
 // NewOrchestrator wires the orchestrator with an A2A bus (for message
 // routing / isolation / audit) and a private-memory repository. The Bus and
 // Repository are required: this enforces that every speaking turn goes
 // through the bus and every strategy note lands in private memory.
-func NewOrchestrator(client llm.Client, bus *a2a.Bus, memRepo private_memory.Repository) *Orchestrator {
+//
+// v0.6: weakenRepo and evidenceLkp are optional. When both are wired the
+// orchestrator activates the WeakenHook so ReAct reflect steps can declare
+// weakening edges that the belief engine reads when applying future impact.
+func NewOrchestrator(client llm.Client, bus *a2a.Bus, memRepo private_memory.Repository, weakenRepo belief.WeakenRepository, evidenceLkp EvidenceResolver) *Orchestrator {
 	if bus == nil {
 		panic("agent: a2a.Bus is required")
 	}
 	if memRepo == nil {
 		panic("agent: private_memory.Repository is required")
 	}
-	return &Orchestrator{llmClient: client, a2aBus: bus, memoryRepo: memRepo}
+	return &Orchestrator{
+		llmClient:   client,
+		a2aBus:      bus,
+		memoryRepo:  memRepo,
+		weakenRepo:  weakenRepo,
+		evidenceLkp: evidenceLkp,
+	}
+}
+
+// NewOrchestratorLegacy preserves the v0.5.x NewOrchestrator signature for
+// the test suite (and any out-of-tree callers) that haven't migrated yet.
+// It simply defers to NewOrchestrator with nil weakenRepo / nil resolver,
+// which disables WeakenHook emission — equivalent to pre-v0.6 behaviour.
+//
+// Marked Deprecated in the godoc so new wiring uses the 5-arg form.
+func NewOrchestratorLegacy(client llm.Client, bus *a2a.Bus, memRepo private_memory.Repository) *Orchestrator {
+	return NewOrchestrator(client, bus, memRepo, nil, nil)
 }
 
 func (o *Orchestrator) ProsecutorSpeak(
@@ -176,6 +199,11 @@ func (o *Orchestrator) lawyerSpeakReAct(
 			Round:     session.CurrentRound,
 			Phase:     string(session.CurrentPhase),
 		},
+		// v0.6: weaken hook. We only activate it if both the repository
+		// and the evidence resolver are wired — otherwise we silently
+		// drop weaken declarations instead of crashing. (Most pre-v0.6
+		// callers don't supply either, so this stays a no-op.)
+		WeakenHook: o.makeWeakenHook(),
 	})
 	runner.SetStepHook(stepHook)
 
@@ -216,6 +244,28 @@ func (o *Orchestrator) makeMemoryHook() MemoryHook {
 			log.Printf("[orchestrator] private memory emit failed for %s: %v", meta.AgentType, err)
 		}
 		return err
+	}
+}
+
+// makeWeakenHook returns a WeakenHook closure that persists AgentOutput
+// weaken declarations to the belief.WeakenRepository. Returns a no-op when
+// either the repo or the evidence resolver is nil so pre-v0.6 callers keep
+// functioning unchanged.
+//
+// Failure isolation mirrors makeMemoryHook: a Send error is logged but
+// never returned — persist failures never abort the trial.
+func (o *Orchestrator) makeWeakenHook() WeakenHook {
+	return func(ctx context.Context, out AgentOutput, meta MemoryMeta) error {
+		if o.weakenRepo == nil || o.evidenceLkp == nil {
+			return nil
+		}
+		writeCtx, writeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer writeCancel()
+		if err := EmitWeakenFromOutput(writeCtx, MapToWeakenRepository(o.weakenRepo), o.evidenceLkp, meta, out); err != nil {
+			log.Printf("[orchestrator] weaken emit failed for %s: %v", meta.AgentType, err)
+			return err
+		}
+		return nil
 	}
 }
 

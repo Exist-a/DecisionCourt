@@ -28,7 +28,7 @@ func TestServiceSpeakWithReAct_BroadcastsThinkingStartedBeforeCotStep(t *testing
 		toolJSON(tools.InvestigatorSearchToolName, map[string]interface{}{"query": "x"}),
 		speakJSON("final", "pro_a", 0.7),
 	}}
-	orch := agent.NewOrchestrator(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
 
 	searcher := &stubSearcher{results: nil}
 	invRepo := investigation.NewInMemoryRepository(nil)
@@ -119,7 +119,7 @@ func TestServiceSpeakWithReAct_ThinkingStartedPayloadShape(t *testing.T) {
 	llmClient := &reactScriptedLLM{scripts: []string{
 		speakJSON("直接说话", "pro_a", 0.8),
 	}}
-	orch := agent.NewOrchestrator(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
 
 	svc := &Service{
 		db:               nil,
@@ -186,7 +186,7 @@ func TestServiceSpeakWithReAct_SearchStartedAroundToolCotStep(t *testing.T) {
 		toolJSON(tools.InvestigatorSearchToolName, map[string]interface{}{"query": "市场行情"}),
 		speakJSON("基于搜索的论点", "pro_a", 0.8),
 	}}
-	orch := agent.NewOrchestrator(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
 
 	results := []search.Result{{Title: "数据", URL: "u", Content: "c"}}
 	searcher := &stubSearcher{results: results}

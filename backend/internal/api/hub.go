@@ -19,15 +19,25 @@ import (
 // - 不影响普通广播(普通广播按 event 间隔本来就 > 30ms)
 const minChunkSpacing = 30 * time.Millisecond
 
+// client wraps a single WebSocket connection with a write-lock so
+// concurrent Broadcast callers (e.g. ReAct streaming + evidence-triggered
+// belief.diff / belief.updated events) serialize their WriteMessage calls.
+// gorilla/websocket's *Conn is NOT safe for concurrent writes — without this
+// the runtime panics with "concurrent write to websocket connection".
+type client struct {
+	conn *websocket.Conn
+	wmu  sync.Mutex
+}
+
 // Hub manages WebSocket connections grouped by session_uuid.
 type Hub struct {
-	mu      sync.RWMutex
-	rooms   map[string]map[*websocket.Conn]bool
+	mu    sync.RWMutex
+	rooms map[string]map[*client]bool
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		rooms: make(map[string]map[*websocket.Conn]bool),
+		rooms: make(map[string]map[*client]bool),
 	}
 }
 
@@ -36,20 +46,27 @@ func (h *Hub) Join(sessionUUID string, conn *websocket.Conn) {
 	defer h.mu.Unlock()
 
 	if h.rooms[sessionUUID] == nil {
-		h.rooms[sessionUUID] = make(map[*websocket.Conn]bool)
+		h.rooms[sessionUUID] = make(map[*client]bool)
 	}
-	h.rooms[sessionUUID][conn] = true
+	h.rooms[sessionUUID][&client{conn: conn}] = true
 }
 
 func (h *Hub) Leave(sessionUUID string, conn *websocket.Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if clients, ok := h.rooms[sessionUUID]; ok {
-		delete(clients, conn)
-		if len(clients) == 0 {
-			delete(h.rooms, sessionUUID)
+	clients, ok := h.rooms[sessionUUID]
+	if !ok {
+		return
+	}
+	for c := range clients {
+		if c.conn == conn {
+			delete(clients, c)
+			break
 		}
+	}
+	if len(clients) == 0 {
+		delete(h.rooms, sessionUUID)
 	}
 }
 
@@ -67,11 +84,16 @@ func (h *Hub) Broadcast(sessionUUID string, event courtroom.Event) {
 		return
 	}
 
-	for conn := range clients {
-		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			// Remove broken connection
-			h.Leave(sessionUUID, conn)
-			conn.Close()
+	for c := range clients {
+		// 串行化每个 conn 的写操作,避免 "concurrent write to websocket"。
+		c.wmu.Lock()
+		writeErr := c.conn.WriteMessage(websocket.TextMessage, data)
+		c.wmu.Unlock()
+
+		if writeErr != nil {
+			// Remove broken connection.
+			h.Leave(sessionUUID, c.conn)
+			c.conn.Close()
 			continue
 		}
 		// 流式场景下强制 sleep,让 OS TCP buffer 每 ~30ms flush 一次。

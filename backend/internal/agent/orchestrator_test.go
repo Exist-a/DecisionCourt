@@ -49,7 +49,7 @@ func newTestOrchestrator(t *testing.T) (*Orchestrator, *a2a.InMemoryRepository, 
 	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	llmClient := &stubLLM{output: validOutputJSON()}
-	return NewOrchestrator(llmClient, bus, memRepo), a2aRepo, memRepo
+	return NewOrchestratorLegacy(llmClient, bus, memRepo), a2aRepo, memRepo
 }
 
 func TestOrchestrator_ProsecutorSpeak_PublishesA2AMessage(t *testing.T) {
@@ -191,13 +191,13 @@ func TestOrchestrator_DefenderSpeak_OtherAgentCannotReadStrategyNote(t *testing.
 
 func TestOrchestrator_NewOrchestrator_PanicsWithoutBus(t *testing.T) {
 	require.Panics(t, func() {
-		NewOrchestrator(&stubLLM{}, nil, private_memory.NewInMemoryRepository(nil))
+		NewOrchestratorLegacy(&stubLLM{}, nil, private_memory.NewInMemoryRepository(nil))
 	})
 }
 
 func TestOrchestrator_NewOrchestrator_PanicsWithoutMemory(t *testing.T) {
 	require.Panics(t, func() {
 		bus := a2a.NewBus(a2a.NewInMemoryRepository(nil), nil)
-		NewOrchestrator(&stubLLM{}, bus, nil)
+		NewOrchestratorLegacy(&stubLLM{}, bus, nil)
 	})
 }
