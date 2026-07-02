@@ -63,7 +63,7 @@ interview/
 | **重名词** | 每个技术名词首次出现时给定义 |
 | **【反思】** | 每章末尾有【反思】一节，讲"我从中学到什么 / 如果重来怎么改 / 面试被问怎么答" |
 | **真实数据** | 引 [`data/`](./data/) 下的真实快照，不编造 |
-| **本地专用** | interview/ 在 .gitignore 里，不推 GitHub |
+| **公开 GitHub** | interview/ 入 GitHub（2026-07-02 决策修正） |
 
 ---
 
@@ -78,11 +78,23 @@ interview/
 
 ---
 
-## 5. 1 个真实 bug 故事（v0.8 demo 当天发现）
+## 5. 5 个真实 bug 故事（v0.8 + v0.8.3 demo 当天发现）
 
 详见 [`06-bug-stories.md`](./06-bug-stories.md)：
 
-> **4 小时白盒化 → demo 跑 1 次 → stdout 立刻暴露 v0.5 之前就有的 P1 bug**：`llm_calls` 表 0 行（外键约束失败），token 成本完全无法统计。**5 行代码 + 4 项测试**修复。**核心启示**："业务跑得欢" ≠ "系统健康"。
+| # | bug | 严重度 | 暴露 |
+|---|---|---|---|
+| 1 | llm_calls 外键约束失败 | 🔴 P1 | v0.8 demo 当天 stdout |
+| 2 | A2A SessionID fallback WARN | 🟡 P2 | v0.8 demo 当天 stdout |
+| 3 | a2a_message_throughput 计数缺失 | 🟢 P3 | v0.8 demo /metrics |
+| 4 | 信念轨迹只显示 1 条（应是 16 条） | 🟡 P2 | v0.8.3 真实庭审回归 |
+| 5 | 判决书"AI 可视化"按钮无响应 | 🟢 P3 UX | v0.8.3 真实庭审回归 |
+
+**核心启示**：
+- "业务跑得欢 ≠ 系统健康"（bug 1 / bug 3）
+- "意图与实现脱节 = bug 经典形态"（bug 1 / bug 5）
+- **"数据层正确 ≠ 链路正确"**（bug 4，**最深刻**）
+- "持续回归 → 持续暴露 → 持续修复"循环（白盒化 ROI）
 
 ---
 
@@ -90,16 +102,32 @@ interview/
 
 - [ ] 通读 [`01-architecture-mindmap.md`](./01-architecture-mindmap.md) 一遍
 - [ ] 把 4 大亮点的 30 秒电梯版背熟
-- [ ] 复习 [`06-bug-stories.md`](./06-bug-stories.md) 的细节（精确到行号）
+- [ ] **重点复习 bug 4**（`engine_v06.go` ID 错配）—— 最能体现"数据层正确 ≠ 链路正确"
 - [ ] 翻 [`08-faq-30-questions.md`](./08-faq-30-questions.md) 30 个问题至少答出 25 个
-- [ ] 看一眼 [`09-data-snapshot.md`](./09-data-snapshot.md) 真实数据（万一面试官问"具体数字"）
+- [ ] 看 [`09-data-snapshot.md`](./09-data-snapshot.md) —— 真实数据 + 单场庭审 4 evidence × 4 agent = 16 belief_diff 数字
 - [ ] 不背代码 —— 知道代码在哪就行
+- [ ] 看 [`../observability/case-study-2026-07-02.md`](../observability/case-study-2026-07-02.md) §11 面试故事模板（v0.8.3 版）
 
 ---
 
-**配套文档**（已存在的，不在 interview/ 下）：
+## 7. 5 大亮点（用这 5 个撑起整个面试）
+
+| 亮点 | 章节 | 30 秒电梯版 |
+|---|---|---|
+| **A2A 总线** | §02 | Agent 间通信不走 prompt，走显式消息总线。3 种可见性（public/private/team）+ 落库审计 = 庭审可回放。 |
+| **信念引擎 v0.6** | §03 | 不用 0-100 主观分，用**贝叶斯 log-odds** 数学严谨地表达"AI 法官的相信度"。weaken 边 + 锚定 + belief_diffs 审计 trail。 |
+| **Gateway v2 装饰器** | §04 | 把"压缩 / 预算 / 限流 / 降级 / 审计"做成**装饰器链**，可插拔、可独立测。Smart Compression 关键消息不压缩。 |
+| **白盒化 v0.8** | §05 | **AI 系统的可观测性** = 三大支柱（slog / metrics / decision_events）+ 端到端 trace_id 串联。**最强杀手锏**——让 AI 调试像传统后端一样。 |
+| **5 个 bug 故事 v0.8.3** | §06 | 白盒化第一天暴露 3 个 + 真实庭审回归又暴露 2 个，**没有一个被单元测试发现**。**最有说服力的"业务跑得欢 ≠ 系统健康"实证**。 |
+
+---
+
+## 8. 给面试官的 3 份文件
+
+**面试官希望看技术细节时给他这 3 份**（不是第一人称的 interview/）：
+
 - [`../architecture/link-overview.md`](../architecture/link-overview.md) — 完整链路（技术深度版）
-- [`../observability/case-study-2026-07-02.md`](../observability/case-study-2026-07-02.md) — 真实案例（事实版）
+- [`../observability/case-study-2026-07-02.md`](../observability/case-study-2026-07-02.md) — 真实案例 v1.1（事实版，含 5 个 bug 故事）
 - [`../adr/0010-whitebox-observability.md`](../adr/0010-whitebox-observability.md) — 白盒化 ADR（决策版）
 
-**不要把 interview/ 给面试官看**（第一人称 + 反思 = 私人）。**要给他看 link-overview + case-study**。
+**interview/ 是我自己用的"面试前查表"**。**也入 GitHub**（2026-07-02 决策）—— 因为内容质量高、有反思，但**不主动给面试官看**。
