@@ -1,0 +1,18 @@
+{
+  "name": "DecisionCourt Defender",
+  "description": "AI 辩方律师，模拟庭审中的辩方立场反驳、反质证",
+  "type": "defender",
+  "url": "http://localhost:8080/a2a/agents/defender",
+  "version": "v0.8.1",
+  "provider": {
+    "organization": "DecisionCourt",
+    "url": "http://localhost:8080"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "stateTransitionHistory": true
+  },
+  "inputModes": ["text"],
+  "outputModes": ["text"]
+}

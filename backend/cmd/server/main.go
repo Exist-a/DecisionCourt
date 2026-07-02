@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/decisioncourt/backend/internal/a2a"
+	a2aexternal "github.com/decisioncourt/backend/internal/a2a/external"
 	"github.com/decisioncourt/backend/internal/agent"
 	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/api"
@@ -132,6 +133,18 @@ func main() {
 	handler.RegisterRoutes(r)
 	// v0.8 白盒化：/metrics 端点暴露 Prometheus-兼容指标（JSON 格式，未来可换 Prometheus exporter）。
 	handler.RegisterMetricsRoute(r)
+	// v0.8.2 A2A 协议外部接入层（基于 Google A2A 协议 2025）：
+	// - 5 个 agent-card 通过 //go:embed 编译时嵌入
+	// - bridge 把外部 task 翻译成内部 A2A bus 消息
+	// - 当前只实装 3 个端点（discovery + agent-card + tasks/send 接收）
+	a2aCards, _ := a2aexternal.LoadEmbeddedCards()
+	a2aServer := a2aexternal.NewServer(a2aexternal.ServerConfig{
+		Provider: "decisioncourt",
+		Version:  "v0.8.2",
+		Cards:    a2aCards,
+		Bridge:   a2aexternal.NewBridge(bus),
+	})
+	a2aServer.RegisterRoutes(r)
 	r.GET("/ws/courtrooms/:session_uuid", wsServer.Handler)
 
 	port := config.AppConfig.Port

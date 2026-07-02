@@ -1,0 +1,18 @@
+{
+  "name": "DecisionCourt Clerk",
+  "description": "AI 书记员，整理庭审记录、生成判决书",
+  "type": "clerk",
+  "url": "http://localhost:8080/a2a/agents/clerk",
+  "version": "v0.8.1",
+  "provider": {
+    "organization": "DecisionCourt",
+    "url": "http://localhost:8080"
+  },
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": true
+  },
+  "inputModes": ["text"],
+  "outputModes": ["text"]
+}

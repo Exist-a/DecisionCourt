@@ -1,0 +1,18 @@
+{
+  "name": "DecisionCourt Prosecutor",
+  "description": "AI 控方律师，模拟庭审中的控方立场陈述、举证、质证",
+  "type": "prosecutor",
+  "url": "http://localhost:8080/a2a/agents/prosecutor",
+  "version": "v0.8.1",
+  "provider": {
+    "organization": "DecisionCourt",
+    "url": "http://localhost:8080"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "stateTransitionHistory": true
+  },
+  "inputModes": ["text"],
+  "outputModes": ["text"]
+}
