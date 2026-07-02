@@ -116,3 +116,49 @@ Agent 在工作过程中禁止：
 - 修改代码而不更新相关测试
 - 因测试不通过而简化或删除测试用例
 - 忽视连续失败的问题而不上报
+
+## 8. 敏感文件红线（SECRET_FILE_POLICY · 2026-07-02 增补）
+
+### 8.1 触发背景
+
+2026-07-02 v0.8 白盒化 demo 时，Agent 用"上次 Read 到的内容"作为 `old_str` 删除 `.env` 注释，但实际文件已被用户**手动填回**了真实 API key。结果 SearchReplace 工具**把 key 当成"待删内容"清空了**，导致两次需要用户重新填 key。
+
+**根因**：`.env` 类敏感文件 + 工具的 `old_str` 替换机制 + Agent 上下文里的"过期内容" = 高危组合。即使 Agent 知道"不要碰 .env"，单次失误成本极高（key 报废、依赖停服）。
+
+### 8.2 红线规则
+
+Agent 在任何场景下**禁止**对以下路径执行写操作（`Edit` / `SearchReplace` / `Write` / `DeleteFile` / `RunCommand` 含 `>` / `tee` / `echo` 等任何会改变文件内容的命令）：
+
+| 路径模式 | 原因 |
+|---|---|
+| `.env` | 业务 API key（LLM / 搜索 / DB） |
+| `.env.*`（.env.local / .env.production / .env.development 等） | 同上 |
+| `**/credentials*` / `**/secrets*` / `**/*.pem` / `**/*.key` | 凭证 / 私钥 |
+| `**/id_rsa*` / `**/.ssh/**` | SSH 密钥 |
+| `**/google-credentials.json` / `**/service-account*.json` | 云厂商凭证 |
+| 用户在对话中**明确点名不要碰**的任何路径 | 用户主权 |
+
+**`Read` 工具可以用**（只读不写），但 Agent 必须：
+- 不得将读取到的 key 值写入**任何其他文件**（包括 demo 脚本 / 测试 fixture / 文档示例）
+- 不得将 key 值回显到对话（用 `sk-***` 代替）
+- 如需在命令中使用 key，**优先用临时环境变量**（`$env:FOO='bar'`），不写文件
+
+### 8.3 替代方案（用户场景下的执行方式）
+
+| 场景 | 推荐做法 |
+|---|---|
+| 需要切换 search provider（mock ↔ searxng ↔ bocha） | 启动 backend 时用 **PowerShell 临时环境变量**覆盖（`$env:SEARCH_PROVIDER='bocha'`），不改 .env |
+| 需要测试不同 LLM key | 同上，用 `$env:LLM_API_KEY=...` 临时覆盖 |
+| 需要确认 .env 内容 | `Read` 工具只读，不修改 |
+| 需要新增配置项 | **修改 config.go 的 viper.SetDefault + 添加 .env.example**，由用户手工同步 .env |
+
+### 8.4 违反后果
+
+Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
+- **立即停止当前任务**，主动告知用户
+- 不得尝试"自己恢复"（Agent 不知道原 key）
+- 等待用户手工恢复 + 评估影响范围
+
+### 8.5 例外
+
+唯一例外：用户**显式、明确、单独说一次**"改 .env 第 X 行"——但 Agent 仍需在执行前用 `Read` 工具读当前完整内容，再用读到的内容做精确 `old_str`。**任何模糊指令（如"删注释"、"改配置"）一律视为不授权**。

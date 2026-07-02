@@ -189,6 +189,84 @@ func TestOrchestrator_DefenderSpeak_OtherAgentCannotReadStrategyNote(t *testing.
 	require.Equal(t, string(private_memory.TypeStrategyNote), rows[0].Type)
 }
 
+// uuidOutputJSON 让 stubLLM 返回 LLM "误把 DB UUID 当 evidence_refs" 的
+// 场景 —— 这正是 v0.6 evidence_id 显示成 UUID 的根因。测试目的是确认
+// 后端 recordSideEffects 用 NormalizeEvidenceRefs 把 UUID 映射回
+// display_id，再写入 A2A 消息和 private_memory 表。
+func uuidOutputJSON(uuidStr string) string {
+	out := AgentOutput{
+		Reasoning:    "对方对 E001 的反驳站不住脚",
+		Content:      "选项 A 在长期收益上明显占优",
+		EvidenceRefs: []string{uuidStr},
+		Confidence:   0.8,
+		Stance:       "pro_a",
+	}
+	b, _ := json.Marshal(out)
+	return string(b)
+}
+
+// TestOrchestrator_ProsecutorSpeak_NormalizesUUIDRefs 是 v0.6 evidence_id
+// 显示成 UUID 根因 bug 的端到端回归测试。LLM 返回 DB UUID 时，speak 路径
+// 写出的 public speech A2A 消息 + private strategy_note + private_memory
+// 表，三处 linked_evidence_ids / evidence_refs / LinkedEvidenceIDs 都必须
+// 是 display_id（"E001"），不能是裸 UUID。
+func TestOrchestrator_ProsecutorSpeak_NormalizesUUIDRefs(t *testing.T) {
+	evidenceUUID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	a2aRepo := a2a.NewInMemoryRepository(nil)
+	memRepo := private_memory.NewInMemoryRepository(nil)
+	bus := a2a.NewBus(a2aRepo, nil)
+	llmClient := &stubLLM{output: uuidOutputJSON(evidenceUUID.String())}
+	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
+
+	sessionID := uuid.New()
+	agentID := uuid.New()
+	ag := model.Agent{
+		ID:        agentID,
+		AgentType: model.AgentProsecutor,
+		BeliefA:   0.75,
+	}
+	session := model.CourtSession{
+		ID:           sessionID,
+		SessionUUID:  "test-session-uuid",
+		OptionA:      "选项 A",
+		OptionB:      "选项 B",
+		CurrentPhase: model.PhaseCrossExam,
+		CurrentRound: 2,
+	}
+	evidences := []model.Evidence{
+		{ID: evidenceUUID, EvidenceID: "E001"},
+	}
+
+	_, err := orch.ProsecutorSpeak(context.Background(), ag, session, evidences, nil)
+	require.NoError(t, err)
+
+	// 1) A2A 仓库：两条消息（public + private），evidence_refs /
+	// linked_evidence_ids 都必须是 display_id。
+	rows, err := a2aRepo.ListVisibleTo(context.Background(), sessionID, a2a.AddressOrchestrator)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+
+	for _, row := range rows {
+		payload, err := a2a.DecodePayload(row)
+		require.NoError(t, err)
+		switch row.MessageType {
+		case string(a2a.MessageTypeSpeech):
+			require.Equal(t, []interface{}{"E001"}, payload["evidence_refs"],
+				"public speech evidence_refs must be display_id, not UUID")
+		case string(a2a.MessageTypeStrategyNote):
+			require.Equal(t, []interface{}{"E001"}, payload["linked_evidence_ids"],
+				"private strategy_note linked_evidence_ids must be display_id, not UUID")
+		}
+	}
+
+	// 2) private_memory 表：LinkedEvidenceIDs 也必须是 display_id。
+	memRows, err := memRepo.List(context.Background(), sessionID, agentID, "agent:"+agentID.String())
+	require.NoError(t, err)
+	require.Len(t, memRows, 1)
+	require.Equal(t, model.StringSlice{"E001"}, memRows[0].LinkedEvidenceIDs,
+		"private_memory LinkedEvidenceIDs must be display_id, not UUID")
+}
+
 func TestOrchestrator_NewOrchestrator_PanicsWithoutBus(t *testing.T) {
 	require.Panics(t, func() {
 		NewOrchestratorLegacy(&stubLLM{}, nil, private_memory.NewInMemoryRepository(nil))

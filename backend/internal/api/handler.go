@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
+	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -23,6 +25,8 @@ type Handler struct {
 	// the GORM default (looked up from model.DB); tests can inject an
 	// in-memory function so handler tests don't need a real database.
 	sessionLookup func(sessionUUID string) (model.CourtSession, bool)
+	// v0.8 白盒化：metrics 实例，可选注入；nil 时 /metrics 端点返回 503。
+	metrics observability.Metrics
 }
 
 func NewHandler(service *courtroom.Service, investigationService *investigation.Service) *Handler {
@@ -31,6 +35,38 @@ func NewHandler(service *courtroom.Service, investigationService *investigation.
 		investigationService: investigationService,
 		sessionLookup:      defaultSessionLookup,
 	}
+}
+
+// WithMetrics 注入 metrics 实例，供 /metrics 端点查询。
+// 装配阶段（main.go）调用一次，测试可不调。
+func (h *Handler) WithMetrics(m observability.Metrics) {
+	h.metrics = m
+}
+
+// RegisterMetricsRoute 注册 GET /metrics 端点（JSON 格式的指标快照）。
+// 未来如需 Prometheus 兼容导出，可在此处增加 ?format=prometheus 分支。
+func (h *Handler) RegisterMetricsRoute(r *gin.Engine) {
+	r.GET("/metrics", h.MetricsHandler)
+}
+
+// MetricsHandler 返回当前所有指标快照，JSON 格式：
+//   { "timestamp": "...", "counters": {...}, "gauges": {...}, "histograms": {...} }
+//
+// 不走 TraceMiddleware 的 metrics 路径（path=/metrics 不会被 MetricsMiddleware 多次计数，
+// 因为 Gin's metrics middleware 已经覆盖）。但 trace 仍然生效，便于在日志中关联。
+func (h *Handler) MetricsHandler(c *gin.Context) {
+	if h.metrics == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code":    1500,
+			"message": "metrics not configured",
+		})
+		return
+	}
+	snap := h.metrics.Snapshot()
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": snap,
+	})
 }
 
 // defaultSessionLookup queries the global model.DB. Tests can override
@@ -120,7 +156,7 @@ func (h *Handler) StartTrial(c *gin.Context) {
 	// Use a detached context so the goroutine survives the HTTP response.
 	go func() {
 		if err := h.service.StartTrial(context.Background(), sessionUUID); err != nil {
-			log.Printf("start trial failed for %s: %v", sessionUUID, err)
+			slog.Error("start trial failed", "session_uuid", sessionUUID, "error", err)
 			h.service.Broadcast(sessionUUID, courtroom.Event{
 				Type: "error",
 				Payload: map[string]interface{}{
@@ -193,7 +229,7 @@ func (h *Handler) UserAction(c *gin.Context) {
 	// Run asynchronously with a detached context.
 	go func() {
 		if err := h.service.ProcessUserAction(context.Background(), sessionUUID, req.Action, req.Payload); err != nil {
-			log.Printf("process user action failed for %s: %v", sessionUUID, err)
+			slog.Error("process user action failed", "session_uuid", sessionUUID, "action", req.Action, "error", err)
 		}
 	}()
 
@@ -468,7 +504,7 @@ func (h *Handler) GetInvestigations(c *gin.Context) {
 
 	findings, err := h.investigationService.ListBySession(c.Request.Context(), session.ID)
 	if err != nil {
-		log.Printf("list investigations failed for %s: %v", sessionUUID, err)
+		slog.Error("list investigations failed", "session_uuid", sessionUUID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 1500, "message": "查询调查发现失败"})
 		return
 	}

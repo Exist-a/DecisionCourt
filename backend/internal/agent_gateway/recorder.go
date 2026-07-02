@@ -1,7 +1,7 @@
 package agent_gateway
 
 import (
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -88,12 +88,23 @@ func (r *Recorder) Record(in CallInput) {
 	}
 	rec := r.buildRecord(in)
 	if r.store == nil {
-		log.Printf("[agent_gateway] noop record: req=%s model=%s tokens=%d status=%s",
-			rec.RequestID, rec.Model, rec.TotalTokens, rec.Status)
+		// v0.8 白盒化：slog 结构化日志，含 trace_id / session_uuid 字段。
+		slog.Info("agent_gateway noop record",
+			"request_id", rec.RequestID,
+			"session_uuid", rec.SessionUUID,
+			"model", rec.Model,
+			"total_tokens", rec.TotalTokens,
+			"status", rec.Status,
+		)
 		return
 	}
 	if err := r.store.Insert(rec); err != nil {
-		log.Printf("[agent_gateway] recorder insert failed (req=%s): %v", rec.RequestID, err)
+		slog.Warn("agent_gateway recorder insert failed",
+			"request_id", rec.RequestID,
+			"session_uuid", rec.SessionUUID,
+			"model", rec.Model,
+			"error", err,
+		)
 	}
 }
 

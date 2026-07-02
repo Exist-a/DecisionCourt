@@ -1,0 +1,10 @@
+{
+  "title": "demo 庭审",
+  "user_facts": "事实1：张三欠李四100万。\n事实2：2025-01-01张三打借条。\n事实3：李四多次催讨未果。",
+  "plaintiff_position": "张三应立即还款100万及利息。",
+  "defendant_position": "借款未到期，李四无权催讨。",
+  "option_a": "张三应于2025-12-31前还款100万。",
+  "option_b": "张三无需还款，驳回李四诉求。",
+  "jurisdiction": "cn",
+  "language": "zh"
+}

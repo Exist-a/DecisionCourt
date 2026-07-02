@@ -1,9 +1,10 @@
 # 决策庭（DecisionCourt）Agent 状态机与 Prompt 设计文档
 
-> 版本：v0.5
-> 状态：v0.5 增补 Episodic Memory via A2A 私有通道 + ContextView 投影（4 个新 MessageType）  
-> 目标：定义决策庭中多 Agent 的协作流程、状态转换、Prompt 工程，以及 Agent 间通信协议。  
-> 设计演进：[memory-a2a-redesign.md](../../.trae/documents/memory-a2a-redesign.md)
+> **版本**：v0.7
+> **状态**：v0.5 增补 Episodic Memory via A2A 私有通道 + ContextView 投影（4 个新 MessageType）；v0.6 信念引擎升级（贝叶斯 log-odds + 锚定）+ 智能收敛 4 信号优先级；v0.7 整合文档结构 + ADR 提炼。
+> **目标**：定义决策庭中多 Agent 的协作流程、状态转换、Prompt 工程，以及 Agent 间通信协议。
+> **架构决策**：[`docs/adr/0002-a2a-private-channel.md`](./adr/0002-a2a-private-channel.md)、[`docs/adr/0003-contextview-projection.md`](./adr/0003-contextview-projection.md)、[`docs/adr/0004-bayesian-belief-engine.md`](./adr/0004-bayesian-belief-engine.md)
+> **2026-07-02 整理时同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
 
 ---
 

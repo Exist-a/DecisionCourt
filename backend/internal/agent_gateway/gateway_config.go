@@ -18,8 +18,13 @@ type GatewayConfig struct {
 	// === Token Budget v2 扩展 ===
 	// RejectWhenExhausted 控制 budget 达到 100% 时 Gateway.Complete 的行为。
 	//   true  → 返回 ErrBudgetExhausted（推荐；与业内网关一致，避免无谓账单）
-	//   false → 现状：仍调用 inner，由 Throttler 强降 MaxTokens=100
-	// 默认 false 以保留 v0.5+ 行为；上线时建议 true。
+	//   false → 仍调用 inner，由 Throttler 强降 MaxTokens=100（兼容 v0.5+
+	//           行为；当用户希望"超 budget 也跑完"时手动关闭）
+	//
+	// 默认值由 config.Load() 的 viper.SetDefault 设 true（2026-07-01
+	// 改为 true，之前的 false 默认会让 budget_ratio 超 1.0 时 inner 仍
+	// 被调用、账单超支但审计看不出来 —— 用户在日志里看到 budget_ratio=1.46
+	// 但 status=success 的"隐性超额"）。详见 IsRejectWhenExhaustedEnabled。
 	RejectWhenExhausted bool
 	// BudgetSlidingWindowSec budget sliding 时间窗（秒），0 → 默认 300。
 	BudgetSlidingWindowSec int
@@ -74,6 +79,28 @@ func (c GatewayConfig) IsFileLoggerEnabled() bool {
 		return false
 	}
 	return c.FileLogger || c.isChildDefault()
+}
+
+// IsRejectWhenExhaustedEnabled 返回 budget 耗尽时是否拒绝新请求。
+//
+// 行为规则：
+//   - AGENT_GATEWAY_ENABLED=false → false（gateway 整体未启用）
+//   - AGENT_GATEWAY_ENABLED=true + RejectWhenExhausted=true → true
+//   - AGENT_GATEWAY_ENABLED=true + RejectWhenExhausted=false → false（用户显式关）
+//
+// 默认值由 config.Load() 的 viper.SetDefault("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", true)
+// 提供；通过 .env 设 AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED=false 即可恢复
+// v0.5+ "超 budget 也跑" 兼容行为。
+//
+// 设计理由：之前的"默认 false"会让 budget_ratio 超 1.0 时还在调 inner，
+// 账单超支但审计看不出来（用户在日志里看到 budget_ratio=1.46 但
+// status=success 的"隐性超额"）。2026-07-01 起把 viper 默认改为 true。
+//
+// 注：Go bool 零值无法区分"用户显式 false"和"未设置"，所以这个方法
+// 不引入 child-default 规则；其它子开关（PromptCompression 等）继续走
+// isChildDefault()。
+func (c GatewayConfig) IsRejectWhenExhaustedEnabled() bool {
+	return c.Enabled && c.RejectWhenExhausted
 }
 
 // isChildDefault 当 AGENT_GATEWAY_ENABLED=true 且没有任何子开关被显式

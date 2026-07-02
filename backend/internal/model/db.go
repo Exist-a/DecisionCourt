@@ -277,5 +277,7 @@ func Connect() error {
 		&A2AMessage{},
 		&PrivateMemory{},
 		&InvestigationFinding{},
+		// v0.8 白盒化：业务级 span / 状态机迁移审计
+		&DecisionEvent{},
 	)
 }

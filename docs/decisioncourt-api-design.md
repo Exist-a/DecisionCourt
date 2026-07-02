@@ -1,9 +1,10 @@
 # 决策庭（DecisionCourt）API 接口设计文档
 
-> 版本：v0.5  
-> 状态：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点  
-> 目标：定义决策庭前后端交互的 RESTful API 和 WebSocket 事件协议。  
-> 设计演进：[memory-a2a-redesign.md](../../.trae/documents/memory-a2a-redesign.md)
+> **版本**：v0.8
+> **状态**：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点；v0.6 增补 `GET /api/v1/courtrooms/:uuid/belief-diffs` + WS `belief.diff` / `belief.convergence` 事件；v0.7 整合文档结构 + ADR 提炼；**v0.8 新增 `GET /metrics` 端点（白盒化）+ HTTP `X-Request-ID` 头 / `trace_id` 字段（端到端 trace 串联）**。
+> **目标**：定义决策庭前后端交互的 RESTful API 和 WebSocket 事件协议。
+> **设计演进（已归档）**：[`docs/archive/memory-a2a-redesign-v1.2.md`](./archive/memory-a2a-redesign-v1.2.md)
+> **2026-07-02 整理时同步 + 2026-07-02 v0.8 白盒化升级同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
 
 ## 1. 设计原则
 
@@ -1297,3 +1298,117 @@ API 接口设计已完成。接下来可以进入：
 2. **Prompt 设计文档**：控方、辩方、调查员、书记员的 system prompt
 
 是否继续写 **Agent 状态机与 Prompt 设计文档**？
+
+---
+
+## 9. v0.8 白盒化端点（Observability）
+
+### 9.1 `GET /metrics`
+
+返回当前所有指标快照（JSON 格式）。
+
+**请求**：
+
+```http
+GET /metrics HTTP/1.1
+Host: localhost:8080
+```
+
+**响应（200 OK）**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "timestamp": "2026-07-02T00:35:21.123Z",
+    "counters": {
+      "courtroom_state_transition_total": [
+        {"labels": {"from": "idle", "to": "opening"}, "value": 12},
+        {"labels": {"from": "opening", "to": "cross_exam"}, "value": 11}
+      ],
+      "a2a_message_throughput_total": [
+        {"labels": {"event_type": "agent.speak"}, "value": 256},
+        {"labels": {"event_type": "phase.changed"}, "value": 32}
+      ]
+    },
+    "gauges": {
+      "budget_ratio": [
+        {"labels": {"session_uuid": "abc-123"}, "value": 0.42}
+      ]
+    },
+    "histograms": {
+      "llm_call_duration_seconds": [
+        {
+          "labels": {"agent_type": "prosecutor", "model": "deepseek-chat"},
+          "count": 45,
+          "sum": 32.4,
+          "buckets": [
+            {"le": 0.5, "count": 12},
+            {"le": 1.0, "count": 28},
+            {"le": 5.0, "count": 42},
+            {"le": 30.0, "count": 45}
+          ]
+        }
+      ],
+      "http_request_duration_seconds": [
+        {
+          "labels": {"path": "/api/v1/courtrooms/:session_uuid", "method": "POST", "status": "200"},
+          "count": 12,
+          "sum": 1.234,
+          "buckets": [...]
+        }
+      ]
+    }
+  }
+}
+```
+
+**错误响应（503 Service Unavailable）**：
+
+```json
+{"code": 1500, "message": "metrics not configured"}
+```
+
+> 当前为 JSON 格式输出。**未来可加 `?format=prometheus` 切换为 `text/plain; version=0.0.4`** 格式对接 Prometheus。
+
+### 9.2 `X-Request-ID` 头
+
+所有 HTTP 响应都包含 `X-Request-ID` 响应头：
+
+- **客户端可带**：前端 / curl 可在请求时带 `X-Request-ID: <uuid>`，服务端会原样回写
+- **缺失时生成**：服务端自动生成 36 字符伪 UUID
+- **用途**：通过 `X-Request-ID` 在 `decision_events` 表 / `agent_gateway` 文件日志中检索全链路 trace
+
+```http
+GET /api/v1/courtrooms/abc/evidences HTTP/1.1
+X-Request-ID: 7f3a-bc12-...
+
+HTTP/1.1 200 OK
+X-Request-ID: 7f3a-bc12-...
+Content-Type: application/json
+```
+
+### 9.3 WebSocket `trace_id` 字段
+
+WebSocket 消息 payload 中可携带 `trace_id` 字段（v0.8 起）：
+
+```json
+{
+  "type": "user.action",
+  "payload": {
+    "action": "submit_evidence",
+    "content": "...",
+    "trace_id": "7f3a-bc12-..."
+  }
+}
+```
+
+服务端会优先使用此 `trace_id` 作为 ctx.Trace.RequestID，使后端业务事件的 trace 串联到客户端。如果缺失则生成新 trace_id。
+
+### 9.4 业务事件落库（`decision_events` 表）
+
+`decision_events` 表记录所有业务级 span 关闭事件（v0.8 起）。可按以下维度查询：
+
+- `SELECT * FROM decision_events WHERE session_uuid = ? ORDER BY created_at` —— 单 session 全链路
+- `SELECT * FROM decision_events WHERE request_id = ?` —— 单 trace
+- `SELECT * FROM decision_events WHERE event_type LIKE 'state_transition%'` —— 仅状态机迁移

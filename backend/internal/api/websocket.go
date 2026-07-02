@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/decisioncourt/backend/internal/courtroom"
+	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -56,9 +57,16 @@ func (s *WebSocketServer) Handler(c *gin.Context) {
 
 		if event.Type == "user.action" {
 			action := getString(event.Payload, "action")
+			// v0.8 白盒化：从 WS 消息中提取 trace_id（如前端传来），注入 ctx。
+			// 缺失时生成新 trace_id，保证每条 user.action 都有可关联的 trace。
+			traceID := getString(event.Payload, "trace_id")
+			tr := observability.Trace{
+				RequestID:   traceID,
+				SessionUUID: sessionUUID,
+			}
+			ctx := observability.WithTrace(context.Background(), tr)
 			// Run in background to avoid blocking WebSocket read loop
 			go func() {
-				ctx := context.Background()
 				var err error
 				switch action {
 				case "submit_evidence":

@@ -103,7 +103,7 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 	bs := g.budgetSnapshot(ctx, tr.SessionUUID)
 
 	// 1b. v2 预算耗尽拒绝（D4 决策）
-	if g.cfg.RejectWhenExhausted && bs.Status == StatusExhausted {
+	if g.cfg.IsRejectWhenExhaustedEnabled() && bs.Status == StatusExhausted {
 		err := fmt.Errorf("%w (session=%s ratio=%.2f)", ErrBudgetExhausted, tr.SessionUUID, bs.Ratio)
 		// 仍写一条审计日志，让业务可以事后看 budget_exhausted 拒绝记录
 		g.recorder.Record(CallInput{
@@ -192,7 +192,7 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 	bs := g.budgetSnapshot(ctx, tr.SessionUUID)
 
 	// 1b. v2 预算耗尽拒绝（流式：直接 emit Done+Err 然后关 channel）
-	if g.cfg.RejectWhenExhausted && bs.Status == StatusExhausted {
+	if g.cfg.IsRejectWhenExhaustedEnabled() && bs.Status == StatusExhausted {
 		err := fmt.Errorf("%w (session=%s ratio=%.2f)", ErrBudgetExhausted, tr.SessionUUID, bs.Ratio)
 		out <- llm.StreamChunk{Done: true, Err: err}
 		close(out)

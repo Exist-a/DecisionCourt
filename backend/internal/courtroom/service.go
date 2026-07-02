@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"math"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/decisioncourt/backend/internal/evidence"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
+	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -63,6 +65,17 @@ type Service struct {
 	// the v0.6 multi-signal convergence check. Backed by sync.Map because
 	// it's touched from runCrossExamRound goroutines and the new REST path.
 	stableRounds sync.Map // map[uuid.UUID]int
+	// v0.8 白盒化：可选注入 metrics + EventRecorder，让状态机迁移 / 业务级 span
+	// 自动归集指标 + 落库到 decision_events。nil 时静默跳过（向后兼容）。
+	metrics observability.Metrics
+	recorder observability.EventRecorder
+}
+
+// WithObservability 注入 metrics + event recorder。装配阶段（main.go）调用一次。
+// 测试可不调。
+func (s *Service) WithObservability(m observability.Metrics, rec observability.EventRecorder) {
+	s.metrics = m
+	s.recorder = rec
 }
 
 func NewService(
@@ -1430,6 +1443,36 @@ func (s *Service) transitionPhase(session *model.CourtSession, phase model.Court
 
 	session.CurrentPhase = phase
 	session.CurrentRound = round
+
+	// v0.8 白盒化：状态机迁移写 metric + decision_event。
+	// 行为：
+	//   - StateTransition 计数：labels=from,to
+	//   - decision_events 表：event_type="state_transition" + payload 含 from/to/round
+	//   - slog 结构化日志（带 session_uuid 字段）
+	if s.metrics != nil {
+		s.metrics.IncCounter(observability.MetricStateTransitionTotal, map[string]string{
+			"from": string(previousPhase),
+			"to":   string(phase),
+		})
+	}
+	if s.recorder != nil {
+		_ = s.recorder.Record(context.Background(), observability.DecisionEventRecord{
+			SessionUUID: session.SessionUUID,
+			EventType:   "state_transition",
+			Payload: map[string]interface{}{
+				"from":  string(previousPhase),
+				"to":    string(phase),
+				"round": round,
+			},
+			Status: "ok",
+		})
+	}
+	slog.Info("state transition",
+		"session_uuid", session.SessionUUID,
+		"from", string(previousPhase),
+		"to", string(phase),
+		"round", round,
+	)
 
 	s.broadcastEvent(session.SessionUUID, Event{
 		Type: "phase.changed",

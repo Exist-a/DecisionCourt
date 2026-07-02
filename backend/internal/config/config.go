@@ -91,7 +91,13 @@ func Load() {
 	viper.SetDefault("AGENT_GATEWAY_LOG_DIR", "logs")
 
 	// v2 defaults
-	viper.SetDefault("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", false)
+	// 2026-07-01 变更：默认从 false 改为 true。之前的 false 默认会让
+	// budget 撞 100% 后 inner LLM 仍被调用、计费继续累加（审计看到
+	// budget_ratio=1.46 但 status=success 的"隐性超额"）。改为 true 后，
+	// gateway 在 budget 耗尽时直接返回 ErrBudgetExhausted 并写一条
+	// status=error 的审计行。GatewayConfig.IsRejectWhenExhaustedEnabled
+	// 也加了 child-default 同步逻辑，保持只设 ENABLED=true 也能开。
+	viper.SetDefault("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", true)
 	viper.SetDefault("AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC", 300)
 	viper.SetDefault("AGENT_GATEWAY_SMART_COMPRESSION", false)
 	viper.SetDefault("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3)

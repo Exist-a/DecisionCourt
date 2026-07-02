@@ -2,10 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/decisioncourt/backend/internal/courtroom"
+	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/gorilla/websocket"
 )
 
@@ -33,12 +35,20 @@ type client struct {
 type Hub struct {
 	mu    sync.RWMutex
 	rooms map[string]map[*client]bool
+	// v0.8 白盒化：可选注入 metrics，统计 A2A 事件吞吐量。
+	// nil 时 noop（保持向后兼容，便于不依赖 observability 的测试）。
+	metrics observability.Metrics
 }
 
 func NewHub() *Hub {
 	return &Hub{
 		rooms: make(map[string]map[*client]bool),
 	}
+}
+
+// WithMetrics 注入 metrics，供 Broadcast 统计 A2A 事件吞吐量。
+func (h *Hub) WithMetrics(m observability.Metrics) {
+	h.metrics = m
 }
 
 func (h *Hub) Join(sessionUUID string, conn *websocket.Conn) {
@@ -71,6 +81,15 @@ func (h *Hub) Leave(sessionUUID string, conn *websocket.Conn) {
 }
 
 func (h *Hub) Broadcast(sessionUUID string, event courtroom.Event) {
+	// v0.8.1 白盒化修复（2026-07-02 demo 发现）：A2A 事件吞吐量统计必须在
+	// 订阅检查之前执行 —— 否则没人订阅 WS 时 IncCounter 永远不会执行，
+	// 导致"业务上 A2A 真的发了"但"metrics 显示 0"，失去可观测性价值。
+	if h.metrics != nil {
+		h.metrics.IncCounter(observability.MetricA2AThroughputTotal, map[string]string{
+			"event_type": event.Type,
+		})
+	}
+
 	h.mu.RLock()
 	clients, ok := h.rooms[sessionUUID]
 	h.mu.RUnlock()
@@ -81,6 +100,7 @@ func (h *Hub) Broadcast(sessionUUID string, event courtroom.Event) {
 
 	data, err := json.Marshal(event)
 	if err != nil {
+		slog.Warn("hub: marshal event failed", "session_uuid", sessionUUID, "event_type", event.Type, "error", err)
 		return
 	}
 

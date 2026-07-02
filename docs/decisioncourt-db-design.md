@@ -1,8 +1,9 @@
 # 决策庭（DecisionCourt）数据库设计文档
 
-> 版本：v0.2  
-> 状态：已实装（v0.2 新增 `investigation_findings` 表，调查发现与证据严格分离）  
-> 目标：定义决策庭 MVP 所需的数据表结构、字段含义和关联关系。
+> **版本**：v0.8
+> **状态**：v0.2 新增 `investigation_findings` 表（调查发现与证据严格分离）；v0.5+ 新增 `verdicts.trial_summary` 字段；v0.6 新增 `belief_diffs` 表（信念变化审计 trail）+ `evidence_weaken_links` 表（异构论辩图谱 weaken 边）+ A2A `Message.SessionUUID` 字段区分 DB 主键与 WS room key；**v0.8 新增 `decision_events` 表（业务级 span / 状态机迁移审计）**。
+> **目标**：定义决策庭 MVP 所需的数据表结构、字段含义和关联关系。
+> **2026-07-02 整理时同步 + 2026-07-02 v0.8 白盒化升级同步**：本版本号对齐后端 GORM model 实装现状（参见 [`docs/README.md`](./README.md)）。
 
 ---
 
@@ -426,3 +427,90 @@ ORDER BY agent_id, round;
 3. **Prompt 设计**：控方、辩方、调查员、书记员的 system prompt
 
 是否继续写 **API 接口设计文档**？
+
+---
+
+## 9. v0.8 业务事件审计表（`decision_events`）
+
+### 9.1 用途
+
+`decision_events` 表记录**业务级 span**的关闭事件，是 v0.8 白盒化的核心可观测性表。区别于：
+- `llm_calls` —— 仅 LLM 调用事件
+- `belief_diffs` —— 仅信念变化事件
+- `a2a_messages` —— 仅 A2A 消息路由事件
+
+`decision_events` 覆盖**所有业务事件**：
+- 状态机迁移（`event_type = "state_transition"`，如 `idle → opening`）
+- 业务级 span 关闭（`event_type = "span.RunCrossExamRound"` / `"span.DispatchInvestigator"` / `"span.GenerateVerdict"` 等）
+- 信念收敛触发 / 强制中断 / 重试
+
+### 9.2 Schema
+
+```sql
+CREATE TABLE decision_events (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_uuid  VARCHAR(36) NOT NULL,
+    request_id    VARCHAR(36),
+    event_type    VARCHAR(50) NOT NULL,
+    agent_type    VARCHAR(50),
+    payload       JSONB DEFAULT '{}'::jsonb,
+    duration_ms   BIGINT DEFAULT 0,
+    status        VARCHAR(20) DEFAULT 'ok',
+    error_msg     TEXT,
+    created_at    TIMESTAMP,
+    INDEX idx_decision_events_session (session_uuid),
+    INDEX idx_decision_events_request (request_id),
+    INDEX idx_decision_events_type (event_type),
+    INDEX idx_decision_events_agent (agent_type),
+    INDEX idx_decision_events_created (created_at)
+);
+```
+
+### 9.3 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | UUID | ✅ | 主键 |
+| `session_uuid` | VARCHAR(36) | ✅ | 所属庭审 session；indexed |
+| `request_id` | VARCHAR(36) | ❌ | 关联 HTTP / WS trace_id；indexed |
+| `event_type` | VARCHAR(50) | ✅ | 事件类型；indexed。约定：`"state_transition"` / `"span.<业务span名>"` / `"convergence_triggered"` 等 |
+| `agent_type` | VARCHAR(50) | ❌ | 关联 agent（prosecutor / defender / investigator / clerk / judge）；indexed |
+| `payload` | JSONB | ❌ | 业务级 span attributes（灵活字段） |
+| `duration_ms` | BIGINT | ❌ | 业务级 span 耗时（毫秒） |
+| `status` | VARCHAR(20) | ❌ | `"ok"` / `"error"` / 自定义；与 OpenTelemetry span semantic conventions 对齐 |
+| `error_msg` | TEXT | ❌ | 失败时的错误信息（截断到 500 字符） |
+| `created_at` | TIMESTAMP | ❌ | 事件发生时间；indexed |
+
+### 9.4 查询示例
+
+```sql
+-- 单 session 全链路
+SELECT * FROM decision_events
+WHERE session_uuid = 'abc-123'
+ORDER BY created_at ASC;
+
+-- 单 trace
+SELECT * FROM decision_events
+WHERE request_id = '7f3a-bc12-...'
+ORDER BY created_at ASC;
+
+-- 仅状态机迁移
+SELECT * FROM decision_events
+WHERE event_type = 'state_transition'
+  AND created_at > NOW() - INTERVAL '1 day';
+
+-- 错误事件统计
+SELECT event_type, COUNT(*) AS err_count
+FROM decision_events
+WHERE status = 'error'
+  AND created_at > NOW() - INTERVAL '1 hour'
+GROUP BY event_type
+ORDER BY err_count DESC;
+```
+
+### 9.5 容量估算
+
+- 每次状态机迁移 1 行（5-10 行 / 庭审）
+- 每次业务级 span 关闭 1 行（预计 30-50 行 / 庭审，含 orchestrator 各 span）
+- 合计约 35-60 行 / 庭审
+- 单表 100 万行 ≈ 16,000-30,000 庭审，可支撑 1-2 年运营

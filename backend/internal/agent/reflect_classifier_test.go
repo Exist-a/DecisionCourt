@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/decisioncourt/backend/internal/a2a"
+	"github.com/decisioncourt/backend/internal/model"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -205,6 +206,60 @@ func TestBuildPrivateMemoryMessage_PayloadShape(t *testing.T) {
 	require.Equal(t, "辩方没反驳 E001", p["content"], "note must be trimmed")
 	require.Equal(t, meta.Round, p["round"])
 	require.Equal(t, []string{"E001", "E002"}, p["linked_evidence_ids"])
+}
+
+// TestBuildPrivateMemoryMessage_NormalizesUUIDs 是 v0.6 evidence_id 显示成
+// UUID 根因 bug 的回归测试：reflect 步骤触发的 strategy_note 也必须走
+// NormalizeEvidenceRefs，把 LLM 偶尔返回的 DB UUID 映射回 display_id。
+// 详见 .trae/documents/memory-a2a-redesign.md §"已发现但未做"。
+func TestBuildPrivateMemoryMessage_NormalizesUUIDs(t *testing.T) {
+	evidences := []model.Evidence{
+		{ID: uuidE001, EvidenceID: "E001"},
+		{ID: uuidE002, EvidenceID: "E002"},
+	}
+	out := AgentOutput{
+		Action:       "reflect",
+		MemoryType:   MemoryKindStrategyNote,
+		MemoryNote:   "E001 数据来源已核实",
+		// LLM 错误返回了 UUID 字符串。
+		EvidenceRefs: []string{uuidE001.String(), uuidE002.String()},
+	}
+	meta := MemoryMeta{
+		SessionID: uuid.New(),
+		AgentType: "prosecutor",
+		Round:     2,
+		Phase:     "cross_exam",
+		Evidences: evidences,
+	}
+
+	msg := buildPrivateMemoryMessage(meta, out)
+
+	p := msg.Payload
+	require.Equal(t, []string{"E001", "E002"}, p["linked_evidence_ids"],
+		"reflect path must NormalizeEvidenceRefs before writing linked_evidence_ids")
+}
+
+// TestBuildPrivateMemoryMessage_NilEvidences_LegacyPath 测试旧调用方不传
+// Evidences 时不会引入回归 —— linked_evidence_ids 保留 LLM 原样（display_id）。
+func TestBuildPrivateMemoryMessage_NilEvidences_LegacyPath(t *testing.T) {
+	out := AgentOutput{
+		Action:       "reflect",
+		MemoryType:   MemoryKindStrategyNote,
+		MemoryNote:   "x",
+		EvidenceRefs: []string{"E001", "E002"},
+	}
+	meta := MemoryMeta{
+		SessionID: uuid.New(),
+		AgentType: "prosecutor",
+		Round:     1,
+		// Evidences 缺省（nil）—— 模拟旧调用方不传。
+	}
+
+	msg := buildPrivateMemoryMessage(meta, out)
+
+	p := msg.Payload
+	require.Equal(t, []string{"E001", "E002"}, p["linked_evidence_ids"],
+		"legacy nil-Evidences path must pass through display_id unchanged")
 }
 
 // --- Runner integration -------------------------------------------------

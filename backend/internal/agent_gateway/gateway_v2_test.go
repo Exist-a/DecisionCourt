@@ -41,7 +41,11 @@ func TestGateway_RejectWhenExhausted(t *testing.T) {
 	}
 }
 
-// TestGateway_NoRejectWhenExhausted_Disabled: 未启用 reject 时仍调用 inner。
+// TestGateway_NoRejectWhenExhausted_Disabled: 显式关闭 reject 时仍调用 inner。
+//
+// 2026-07-01 变更：默认从 false 改成 true（见 GatewayConfig.IsRejectWhenExhaustedEnabled
+// 注释）。本测试用 `RejectWhenExhausted: false` 显式保留"超 budget 也跑"
+// 的兼容路径，覆盖"老用户主动关掉 reject"的场景。
 func TestGateway_NoRejectWhenExhausted_Disabled(t *testing.T) {
 	t.Parallel()
 	inner := &fakeLLM{completeContent: "called-anyway"}
@@ -49,7 +53,7 @@ func TestGateway_NoRejectWhenExhausted_Disabled(t *testing.T) {
 	cfg := GatewayConfig{
 		Enabled:              true,
 		TokenBudget:          true,
-		RejectWhenExhausted:  false, // 默认关
+		RejectWhenExhausted:  false, // 用户显式关
 		BudgetPerSession:     1000,
 		CompressionThreshold: 0.7,
 		ThrottlingThreshold:  0.8,
@@ -65,6 +69,131 @@ func TestGateway_NoRejectWhenExhausted_Disabled(t *testing.T) {
 	}
 	if inner.completeCalls != 1 {
 		t.Errorf("inner should be called when reject disabled, got %d", inner.completeCalls)
+	}
+}
+
+// TestGateway_RejectWhenExhausted_DefaultOpen: 显式把 RejectWhenExhausted
+// 设为 true（模拟 viper 的 SetDefault(true) 注入场景），gateway 必须
+// 在 budget 耗尽时返回 ErrBudgetExhausted 且 inner 不被调用。这是用户
+// 日志里看到 budget_ratio=1.46 但 status=success 的根因修复的回归守门。
+//
+// 2026-07-01 变更：默认值由 viper 设为 true（见 config.Load()）。纯 Go
+// 构造 GatewayConfig{} 时 bool 零值是 false，所以这个测试显式打开来
+// 模拟 viper 注入后的真实配置。
+func TestGateway_RejectWhenExhausted_DefaultOpen(t *testing.T) {
+	t.Parallel()
+	inner := &fakeLLM{completeContent: "should-not-be-called"}
+	rec := NewRecorder(RecorderConfig{Enabled: true, Provider: "deepseek"}, newFakeStore())
+	cfg := GatewayConfig{
+		Enabled:              true,
+		TokenBudget:          true,
+		RejectWhenExhausted:  true, // 模拟 viper 默认注入
+		BudgetPerSession:     1000,
+		CompressionThreshold: 0.7,
+		ThrottlingThreshold:  0.8,
+	}.Normalize()
+	if !cfg.IsRejectWhenExhaustedEnabled() {
+		t.Fatalf("IsRejectWhenExhaustedEnabled should be true when explicitly enabled")
+	}
+	gw := NewWithConfig(inner, rec, "deepseek-chat", cfg)
+
+	ctx := WithTrace(context.Background(), Trace{SessionUUID: "v2-do1", AgentType: "judge", TaskType: "verdict"})
+	gw.budget.AddUsage(ctx, "v2-do1", BudgetUsage{InputTokens: 500, OutputTokens: 600})
+
+	_, _, err := gw.Complete(ctx, "sys", []llm.Message{{Role: "user", Content: "x"}}, llm.CompletionOptions{})
+	if !errors.Is(err, ErrBudgetExhausted) {
+		t.Fatalf("expected ErrBudgetExhausted via viper-default-open, got %v", err)
+	}
+	if inner.completeCalls != 0 {
+		t.Errorf("inner must NOT be called when reject enabled, got %d calls", inner.completeCalls)
+	}
+}
+
+// TestGateway_RejectWhenExhausted_UserExplicitFalse: 用户在 .env 里显式
+// 设 AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED=false 时，child-default 必须让步，
+// 保持 v0.5+ 行为（budget 超了降级继续调 inner）。避免误伤老部署。
+func TestGateway_RejectWhenExhausted_UserExplicitFalse(t *testing.T) {
+	t.Parallel()
+	inner := &fakeLLM{completeContent: "called-anyway"}
+	rec := NewRecorder(RecorderConfig{Enabled: true, Provider: "deepseek"}, newFakeStore())
+	cfg := GatewayConfig{
+		Enabled:              true,
+		TokenBudget:          true,
+		RejectWhenExhausted:  false, // 显式关
+		BudgetPerSession:     1000,
+		CompressionThreshold: 0.7,
+		ThrottlingThreshold:  0.8,
+	}.Normalize()
+	if cfg.IsRejectWhenExhaustedEnabled() {
+		t.Fatalf("user-explicit false must override child-default")
+	}
+	gw := NewWithConfig(inner, rec, "deepseek-chat", cfg)
+
+	ctx := WithTrace(context.Background(), Trace{SessionUUID: "v2-uf", AgentType: "judge", TaskType: "verdict"})
+	gw.budget.AddUsage(ctx, "v2-uf", BudgetUsage{InputTokens: 500, OutputTokens: 600})
+
+	_, _, err := gw.Complete(ctx, "sys", []llm.Message{{Role: "user", Content: "x"}}, llm.CompletionOptions{})
+	if err != nil {
+		t.Fatalf("user-explicit false: should not error, got %v", err)
+	}
+	if inner.completeCalls != 1 {
+		t.Errorf("inner should be called when user-explicit false, got %d", inner.completeCalls)
+	}
+}
+
+// TestGatewayConfig_IsRejectWhenExhaustedEnabled_Matrix: 纯配置层断言，
+// 不依赖 gateway 行为。把"网关未启用 / 用户显式 true / 用户显式 false /
+// 其它子开关不影响本开关"四种情况全部矩阵化，避免将来重构时漏掉路径。
+//
+// 注：纯 Go 构造 GatewayConfig{} 时 RejectWhenExhausted 零值是 false。
+// 生产配置由 viper 注入，viper 默认值是 true（见 config.Load()）。
+func TestGatewayConfig_IsRejectWhenExhaustedEnabled_Matrix(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		cfg  GatewayConfig
+		want bool
+	}{
+		{
+			name: "enabled=false → 不开",
+			cfg:  GatewayConfig{Enabled: false, RejectWhenExhausted: true},
+			want: false,
+		},
+		{
+			name: "enabled=true + 显式 true → 开",
+			cfg:  GatewayConfig{Enabled: true, RejectWhenExhausted: true},
+			want: true,
+		},
+		{
+			name: "enabled=true + 显式 false → 关",
+			cfg:  GatewayConfig{Enabled: true, RejectWhenExhausted: false},
+			want: false,
+		},
+		{
+			name: "enabled=true + RejectWhenExhausted 零值（纯 Go 默认）→ 关",
+			cfg:  GatewayConfig{Enabled: true},
+			want: false,
+		},
+		{
+			name: "enabled=true + 其它子开关不影响本开关",
+			cfg: GatewayConfig{
+				Enabled:           true,
+				RejectWhenExhausted: true,
+				PromptCompression: true,
+				TokenBudget:       true,
+				Throttling:        true,
+				Fallback:          true,
+				FileLogger:        true,
+			},
+			want: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.IsRejectWhenExhaustedEnabled(); got != tc.want {
+				t.Errorf("IsRejectWhenExhaustedEnabled: want %v got %v (cfg=%+v)", tc.want, got, tc.cfg)
+			}
+		})
 	}
 }
 

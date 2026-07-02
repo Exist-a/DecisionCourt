@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/decisioncourt/backend/internal/a2a"
+	"github.com/decisioncourt/backend/internal/model"
 	"github.com/google/uuid"
 )
 
@@ -25,11 +26,20 @@ type MemoryHook func(ctx context.Context, out AgentOutput, meta MemoryMeta) erro
 // MemoryMeta is the routing context the runner cannot know on its own
 // (session / agent identity / round). The orchestrator injects these when
 // constructing the runner via RunnerConfig.MemoryHook closure.
+//
+// v0.6 增量：新增 Evidences 字段，让 buildPrivateMemoryMessage 在写
+// linked_evidence_ids 之前能 NormalizeEvidenceRefs，把 LLM 偶尔返回的
+// DB UUID 映射回 display_id。零值（nil）保持向后兼容 —— 老调用方不传
+// 时归一化退化为原 refs 过滤空串，不影响既有行为。
 type MemoryMeta struct {
 	SessionID uuid.UUID
 	AgentType string // e.g. "prosecutor"
 	Round     int
 	Phase     string // e.g. "cross_exam"
+	// Evidences 是当前 session 的证据列表，用于归一化 EvidenceRefs。
+	// 该字段可选；为 nil 时 buildPrivateMemoryMessage 跳过归一化，
+	// 等价于旧行为。
+	Evidences []model.Evidence
 }
 
 // ToA2AMemoryMessageType maps a reflect-emitted MemoryKind to its
@@ -96,7 +106,13 @@ func buildPrivateMemoryMessage(meta MemoryMeta, out AgentOutput) a2a.Message {
 		"round":       meta.Round,
 	}
 	if len(out.EvidenceRefs) > 0 {
-		payload["linked_evidence_ids"] = out.EvidenceRefs
+		// v0.6 修复：LLM 偶尔会把 DB UUID 当 evidence_refs 返回，
+		// 直接写入会导致前端 MemoryEntry.linkedEvidenceIds 渲染成
+		// 不可读 UUID。先归一化（UUID→display_id）再写入。
+		normalized := NormalizeEvidenceRefs(out.EvidenceRefs, meta.Evidences)
+		if len(normalized) > 0 {
+			payload["linked_evidence_ids"] = normalized
+		}
 	}
 	if out.Reasoning != "" {
 		// We deliberately do NOT include `reasoning` in the public side of

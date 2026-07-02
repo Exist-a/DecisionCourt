@@ -1,8 +1,10 @@
 # 决策庭（DecisionCourt）实施路线图
 
-> 版本：v0.3  
-> 状态：MVP 主体完成（截至 2026-06-29）  
-> 目标：规划从 0 到 MVP 可运行的实施路径，并明确验收标准。
+> **版本**：v0.8
+> **状态**：MVP 主体完成 + v0.8 白盒化实装（截至 2026-07-02）—— 含 v0.5/v0.6/v0.7/v0.8 四轮增量实装；下一步进入"高可用 + 并发防护"讨论。
+> **可观测性完善计划**：[`roadmap/whitebox-roadmap.md`](./roadmap/whitebox-roadmap.md)（v0.8+ 五阶段：数据采集 → 增量埋点 → Prometheus → OTLP → 数据仓库）
+> **目标**：规划从 0 到 MVP 可运行的实施路径，并明确验收标准。
+> **2026-07-02 整合时同步**：本版本号对齐后端代码实装现状 + 文档整合状态（参见 [`docs/README.md`](./README.md)）。
 
 ---
 
@@ -190,7 +192,8 @@ WebSearch + 判决书生成
 5. ✅ ~~InvestigationFinding 独立表~~ — 已实装 + 测试
 6. ✅ ~~ReAct + LLM 流式~~ — 已实装（hub.Broadcast sleep 30ms + 前端 flushSync）
 7. ✅ ~~Bocha 搜索~~ — 已实装，HTTP 200 实测
-8. ⏳ **信念引擎动态更新**：证据进入后按规则更新控/辩/调查员信念度
-9. ⏳ **智能收敛**：连续两轮信念度变化 < 5% 提前进入 closing
-10. ⏳ **Docker Compose 一键启动**：完善 `docker-compose.yml` 让新环境能跑
-11. ⏳ **LLM 调用审计可视化**：前端展示每次 LLM 调用的 token 数 / 延迟
+8. ✅ ~~信念引擎动态更新~~ — v0.6 已实装：Bayesian log-odds + anchoring（详见 PRD §4.3.2）
+9. ✅ ~~智能收敛~~ — v0.6 已实装：多信号按优先级触发（推理震荡 > 共识 > 稳定 > 兜底）
+10. ⏳ **Docker Compose 一键启动**：完善 `docker-compose.yml` 让新环境能跑（待 Docker 环境验证）
+11. ❌ **LLM 调用审计可视化**（决策 2026-07-01 不做）：后端 `llm_calls` 表 + `backend/logs/agent_gateway_*.log` 已足够；产品级 dashboard 不增加。开发者排查用 `tail -f` / `jq` / SQL 查询即可。
+12. ⏳ **v0.7+ 计划**：强制立场一致性检查 / 新意度检查 / 300 字发言截断 / "已反驳证据"集合跟踪（详见 PRD §4.3.2 §4.3.3 §10.1）

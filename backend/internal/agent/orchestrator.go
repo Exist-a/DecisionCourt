@@ -73,7 +73,7 @@ func (o *Orchestrator) ProsecutorSpeak(
 	if err != nil {
 		return speaker, err
 	}
-	o.recordSideEffects(ctx, session, agent, model.AgentDefender, speaker)
+	o.recordSideEffects(ctx, session, agent, model.AgentDefender, speaker, evidences)
 	return speaker, nil
 }
 
@@ -90,7 +90,7 @@ func (o *Orchestrator) DefenderSpeak(
 	if err != nil {
 		return speaker, err
 	}
-	o.recordSideEffects(ctx, session, agent, model.AgentProsecutor, speaker)
+	o.recordSideEffects(ctx, session, agent, model.AgentProsecutor, speaker, evidences)
 	return speaker, nil
 }
 
@@ -198,6 +198,10 @@ func (o *Orchestrator) lawyerSpeakReAct(
 			AgentType: string(self),
 			Round:     session.CurrentRound,
 			Phase:     string(session.CurrentPhase),
+			// v0.6: 把当前 session 的证据列表注入 hook，reflect
+			// 步骤触发 EmitMemoryFromOutput 时用 NormalizeEvidenceRefs
+			// 把 LLM 返回的 UUID 映射回 display_id。
+			Evidences: evidences,
 		},
 		// v0.6: weaken hook. We only activate it if both the repository
 		// and the evidence resolver are wired — otherwise we silently
@@ -212,7 +216,7 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		return speaker, steps, err
 	}
 	speaker.Agent = agent
-	o.recordSideEffects(ctx, session, agent, opponent, speaker)
+	o.recordSideEffects(ctx, session, agent, opponent, speaker, evidences)
 	return speaker, steps, nil
 }
 
@@ -329,10 +333,18 @@ func (o *Orchestrator) recordSideEffects(
 	agent model.Agent,
 	opponent model.AgentType,
 	speaker Speaker,
+	evidences []model.Evidence,
 ) {
 	// 派生独立短超时 ctx：speak 完成后 caller 的 ctx 可能已 cancel。
 	writeCtx, writeCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer writeCancel()
+
+	// v0.6 修复：把 speaker.EvidenceRefs 里混入的 DB UUID 归一化回
+	// display_id，确保下游 A2A 消息和 private_memory 表的
+	// linked_evidence_ids 字段对前端一致。LLM 偶尔会瞥见模型输入里的
+	// UUID 并把它们当作 evidence_refs 返回（详见
+	// .trae/documents/memory-a2a-redesign.md §"已发现但未做"）。
+	normalizedRefs := NormalizeEvidenceRefs(speaker.EvidenceRefs, evidences)
 
 	a2aMsg := a2a.Message{
 		SessionID:   session.ID,
@@ -348,7 +360,7 @@ func (o *Orchestrator) recordSideEffects(
 			"reasoning":     speaker.Reasoning,
 			"stance":        speaker.Stance,
 			"confidence":    speaker.Confidence,
-			"evidence_refs": speaker.EvidenceRefs,
+			"evidence_refs": normalizedRefs,
 		},
 	}
 	if _, err := o.a2aBus.Send(writeCtx, a2aMsg); err != nil {
@@ -375,7 +387,7 @@ func (o *Orchestrator) recordSideEffects(
 				"stance":              speaker.Stance,
 				"confidence":          speaker.Confidence,
 				"reasoning":           speaker.Reasoning,
-				"linked_evidence_ids": speaker.EvidenceRefs,
+				"linked_evidence_ids": normalizedRefs,
 				// 兼容老调用方：保留 content 字段（结构化字段读不到时 fallback 用）。
 				"content": fmt.Sprintf("立场 %s · 置信度 %.0f%% · %s",
 					stanceLabel(speaker.Stance), speaker.Confidence*100, speaker.Reasoning),
@@ -401,7 +413,7 @@ func (o *Orchestrator) recordSideEffects(
 			speaker.Stance, speaker.Confidence, speaker.Reasoning,
 		),
 	)
-	memEntry.LinkedEvidenceIDs = speaker.EvidenceRefs
+	memEntry.LinkedEvidenceIDs = normalizedRefs
 	if _, err := o.memoryRepo.Append(writeCtx, memEntry); err != nil {
 		log.Printf("[orchestrator] private memory write failed for %s: %v", agent.AgentType, err)
 	}

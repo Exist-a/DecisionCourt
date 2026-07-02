@@ -1,6 +1,7 @@
-# DecisionCourt — UX 与数据模型细化（v0.4）
+# DecisionCourt — UX 与数据模型细化（v0.5）
 
 > 本文档针对「调查员调用 → ReAct 反馈 → 庭审视觉」三处体验/语义问题，沉淀已对齐的决策与实现路径。**本期已全部实装并通过浏览器验收。**
+> **2026-07-02 整合时同步**：版本号从 v0.4 升至 v0.5；v0.5+ MemoryAuditPanel + MemoryTimeline + BehindTheScenesPanel 实装已完成（详见 [`docs/adr/0002-a2a-private-channel.md`](./adr/0002-a2a-private-channel.md)）。
 
 > 版本对照：v0.3 → v0.4 主要修订：
 > - ReAct 实时性：从"两步走（先 bubble 后流式）"变更为**已完成**——bubble + LLM 流式 + flushSync + bubble 优先级
