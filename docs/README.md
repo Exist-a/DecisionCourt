@@ -58,6 +58,7 @@
 | [0008](./adr/0008-cross-exam-user-trigger.md) | 质证轮次控制（用户点击触发每轮） | `internal/courtroom/service.go` |
 | [0009](./adr/0009-courtroom-vis-simplify.md) | 庭审页面可视化简化 | `frontend/components/courtroom/ArgumentMap.tsx` |
 | [0010](./adr/0010-whitebox-observability.md) | v0.8 后端白盒化（slog + Prometheus + OTel-Span + decision_events） | ✅ | `internal/observability/` |
+| [0011](./adr/0011-a2a-external-protocol.md) | v0.8.2 Google A2A 协议外部接入层（3 个端点 + 13 项测试） | ✅ | `internal/a2a/external/` |
 
 ### 5.5 v0.8+ 持续可观测性完善计划
 
