@@ -163,6 +163,7 @@ async function fetchJson<Req, Res>(
   body?: Req,
   method?: string
 ): Promise<Res> {
+  // 端口配置完全由 .env.local 决定（v0.8.3 修复：不要硬编码默认值覆盖用户配置）
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
   const res = await fetch(`${baseUrl}${path}`, {
     method: method || (body ? "POST" : "GET"),

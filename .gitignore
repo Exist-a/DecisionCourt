@@ -13,6 +13,7 @@ frontend/out/
 # Build outputs
 backend/bin/
 backend/tmp/
+backend/backend.exe
 frontend/dist/
 frontend/.vercel
 

@@ -22,6 +22,10 @@ import type { MemoryEntry } from "@/types";
 
 interface BehindTheScenesPanelProps {
   entries: MemoryEntry[];
+  /** v0.8.3：post-trial toggle 也真正可切换（原版固定 false 造成 UX 像坏掉） */
+  redactedMode: boolean;
+  /** v0.8.3：post-trial toggle 点击 handler */
+  onToggleRedacted: () => void;
 }
 
 export function BehindTheScenesPanel({ entries }: BehindTheScenesPanelProps) {
@@ -55,10 +59,8 @@ export function BehindTheScenesPanel({ entries }: BehindTheScenesPanelProps) {
       <div className="border border-rule rounded-sm overflow-hidden bg-paper">
         <MemoryAuditPanel
           entries={entries}
-          redactedMode={false}
-          onToggleRedacted={() => {
-            /* no-op: post-trial redaction is intentionally disabled */
-          }}
+          redactedMode={redactedMode}
+          onToggleRedacted={onToggleRedacted}
         />
       </div>
     </section>

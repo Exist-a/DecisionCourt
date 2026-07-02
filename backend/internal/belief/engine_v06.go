@@ -95,6 +95,10 @@ func (e *Engine) UpdateWithDiff(
 		agent.BeliefB = Round4(1 - posterior)
 
 		diff := model.BeliefDiff{
+			// v0.8.3 白盒化回归发现：必须显式分配 ID，让 service.broadcastEvent
+			// 转发出的 belief.diff WS 事件携带 distinct id。否则前端 store 的
+			// idempotency 逻辑会把后 15 条全部去重 → 用户看到 1 条而非 16 条。
+			ID:               uuid.New(),
 			SessionID:        sessionID,
 			Round:            round,
 			Phase:            phase,

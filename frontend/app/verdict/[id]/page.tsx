@@ -45,6 +45,8 @@ export default function VerdictPage() {
   // v0.5+：导出按钮 loading / 错误态
   const [exportingJSON, setExportingJSON] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  // v0.8.3 修复：判决书幕后视角的"AI 可视化/真实法庭"按钮真正可切换
+  const [redacted, setRedacted] = useState(false);
 
   useEffect(() => {
     if (storeVerdict) return;
@@ -528,7 +530,11 @@ export default function VerdictPage() {
           Always rendered (even when empty) so users learn that the feature
           exists for the next trial — see memory-a2a-redesign.md §PR 4. */}
       <section className="container mx-auto max-w-4xl px-6 pb-12">
-        <BehindTheScenesPanel entries={memoryEntries} />
+        <BehindTheScenesPanel
+          entries={memoryEntries}
+          redactedMode={redacted}
+          onToggleRedacted={() => setRedacted(!redacted)}
+        />
       </section>
 
       {/* ============= 反馈 + 操作 ============= */}
