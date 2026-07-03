@@ -42,6 +42,10 @@ type Handler struct {
 	memoryLister MemoryLister
 	// v0.8 白盒化：metrics 实例，可选注入；nil 时 /metrics 端点返回 503。
 	metrics observability.Metrics
+	// v0.8.3 安全(P1-2)：可选的 LLM 端点专用限流中间件。
+	// 如果不为 nil,挂到 /evidences /actions(更严的限流,防烧 LLM 配额)。
+	// 注入方式:handler.LLMRateLimit = middleware.RateLimit(middleware.LLMConfig)
+	LLMRateLimit gin.HandlerFunc
 }
 
 func NewHandler(service *courtroom.Service, investigationService *investigation.Service) *Handler {
@@ -123,12 +127,13 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 //   authedGroup := r.Group("/api/v1")
 //   authedGroup.Use(auth.Middleware(...))
 //   handler.RegisterAPIRoutes(authedGroup)
+//
+// v0.8.3 安全(P1-2):如果 h.LLMRateLimit != nil,挂到 /evidences /actions(更严限流)
 func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
+	// 普通端点(默认限流,IP 维度)
 	api.POST("/courtrooms", h.CreateCourtroom)
 	api.GET("/courtrooms/:session_uuid", h.GetCourtroom)
 	api.POST("/courtrooms/:session_uuid/start", h.StartTrial)
-	api.POST("/courtrooms/:session_uuid/evidences", h.SubmitEvidence)
-	api.POST("/courtrooms/:session_uuid/actions", h.UserAction)
 	api.GET("/courtrooms/:session_uuid/messages", h.GetMessages)
 	api.GET("/courtrooms/:session_uuid/evidences", h.GetEvidences)
 	api.GET("/courtrooms/:session_uuid/agents", h.GetAgents)
@@ -143,6 +148,14 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 	// refresh / browser-back / court page reload. See
 	// service.ListPrivateMemory for visibility rationale.
 	api.GET("/courtrooms/:session_uuid/memory", h.GetVisibleMemory)
+
+	// LLM 端点(更严限流,user 维度)— 防"一秒 1000 次 dispatch_investigator"烧配额
+	llmGroup := api.Group("/")
+	if h.LLMRateLimit != nil {
+		llmGroup.Use(h.LLMRateLimit)
+	}
+	llmGroup.POST("/courtrooms/:session_uuid/evidences", h.SubmitEvidence)
+	llmGroup.POST("/courtrooms/:session_uuid/actions", h.UserAction)
 }
 
 func (h *Handler) HealthHandler(c *gin.Context) {
@@ -220,7 +233,9 @@ func (h *Handler) CreateCourtroom(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": err.Error()})
+		// v0.8.3 安全(P1-6 错误脱敏):不直接回显 err.Error()(暴露 binding tag / 字段名)
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": "invalid request body"})
+		slog.Warn("CreateCourtroom bind failed", "error", err, "client_ip", c.ClientIP())
 		return
 	}
 
@@ -285,7 +300,7 @@ func (h *Handler) StartTrial(c *gin.Context) {
 				Type: "error",
 				Payload: map[string]interface{}{
 					"code":    "OPENING_SPEECHES_FAILED",
-					"message": err.Error(),
+					"message": "agent 开幕陈词失败,已记录到日志",
 				},
 			})
 		}
@@ -311,7 +326,8 @@ func (h *Handler) SubmitEvidence(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": "invalid request body"})
+		slog.Warn("SubmitEvidence bind failed", "error", err, "client_ip", c.ClientIP())
 		return
 	}
 

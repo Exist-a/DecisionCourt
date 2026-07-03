@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/decisioncourt/backend/internal/auth"
@@ -56,13 +57,28 @@ type WebSocketServer struct {
 	hub     *Hub
 	service *courtroom.Service
 	secret  string
+
+	// v0.8.3 安全(P1-2)：WS 限流
+	// - connCount:每个 sessionUUID 的当前连接数(避免一个庭审被 1000 个标签页占满)
+	// - lastAction:每个 conn 上次 user.action 时间(避免 WS 长连接里狂发动作)
+	connCount  map[string]int
+	lastAction map[*websocket.Conn]time.Time
+	connMu     sync.Mutex
 }
+
+// WS 限流常量
+const (
+	wsMaxConnsPerSession = 5               // 同一 session 最多 5 个 WS 连接
+	wsMinActionInterval  = 100 * time.Millisecond // 同一 conn 上次 user.action 后至少 100ms
+)
 
 func NewWebSocketServer(hub *Hub, service *courtroom.Service) *WebSocketServer {
 	return &WebSocketServer{
-		hub:     hub,
-		service: service,
-		secret:  config.AppConfig.JWTSecret,
+		hub:        hub,
+		service:    service,
+		secret:     config.AppConfig.JWTSecret,
+		connCount:  make(map[string]int),
+		lastAction: make(map[*websocket.Conn]time.Time),
 	}
 }
 
@@ -151,6 +167,24 @@ func (s *WebSocketServer) Handler(c *gin.Context) {
 		}
 
 		if event.Type == "user.action" {
+			// v0.8.3 安全(P1-2):每 conn 至少 wsMinActionInterval 间隔
+			s.connMu.Lock()
+			last, ok := s.lastAction[conn]
+			now := time.Now()
+			if ok && now.Sub(last) < wsMinActionInterval {
+				s.connMu.Unlock()
+				s.hub.Broadcast(sessionUUID, courtroom.Event{
+					Type: "error",
+					Payload: map[string]interface{}{
+						"code":    "WS_THROTTLED",
+						"message": "too many user.action in short time, slow down",
+					},
+				})
+				continue
+			}
+			s.lastAction[conn] = now
+			s.connMu.Unlock()
+
 			action := getString(event.Payload, "action")
 			traceID := getString(event.Payload, "trace_id")
 			tr := observability.Trace{

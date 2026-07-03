@@ -20,6 +20,7 @@ import (
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/evidence"
 	"github.com/decisioncourt/backend/internal/llm"
+	"github.com/decisioncourt/backend/internal/middleware"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/private_memory"
@@ -149,6 +150,10 @@ func main() {
 	authedGroup := r.Group("/api/v1")
 	authedGroup.POST("/auth/anon", anonAuthHandler(config.AppConfig))
 	authedGroup.POST("/auth/logout", logoutAuthHandler(config.AppConfig))
+	// v0.8.3 安全(P1-2)：默认 IP 限流 20 req/s；LLM 端点(/evidences /actions)
+	// 按 user 限流 5 req/s(防"一秒 1000 次 dispatch_investigator"烧配额)。
+	authedGroup.Use(middleware.RateLimit(middleware.DefaultConfig))
+	handler.LLMRateLimit = middleware.RateLimit(middleware.LLMConfig)
 	authedGroup.Use(auth.Middleware(config.AppConfig.JWTSecret))
 	handler.RegisterAPIRoutes(authedGroup)
 
