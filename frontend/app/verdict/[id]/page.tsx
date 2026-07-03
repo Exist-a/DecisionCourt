@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { useCourtroomStore } from "@/store/courtroomStore";
+import {
+  useCourtroomStore,
+  applyCourtEvent,
+} from "@/store/courtroomStore";
 import { Button } from "@/components/ui/button";
 import {
   ThumbsUp,
@@ -28,6 +31,17 @@ export default function VerdictPage() {
   const session = useCourtroomStore((s) => s.session);
   const storeVerdict = useCourtroomStore((s) => s.verdict);
   const setVerdict = useCourtroomStore((s) => s.setVerdict);
+  // v0.8.3 修复：verdict 页补齐与 court 页相同的水合序列。刷新 / 浏览器
+  // 后退到此页时 store 会被清空，需要从 REST API 把 store 重新填满才能
+  // 让 Header / Option A-B 标签 / 审讯记录 / 证据板等组件正确渲染。
+  const setSession = useCourtroomStore((s) => s.setSession);
+  const setAgents = useCourtroomStore((s) => s.setAgents);
+  const addEvidence = useCourtroomStore((s) => s.addEvidence);
+  const setInvestigationFindings = useCourtroomStore(
+    (s) => s.setInvestigationFindings,
+  );
+  const setBeliefDiffs = useCourtroomStore((s) => s.setBeliefDiffs);
+  const storedEvidences = useCourtroomStore((s) => s.evidences);
   // v0.5: pull the v0.5 episodic-memory timeline from the live courtroom
   // store. It was hydrated during the trial via a2a.message WebSocket
   // events, so the verdict page can render the full behind-the-scenes view
@@ -64,6 +78,102 @@ export default function VerdictPage() {
 
     load();
   }, [sessionId, storeVerdict, setVerdict]);
+
+  // v0.8.3 修复：补齐与 court 页相同的水合序列（session / agents /
+  // evidences / investigations / belief_diffs / memory）。失败时不阻
+  // 断 UI —— 老版本 / 网络异常下 verdict 页仍能展示判决书本体。
+  //
+  // 注意：messages 单独走下面那个 effect（不灌 store，只 setMessages 本地
+  // state，因为 verdict 页 UI 直接读 messages，不需要进入 store 的全局
+  // 流）。其它字段全部灌 store，让 header / evidence panel / behind-the-scenes
+  // / belief tab 都能拿到完整数据。
+  useEffect(() => {
+    let mounted = true;
+
+    async function hydrate() {
+      try {
+        const sessRes = await api.getSession(sessionId);
+        if (!mounted) return;
+        if (sessRes.code === 0) setSession(sessRes.data);
+      } catch (err) {
+        console.warn("[Verdict] hydrate session failed:", err);
+      }
+
+      try {
+        const agentsRes = await api.getAgents(sessionId);
+        if (!mounted) return;
+        if (agentsRes.code === 0) {
+          // Agents may come back as either an array or a { agents: [...] }
+          // envelope depending on backend version. Normalize.
+          const data = agentsRes.data as
+            | { agents?: unknown[] }
+            | unknown[];
+          const list = Array.isArray(data) ? data : (data.agents ?? []);
+          if (list.length > 0) setAgents(list as Parameters<typeof setAgents>[0]);
+        }
+      } catch (err) {
+        console.warn("[Verdict] hydrate agents failed:", err);
+      }
+
+      try {
+        const evRes = await api.getEvidences(sessionId);
+        if (!mounted) return;
+        if (evRes.code === 0 && Array.isArray(evRes.data.evidences)) {
+          // 幂等：先看 store 里是否已经存在该 evidence.evidence_id
+          for (const e of evRes.data.evidences) {
+            if (!storedEvidences.find((x) => x.evidence_id === e.evidence_id)) {
+              addEvidence(e);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Verdict] hydrate evidences failed:", err);
+      }
+
+      try {
+        const invRes = await api.getInvestigations(sessionId);
+        if (!mounted) return;
+        if (invRes.code === 0 && Array.isArray(invRes.data.findings)) {
+          setInvestigationFindings(invRes.data.findings);
+        }
+      } catch (err) {
+        console.warn("[Verdict] hydrate investigations failed:", err);
+      }
+
+      try {
+        const diffRes = await api.getBeliefDiffs(sessionId);
+        if (!mounted) return;
+        if (diffRes.code === 0 && Array.isArray(diffRes.data.diffs)) {
+          setBeliefDiffs(diffRes.data.diffs);
+        }
+      } catch (err) {
+        console.warn("[Verdict] hydrate belief diffs failed:", err);
+      }
+
+      try {
+        const memRes = await api.getVisibleMemory(sessionId);
+        if (!mounted) return;
+        if (memRes.code === 0 && Array.isArray(memRes.data.memory)) {
+          for (const row of memRes.data.memory) {
+            applyCourtEvent({
+              type: "a2a.message",
+              payload: row,
+              timestamp: row.created_at || new Date().toISOString(),
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[Verdict] hydrate memory failed:", err);
+      }
+    }
+
+    hydrate();
+    return () => {
+      mounted = false;
+    };
+    // 只在 sessionId 变化时重跑 —— 后续 store 变化由 React 直接驱动。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   // 加载庭审对话
   useEffect(() => {
@@ -135,6 +245,29 @@ export default function VerdictPage() {
   // v0.5+：导出 PDF —— 客户端 window.print() 配合 globals.css 里的 print 样式。
   const handleExportPDF = () => {
     api.printVerdictAsPDF();
+  };
+
+  // v0.8.3 新增：法官认为判决有疏漏 / 想再听一次双方辩论，可以"补充
+  // 证据重新开庭"。后端把 phase 转回 evidence（保持当前 round），
+  // beliefs/evidences/messages 全部保留，前端 router.push 回 /court/[id]
+  // 继续庭审。这条路径替代了过去"只能回首页立案"的死路。
+  const [reopening, setReopening] = useState(false);
+  const [reopenError, setReopenError] = useState<string | null>(null);
+  const handleReopen = async () => {
+    setReopening(true);
+    setReopenError(null);
+    try {
+      const res = await api.sendAction(sessionId, { action: "reopen_trial" });
+      if (res.code === 0) {
+        router.push(`/court/${sessionId}`);
+      } else {
+        setReopenError(`服务端拒绝: ${JSON.stringify(res)}`);
+      }
+    } catch (e) {
+      setReopenError(e instanceof Error ? e.message : "重开失败");
+    } finally {
+      setReopening(false);
+    }
   };
 
   if (loading) {
@@ -571,13 +704,43 @@ export default function VerdictPage() {
               没 帮 助
             </Button>
           </div>
-          <Button
-            onClick={() => router.push("/")}
-            className="bg-ink text-paper hover:bg-inkSoft rounded-sm px-5 h-9 text-xs font-data tracking-wider"
-          >
-            <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-            再 立 一 案
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            {reopenError && (
+              <p
+                role="alert"
+                className="text-[11px] text-prosecution font-data max-w-[280px] text-right leading-tight"
+              >
+                {reopenError}
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              {/*
+                v0.8.3 新增"补充证据重开"按钮：替代了过去"只能回到首页
+                重新立案"的死路。点击后：
+                  1) POST /actions {action:"reopen_trial"}
+                  2) 后端把 phase 转回 evidence（保持 round）
+                  3) router.push 回 /court/[id]，庭审界面继续
+                beliefs / evidences / messages 全部保留，律师能看到完整历史。
+              */}
+              <Button
+                data-testid="reopen-trial-button"
+                disabled={reopening}
+                onClick={handleReopen}
+                className="bg-defense text-paper hover:bg-defense-ink rounded-sm px-5 h-9 text-xs font-data tracking-wider"
+                title="回到庭审继续补充证据、让双方再辩论一次"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                {reopening ? "重 开 中 …" : "补 充 证 据 重 开"}
+              </Button>
+              <Button
+                onClick={() => router.push("/")}
+                className="bg-ink text-paper hover:bg-inkSoft rounded-sm px-5 h-9 text-xs font-data tracking-wider"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                再 立 一 案
+              </Button>
+            </div>
+          </div>
         </div>
       </section>
 

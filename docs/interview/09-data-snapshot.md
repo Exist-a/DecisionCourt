@@ -104,7 +104,7 @@ WHERE session_uuid = '...';
 
 **关键观察**：第 10 条策略笔记引用了 **所有 4 个 evidence** —— 业务正确 ✅。
 
-### 1.5 A2A 消息（33 条 = 5 阶段 × 多方通信）
+### 1.5 消息（33 条 = 5 阶段 × 多方通信）
 
 ```sql
 SELECT count(*), from_agent, to_agent, message_type, visibility
@@ -246,7 +246,7 @@ curl http://localhost:8080/metrics
 
 **关键观察**：`agent.speak_chunk` 计数 338 —— **流式 chunk 数量可观**，**前端能看到逐字显示效果**。
 
-### 3.2 9 个 event_type 的 A2A throughput（修复 bug 后）
+### 3.2 9 个 event_type 的 消息 throughput（修复 bug 后）
 
 | event_type | count |
 |---|---|
@@ -270,7 +270,7 @@ curl http://localhost:8080/metrics
 | # | bug | 严重度 | 暴露路径 | v0.8 状态 | 备注 |
 |---|---|---|---|---|---|
 | 1 | llm_calls 外键约束失败 | 🔴 P1 | stdout ERROR 当天发现 | ✅ 修了 | v0.8 demo |
-| 2 | A2A SessionID fallback WARN | 🟡 P2 | stdout WARN 当天发现 | ⏸️ 后续修 | v0.8 demo |
+| 2 | SessionID fallback WARN | 🟡 P2 | stdout WARN 当天发现 | ⏸️ 后续修 | v0.8 demo |
 | 3 | a2a_message_throughput 计数缺失 | 🟢 P3 | /metrics 端点发现 | ✅ 修了 | v0.8 demo |
 | 4 | 信念轨迹只显示 1 条 | 🟡 P2 | 用户真实庭审反馈 | ✅ 1 行 UUID.New() | v0.8.3 |
 | 5 | 判决书按钮无响应 | 🟢 P3 UX | 用户真实庭审反馈 | ✅ 35 行 props 透传 | v0.8.3 |
@@ -360,11 +360,11 @@ X-Request-ID: demo-x           ← 原样回写
 |---|---|---|
 | MVP (v0.0-v0.4) | 早期 | 基础庭审流程 |
 | v0.5 | 中期 | Gateway 装饰器链 + 压缩 + 47 字段审计 |
-| v0.5+ | 中期 | 私有记忆系统 + A2A 重设计 |
+| v0.5+ | 中期 | 私有记忆系统重设计 |
 | v0.6 | 中期 | Bayesian Belief Engine + anchoring + weaken + audit trail |
 | v0.7 | 中期 | Gateway v2（compression + reliability 链） |
 | v0.8 | 2026-07-02 | **白盒化（slog + metrics + decision_events + trace）** |
-| v0.8.2 | 2026-07-02 | **Google A2A 协议实装（agent-card + discovery + tasks/send）** |
+| v0.8.2 | 2026-07-02 | 计划实装外部 Agent 接入（暂缓，详见 ADR 0011 撤回说明） |
 | v0.8.3 | 2026-07-02 | **修复 5 个白盒化发现的 bug** |
 
 ---

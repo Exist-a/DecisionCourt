@@ -635,6 +635,31 @@ type CourtEvent =
 - 后端按 `session_id` 将连接加入 room。
 - Agent 输出通过 room 广播给所有旁观者（MVP 只有用户自己）。
 
+### 8.2a v0.8.3 心跳 + 重连退避（关键体验修复）
+
+**问题**：v0.8.3 之前 WebSocket 客户端没有重连逻辑、没有心跳。庭审过程中如果服务端重启、负载均衡器 idle timeout、网络抖动，连接死掉后用户感觉"庭审卡住"，刷新页面又遇到数据丢失。
+
+**修复**（详见 [`.trae/documents/refresh-and-reopen-fix.md`](./refresh-and-reopen-fix.md) §B-2）：
+
+**前端** [`frontend/lib/websocket.ts`](file:///d:/源码/FullStack/DecisionCourt/frontend/lib/websocket.ts)：
+- 重连退避算法提取到独立模块 [`frontend/lib/reconnect.ts`](file:///d:/源码/FullStack/DecisionCourt/frontend/lib/reconnect.ts)（纯函数 + 6 个单测覆盖）
+- 指数退避：`1s → 2s → 4s → 8s → 16s → 30s`（封顶 30s 避免长时间断网时无限叠加）
+- 成功后立即重置回 1s
+- `disconnect()` 必须清理所有 timer（避免 setTimeout 在组件卸载后还在排队重连，造成内存泄漏）
+
+**前端** 心跳：
+- 每 25s 一次（早于 nginx/ALB 默认 60s idle 超时，让中间代理不掉连接）
+- 连续 2 个周期没收到 pong → 主动 `close()` 触发 onclose → 自动重连
+- 解决"服务端 nginx 偷偷 close 了连接，客户端不知道"的半连接死锁
+
+**后端** [`backend/internal/api/websocket.go`](file:///d:/源码/FullStack/DecisionCourt/backend/internal/api/websocket.go)：
+- 服务端响应 `{type:"ping"}` 立即回 `{type:"pong", payload:{ts:"..."}}`
+- 不进业务逻辑、不写 DB，仅用作连接活性探测
+
+**测试**：
+- [`frontend/lib/reconnect.test.ts`](file:///d:/源码/FullStack/DecisionCourt/frontend/lib/reconnect.test.ts) — 6 cases 覆盖退避序列、cap 行为、stale state 防御、重置 round-trip
+- `node --experimental-strip-types --test lib/reconnect.test.ts` 跑
+
 ---
 
 ## 9. 部署方案

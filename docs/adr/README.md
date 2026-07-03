@@ -2,7 +2,7 @@
 
 > **ADR**（Architecture Decision Record）是业界标准的"决策追溯"机制 —— 每份记录一个**已确定**的关键架构决策，包含**背景 / 选项对比 / 决策 / 后果**，便于后续维护者理解"为什么是这样"。
 >
-> 本目录收录 9 份关键决策，编号递增。修改 ADR 必须保留"决策当时"的上下文；如果决策变更，应该新增一份"撤销 / 替代"的 ADR。
+> 本目录收录 11 份关键决策，编号递增。修改 ADR 必须保留"决策当时"的上下文；如果决策变更，应该新增一份"撤销 / 替代"的 ADR。
 
 ---
 
@@ -20,7 +20,7 @@
 | [0008](./0008-cross-exam-user-trigger.md) | 质证轮次控制改为用户触发 | ✅ | `internal/courtroom/service.go` |
 | [0009](./0009-courtroom-vis-simplify.md) | 庭审页面可视化简化 | ✅ | `frontend/components/courtroom/ArgumentMap.tsx` |
 | [0010](./0010-whitebox-observability.md) | v0.8 后端白盒化（slog + Prometheus + OTel-Span + decision_events） | ✅ | `internal/observability/` |
-| [0011](./0011-a2a-external-protocol.md) | v0.8.2 实装 Google A2A 协议外部接入层（3 个端点） | ✅ | `internal/a2a/external/` |
+| [0011](./0011-llm-probability-hard-clamp.md) | LLM 输出概率值后端硬编码 Clamp（v0.8.4 修复 DeepSeek 抽风） | ✅ | `internal/agent/probability.go` |
 
 ---
 

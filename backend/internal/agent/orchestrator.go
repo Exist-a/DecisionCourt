@@ -589,6 +589,14 @@ func (o *Orchestrator) JudgeAssess(
 		reasoning = r
 	}
 
+	// v0.8.4 硬编码：DeepSeek 偶尔把 0-1 范围的小数返回为 0-100 范围的
+	// 整数（35.0 / 65.0）。不 clamp 就直接写库 → belief_a 漂出 [0,1]
+	// → verdict 显示 3500 / ArgumentMap strokeWidth 172.5px。
+	// judge.BeliefA 作为兜底本身有可能是脏数据，不能再依赖。
+	// 用 pair 版：35/65 → 0.35/0.65（保留 LLM 原本偏向），而不是
+	// 简单 clamp 到 1.0/1.0（会丢语义）。
+	beliefA, beliefB = ClampProbabilityPair(beliefA, beliefB)
+
 	return beliefA, beliefB, reasoning, nil
 }
 
@@ -627,13 +635,14 @@ func (o *Orchestrator) JudgeFinalDecision(
 		return JudgeDecision{}, fmt.Errorf("failed to parse judge decision JSON: %w", err)
 	}
 
-	// Ensure belief values are valid
-	if result.BeliefA < 0 || result.BeliefA > 1 {
-		result.BeliefA = judge.BeliefA
-	}
-	if result.BeliefB < 0 || result.BeliefB > 1 {
-		result.BeliefB = judge.BeliefB
-	}
+	// v0.8.4 硬编码 clamp：原来逻辑是"出范围 → fallback 到 judge.BeliefA"，
+	// 但这会让 DB 已有脏数据循环污染（judge.BeliefA 可能是 35.0）。
+	// 改为**无条件** pair 归一化 —— NaN / 负数 / 0-100 范围整数
+	// （DeepSeek 抽风时返回的 35.0/65.0）会被收窄到合法区间并
+	// 保留 LLM 原本的偏向（35% / 65%）。
+	// verdict.option_a_score 也会被 GenerateVerdict 后置 clamp 一次，
+	// 这里是最后一道防线。
+	result.BeliefA, result.BeliefB = ClampProbabilityPair(result.BeliefA, result.BeliefB)
 
 	return result, nil
 }

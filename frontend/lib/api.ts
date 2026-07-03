@@ -156,6 +156,41 @@ export const api = {
               ? `?round=${filter.round}`
               : ""
         }`),
+
+  // v0.5 episodic-memory REST hydration. Returns the full v0.5 private
+  // memory timeline (strategy_note / opponent_weakness / self_correction /
+  // evidence_eval) for both sides. See backend
+  // internal/api/handler.go::GetVisibleMemory.
+  //
+  // Frontend hydrates these into the store by replaying each row as an
+  // `a2a.message` court-event (the envelope shape is identical to what
+  // the WebSocket broadcasts). This means there is only ONE parser path
+  // (applyCourtEvent → store.appendMemoryEntry) for memory rows whether
+  // they arrive live or via rehydration.
+  getVisibleMemory: (sessionUUID: string) =>
+    useMock
+      ? Promise.resolve({ code: 0, data: { memory: [], count: 0 } })
+      : fetchJson<
+          never,
+          {
+            code: number;
+            data: {
+              memory: Array<{
+                id: string;
+                message_uuid: string;
+                round: number;
+                phase: string;
+                from: string;
+                to: string;
+                message_type: string;
+                visibility: string;
+                payload: Record<string, unknown>;
+                created_at: string;
+              }>;
+              count: number;
+            };
+          }
+        >(`/api/v1/courtrooms/${sessionUUID}/memory`),
 };
 
 async function fetchJson<Req, Res>(

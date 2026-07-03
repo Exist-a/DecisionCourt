@@ -168,6 +168,26 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
       } catch (err) {
         console.warn("[Courtroom] failed to load belief diffs (endpoint may be missing):", err);
       }
+
+      // v0.5 情节记忆时间线：失败时不阻断 UI（老版本没这个端点）。
+      // 成功时把每条 private memory 作为 `a2a.message` 事件回灌 store，
+      // 复用 applyCourtEvent 的同一条 parser 路径 —— 不再单独写一份
+      // 还原逻辑。这是 v0.8.3 修复"刷新后策略笔记 Tab 全空"的关键。
+      try {
+        const memRes = await api.getVisibleMemory(sessionId);
+        if (!mounted) return;
+        if (memRes.code === 0 && Array.isArray(memRes.data.memory)) {
+          for (const row of memRes.data.memory) {
+            applyCourtEvent({
+              type: "a2a.message",
+              payload: row,
+              timestamp: row.created_at || new Date().toISOString(),
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[Courtroom] failed to load memory (endpoint may be missing):", err);
+      }
     }
 
     load();
@@ -371,6 +391,20 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
           <div className="flex items-center gap-2">
             {convergenceInfo && <ConvergenceBadge info={convergenceInfo} />}
             <HelpPopover />
+            {/*
+              v0.8.3 按钮逻辑修正：派生判断改用 session.current_phase
+              （DB 真值），而不是 verdictReady 这个只在 WS 实时推送时
+              才会被设置的本地 boolean —— 后者在 verdict 阶段刷新后会
+              一直是 false，导致用户看到错误的"直接判决"按钮。
+
+              phase 派生：
+                - "idle"                      → 开 庭
+                - "verdict" / "appeal"        → 查看判决書
+                - 其余（opening..deliberation）→ 直接判决
+
+              verdictReady 这个本地 boolean 仍然保留，只用来驱动 amber
+              banner 的入场动画和自动跳转行为（避免用户错过判决到达）。
+            */}
             {session.current_phase === "idle" ? (
               <Button
                 size="sm"
@@ -395,7 +429,8 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
                 <Gavel className="w-3.5 h-3.5 mr-1.5" />
                 {startingTrial ? "启动中…" : "开 庭"}
               </Button>
-            ) : verdictReady ? (
+            ) : session.current_phase === "verdict" ||
+              session.current_phase === "appeal" ? (
               <Button
                 size="sm"
                 onClick={handleViewVerdict}

@@ -169,7 +169,11 @@ export interface UserActionRequest {
     | "submit_evidence"
     | "interrupt"
     | "start_cross_exam"
-    | "continue_cross_exam";
+    | "continue_cross_exam"
+    // v0.8.3 新增：法官在 verdict 阶段点"补充证据重新开庭"，回到
+    // evidence 阶段（保持原 round）。参见 decisioncourt-prd §7.2 + 后端
+    // internal/courtroom/service.go::reopenTrial。
+    | "reopen_trial";
   question_id?: string;
   answer?: string;
   query?: string;

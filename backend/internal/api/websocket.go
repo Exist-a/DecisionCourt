@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/observability"
@@ -52,6 +53,22 @@ func (s *WebSocketServer) Handler(c *gin.Context) {
 			Payload map[string]interface{} `json:"payload"`
 		}
 		if err := json.Unmarshal(message, &event); err != nil {
+			continue
+		}
+
+		// v0.8.3 心跳：客户端每 ~25s 发 {type:"ping"}，服务端立即回
+		// {type:"pong"}。不进入业务逻辑，让前端能够：
+		//   1) 探测连接是否真的活着（TCP 缓冲不能区分活/死连接）
+		//   2) 通过 SetReadDeadline 让中间代理（nginx/ALB）不掉 idle 连接
+		//
+		// 故意走 Broadcast 而不是直接 WriteMessage：Broadcast 走 hub rooms
+		// 维护的 client map，与正常推送路径一致；这里也只用 1 个客户端，
+		// 不会产生额外开销。
+		if event.Type == "ping" {
+			s.hub.Broadcast(sessionUUID, courtroom.Event{
+				Type:    "pong",
+				Payload: map[string]interface{}{"ts": time.Now().UTC().Format(time.RFC3339)},
+			})
 			continue
 		}
 

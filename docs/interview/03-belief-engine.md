@@ -312,7 +312,7 @@ LLM 接受了 belief engine 计算的 ~0.56 vs 0.44，**没有推翻算式结果
 | variance 收敛 | 4 个 Agent 信念高度一致时算收敛 |
 | belief_diffs | 审计表，每条 = 一次 Bayesian Update |
 | log-odds | logit 的另一叫法 |
-| A2A 私内存 | Agent 私有策略笔记（不广播，但入库） |
+| 私有记忆 | Agent 私有策略笔记（不广播，但入库） |
 
 ---
 

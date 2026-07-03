@@ -28,9 +28,16 @@ interface BehindTheScenesPanelProps {
   onToggleRedacted: () => void;
 }
 
-export function BehindTheScenesPanel({ entries }: BehindTheScenesPanelProps) {
-  // Post-trial redaction is always OFF — the user has earned the full view.
-  // We pass no-op handlers because the toggle is hidden in this view.
+export function BehindTheScenesPanel({
+  entries,
+  redactedMode,
+  onToggleRedacted,
+}: BehindTheScenesPanelProps) {
+  // v0.8.3 修复：post-trial 页面也把 redacted/onToggleRedacted 真正
+  // 传给 MemoryAuditPanel。之前 destructure 漏了这俩字段，TS 在 prop
+  // 解构后变成 undefined 类型，MemoryAuditPanel 收到的是 undefined 也会
+  // 在运行时崩溃（data-redacted-mode 属性会变 undefined）。verdict 页
+  // 用 useState 持有 redacted 控制权，本组件作为受控组件透传即可。
   return (
     <section
       data-component="BehindTheScenesPanel"

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
@@ -18,6 +19,15 @@ import (
 	"github.com/google/uuid"
 )
 
+// MemoryLister is the contract GetVisibleMemory uses to fetch the
+// v0.5 episodic-memory timeline. In production it's wired to
+// courtroom.Service.ListPrivateMemory; tests inject a fake that reads
+// from an in-memory a2a repository so they don't need a full Service
+// (which depends on GORM DB + LLM + searcher + ReAct runner).
+type MemoryLister interface {
+	ListPrivateMemory(ctx context.Context, sessionUUID string) ([]model.A2AMessage, error)
+}
+
 type Handler struct {
 	service            *courtroom.Service
 	investigationService *investigation.Service
@@ -25,16 +35,28 @@ type Handler struct {
 	// the GORM default (looked up from model.DB); tests can inject an
 	// in-memory function so handler tests don't need a real database.
 	sessionLookup func(sessionUUID string) (model.CourtSession, bool)
+	// memoryLister resolves the v0.5 private-memory timeline. Production
+	// defaults to service-backed; tests can inject a fake. See
+	// MemoryLister interface comment.
+	memoryLister MemoryLister
 	// v0.8 白盒化：metrics 实例，可选注入；nil 时 /metrics 端点返回 503。
 	metrics observability.Metrics
 }
 
 func NewHandler(service *courtroom.Service, investigationService *investigation.Service) *Handler {
-	return &Handler{
+	h := &Handler{
 		service:            service,
 		investigationService: investigationService,
 		sessionLookup:      defaultSessionLookup,
 	}
+	// Default the memory lister to whatever service we got. If service is
+	// nil (unit tests that only exercise the investigation routes), the
+	// /memory route will 500 with a clear error — same behavior as the
+	// existing service-dependent endpoints.
+	if service != nil {
+		h.memoryLister = service
+	}
+	return h
 }
 
 // WithMetrics 注入 metrics 实例，供 /metrics 端点查询。
@@ -107,6 +129,11 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		// v0.6 belief engine: structured belief-diff audit trail.
 		// Supports ?agent=prosecutor|defender|... and ?round=N filters.
 		api.GET("/courtrooms/:session_uuid/belief-diffs", h.GetBeliefDiffs)
+		// v0.5 episodic-memory REST hydration. Frontend MemoryAuditPanel
+		// can rebuild the full strategy-note timeline on verdict page
+		// refresh / browser-back / court page reload. See
+		// service.ListPrivateMemory for visibility rationale.
+		api.GET("/courtrooms/:session_uuid/memory", h.GetVisibleMemory)
 	}
 }
 
@@ -152,15 +179,28 @@ func (h *Handler) GetCourtroom(c *gin.Context) {
 func (h *Handler) StartTrial(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
-	// Run asynchronously to avoid HTTP timeout during LLM calls.
-	// Use a detached context so the goroutine survives the HTTP response.
+	// v0.8.3 race 修复：把 phase transition 同步跑完，再让 LLM-backed
+	// opening speeches 在 goroutine 里跑。HTTP 200 返回时 DB 已经是
+	// `opening` 状态 —— 用户刷新或重复点击"开 庭"看到的都是 opening，
+	// 不会再触发"can only start from idle phase"之类的 ValidateAction 错误。
+	if _, err := h.service.TransitionToOpening(context.Background(), sessionUUID); err != nil {
+		slog.Warn("start trial: transition to opening failed",
+			"session_uuid", sessionUUID, "error", err)
+		// 1003 = "当前阶段不允许该操作"（见 decisioncourt-api-design §5）。
+		// 如果 session 不存在，transitionToOpening 返回 gorm.ErrRecordNotFound，
+		// 也归到 400/1003 —— 调用方在打开庭审前必先立案。
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1003, "message": err.Error()})
+		return
+	}
+
+	// ReAct 开庭陈述在后台跑（detached context），HTTP 请求不阻塞。
 	go func() {
-		if err := h.service.StartTrial(context.Background(), sessionUUID); err != nil {
-			slog.Error("start trial failed", "session_uuid", sessionUUID, "error", err)
+		if err := h.service.RunOpeningSpeeches(context.Background(), sessionUUID); err != nil {
+			slog.Error("opening speeches failed", "session_uuid", sessionUUID, "error", err)
 			h.service.Broadcast(sessionUUID, courtroom.Event{
 				Type: "error",
 				Payload: map[string]interface{}{
-					"code":    "START_TRIAL_FAILED",
+					"code":    "OPENING_SPEECHES_FAILED",
 					"message": err.Error(),
 				},
 			})
@@ -170,8 +210,9 @@ func (h *Handler) StartTrial(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"session_uuid": sessionUUID,
-			"message":      "庭审开始，Agent 发言将通过 WebSocket 推送",
+			"session_uuid":  sessionUUID,
+			"current_phase": "opening",
+			"message":       "庭审已开始，Agent 发言将通过 WebSocket 推送",
 		},
 	})
 }
@@ -472,6 +513,103 @@ func beliefDiffResponse(d model.BeliefDiff) gin.H {
 		"reason":             d.Reason,
 		"created_at":         d.CreatedAt,
 	}
+}
+
+// GetVisibleMemory returns the v0.5 episodic-memory timeline for a session
+// (strategy_note / opponent_weakness / self_correction / evidence_eval).
+//
+// Unlike ListVisibleTo("user") — which is scoped to a viewer role and would
+// hide the opposing side's private strategy — this endpoint returns ALL
+// four memory types for both sides, matching the WebSocket a2a.message
+// broadcast behavior the MemoryAuditPanel was built against. The "真实法庭"
+// toggle is a UI-only filter that hides content from the user without
+// touching backend state.
+//
+// Response shape mirrors the WS `a2a.message` envelope so the frontend
+// can feed rows directly into the same `appendMemoryEntry` reducer:
+//
+//	{
+//	  "code": 0,
+//	  "data": {
+//	    "memory": [
+//	      {
+//	        "id": "uuid",
+//	        "message_uuid": "mem_pro_001",
+//	        "round": 1,
+//	        "phase": "cross_exam",
+//	        "from": "prosecutor",
+//	        "to": "prosecutor",
+//	        "message_type": "strategy_note",
+//	        "visibility": "private",
+//	        "payload": { "stance": "...", "content": "...", ... },
+//	        "created_at": "2026-07-01T..."
+//	      }
+//	    ],
+//	    "count": N
+//	  }
+//	}
+//
+// Errors:
+//   404 code=1002 when session_uuid not found.
+//   200 with empty array when no memory entries yet (NOT 404).
+func (h *Handler) GetVisibleMemory(c *gin.Context) {
+	sessionUUID := c.Param("session_uuid")
+
+	// Use lookupSession for the 404 fast-path so we don't have to wait
+	// for ListPrivateMemory to surface gorm.ErrRecordNotFound through the
+	// generic 1500 error envelope.
+	if _, ok := h.lookupSession(sessionUUID); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"code": 1002, "message": "庭审不存在"})
+		return
+	}
+
+	if h.memoryLister == nil {
+		slog.Error("memoryLister not configured", "session_uuid", sessionUUID)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1500, "message": "memory lister not configured"})
+		return
+	}
+
+	rows, err := h.memoryLister.ListPrivateMemory(c.Request.Context(), sessionUUID)
+	if err != nil {
+		slog.Error("list private memory failed", "session_uuid", sessionUUID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1500, "message": "查询情节记忆失败"})
+		return
+	}
+
+	// Note: ListPrivateMemory does its own session lookup and returns
+	// (nil, gorm.ErrRecordNotFound) when the session is gone between the
+	// two reads. Surface that as 404 too.
+	if rows == nil {
+		rows = []model.A2AMessage{}
+	}
+
+	items := make([]gin.H, 0, len(rows))
+	for _, r := range rows {
+		payload, perr := a2a.DecodePayload(r)
+		if perr != nil {
+			slog.Warn("memory decode payload failed; serving empty payload",
+				"message_uuid", r.MessageUUID, "error", perr)
+			payload = map[string]interface{}{}
+		}
+		items = append(items, gin.H{
+			"id":           r.ID,
+			"message_uuid": r.MessageUUID,
+			"round":        r.Round,
+			"phase":        r.Phase,
+			// Frontend reducer expects "from" / "to" (not "from_agent")
+			// — matches the WS envelope field names from bus.go:147-148.
+			"from":         r.FromAgent,
+			"to":           r.ToAgent,
+			"message_type": r.MessageType,
+			"visibility":   r.Visibility,
+			"payload":      payload,
+			"created_at":   r.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{"memory": items, "count": len(items)},
+	})
 }
 
 func evidenceUUIDString(id *uuid.UUID) string {

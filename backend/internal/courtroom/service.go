@@ -264,17 +264,40 @@ func (s *Service) CreateSession(
 	return session, nil
 }
 
-func (s *Service) StartTrial(ctx context.Context, sessionUUID string) error {
+// TransitionToOpening is the synchronous phase-transition half of StartTrial.
+// It validates the action, writes the phase change to DB, and returns the
+// updated session. Exposed so the HTTP handler can call it directly and
+// return 200 with `current_phase: "opening"` BEFORE the LLM-backed opening
+// speeches have finished — this prevents the v0.8.3 "race window" bug
+// where a user who clicks "开 庭" twice (or refreshes immediately) sees
+// stale `idle` state and triggers a second ValidateAction error.
+func (s *Service) TransitionToOpening(ctx context.Context, sessionUUID string) (model.CourtSession, error) {
 	var session model.CourtSession
 	if err := s.db.Where("session_uuid = ?", sessionUUID).First(&session).Error; err != nil {
-		return err
+		return session, err
 	}
 
 	if err := s.stateMachine.ValidateAction(session.CurrentPhase, "start"); err != nil {
-		return err
+		return session, err
 	}
 
 	if err := s.transitionPhase(&session, model.PhaseOpening, 0); err != nil {
+		return session, err
+	}
+	return session, nil
+}
+
+// RunOpeningSpeeches is the async half of StartTrial. It assumes the phase
+// has already been transitioned to opening (by TransitionToOpening or by
+// StartTrial itself) and runs the ReAct opening speeches for both sides.
+//
+// Failures here are reported via the `error` WebSocket event so the
+// frontend can show a banner; we never roll back the phase on failure
+// because the partial transcript is still useful and the user can retry
+// via direct_verdict / reopen_trial.
+func (s *Service) RunOpeningSpeeches(ctx context.Context, sessionUUID string) error {
+	var session model.CourtSession
+	if err := s.db.Where("session_uuid = ?", sessionUUID).First(&session).Error; err != nil {
 		return err
 	}
 
@@ -328,6 +351,20 @@ func (s *Service) StartTrial(ctx context.Context, sessionUUID string) error {
 	})
 
 	return nil
+}
+
+// StartTrial is the legacy all-in-one entry point still used by the
+// integration tests. Production code should call TransitionToOpening
+// synchronously and then RunOpeningSpeeches in a goroutine (see
+// handler.StartTrial).
+//
+// Kept for backwards compatibility — it does the same work as
+// TransitionToOpening + RunOpeningSpeeches, but in one sync call.
+func (s *Service) StartTrial(ctx context.Context, sessionUUID string) error {
+	if _, err := s.TransitionToOpening(ctx, sessionUUID); err != nil {
+		return err
+	}
+	return s.RunOpeningSpeeches(ctx, sessionUUID)
 }
 
 func (s *Service) SubmitEvidence(
@@ -440,9 +477,69 @@ func (s *Service) ProcessUserAction(
 		query, _ := payload["query"].(string)
 		_, _, err := s.DispatchInvestigator(ctx, session, dispatcher, query)
 		return err
+	case "reopen_trial":
+		// v0.8.3 新增：法官在 verdict/appeal 阶段可以"补充证据重开"。
+		//
+		// 行为契约：
+		//   - 阶段回到 evidence（不是 cross_exam —— 用户要先看到证据板才能
+		//     选择提交/跳过，然后点 continue_cross_exam 进入下一轮）。
+		//   - 保持 current_round 不变。用户后续 continue_cross_exam 会基于
+		//     原轮次 +1，所以"原来打 3 轮，重开后接着第 4 轮"。
+		//   - 不重置 beliefs / evidences / messages —— 之前所有证据和辩论
+		//     历史保留，律师可以看到完整上下文。
+		//   - 不清空 verdict 行（DB 里的 verdicts 表不动），前端用
+		//     session.current_phase 判定渲染。
+		//   - 不发 verdict.ready（已经在 verdict 阶段发过了）。
+		//   - 发 trial.reopened 事件，前端 verdict 页监听后会 router.push 回
+		//     /court/[id]，继续之前的庭审。
+		return s.reopenTrial(ctx, session)
 	default:
 		return fmt.Errorf("unsupported action: %s", action)
 	}
+}
+
+// reopenTrial implements the verdict → evidence phase transition for
+// "补充证据重新开庭". See ProcessUserAction.reopen_trial for the behavior
+// contract and design rationale.
+//
+// This helper exists separately so the state-machine test can exercise it
+// directly without going through ValidateAction + the full dispatch path.
+//
+// ctx is reserved for future trace propagation (v0.8 whitebox); the actual
+// DB calls don't need it today because transitionPhase is sync.
+func (s *Service) reopenTrial(ctx context.Context, session model.CourtSession) error {
+	_ = ctx // reserved for future trace_id propagation
+
+	lock := s.getSessionLock(session.SessionUUID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	// Re-read inside the lock so we don't race with another goroutine that
+	// may have transitioned the phase between ValidateAction (above) and
+	// this point.
+	var fresh model.CourtSession
+	if err := s.db.Where("session_uuid = ?", session.SessionUUID).First(&fresh).Error; err != nil {
+		return err
+	}
+	if fresh.CurrentPhase != model.PhaseVerdict && fresh.CurrentPhase != model.PhaseAppeal {
+		return fmt.Errorf("reopen_trial: phase moved to %s while we waited for lock", fresh.CurrentPhase)
+	}
+
+	if err := s.transitionPhase(&fresh, model.PhaseEvidence, fresh.CurrentRound); err != nil {
+		return err
+	}
+
+	s.broadcastEvent(session.SessionUUID, Event{
+		Type: "trial.reopened",
+		Payload: map[string]interface{}{
+			"previous_phase": string(model.PhaseVerdict),
+			"current_phase":  string(model.PhaseEvidence),
+			"current_round":  fresh.CurrentRound,
+			"max_rounds":     fresh.MaxRounds,
+			"message":        "法官决定补充证据，重新开庭",
+		},
+	})
+	return nil
 }
 
 func (s *Service) Interrupt(sessionUUID string, content string) error {
@@ -1170,15 +1267,19 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		if err != nil {
 			log.Printf("JudgeFinalDecision failed: %v, using belief values directly", err)
 			// Fallback: use judge's belief values directly
+			// v0.8.4 硬编码 clamp：judge.BeliefA 本身可能是脏数据（之前
+			// 某次 JudgeAssess 写过 35.0），不能直接复制 —— 必须 pair 归一化。
 			preferred := "option_b"
 			recommendOption := session.OptionB
-			if judge.BeliefA > judge.BeliefB {
+			// 归一化后再比较 preferred —— 避免脏数据让"推荐"指向错边
+			cleanA, cleanB := agent.ClampProbabilityPair(judge.BeliefA, judge.BeliefB)
+			if cleanA > cleanB {
 				preferred = "option_a"
 				recommendOption = session.OptionA
 			}
 			judgeDecision = agent.JudgeDecision{
-				BeliefA:      judge.BeliefA,
-				BeliefB:      judge.BeliefB,
+				BeliefA:      cleanA,
+				BeliefB:      cleanB,
 				Preferred:    preferred,
 				Reasoning:    "基于信念度直接裁决",
 				Recommendation: fmt.Sprintf("建议选择%s", recommendOption),
@@ -1186,9 +1287,14 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		}
 
 		// Update judge's belief with final decision
+		// v0.8.4 硬编码 clamp：service 层是 LLM 输出到 DB 的最后一道门。
+		// 理论上 agent.JudgeFinalDecision 已经 clamp 过，但万一未来加新
+		// LLM 路径漏 clamp，这里会兜底。agent.ClampProbabilityPair 不会让
+		// 任何值逃出 [0, 1] 范围，且会保留 LLM 原本的偏向。
+		cleanA, cleanB := agent.ClampProbabilityPair(judgeDecision.BeliefA, judgeDecision.BeliefB)
 		s.db.Model(judge).Updates(map[string]interface{}{
-			"belief_a": judgeDecision.BeliefA,
-			"belief_b": judgeDecision.BeliefB,
+			"belief_a": cleanA,
+			"belief_b": cleanB,
 		})
 
 		// Broadcast judge final decision
@@ -1239,13 +1345,22 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		}
 	}
 
+	// v0.8.4 硬编码 clamp：clerk 角色在 GenerateVerdict 阶段会看
+	// judgeDecision.BeliefA 输出 option_a_score —— 但 LLM 偶尔把
+	// 0-1 范围小数误输出为 0-100 范围整数（如 35.0 / 65.0）。
+	// 不归一化就直接写库 → verdict 页显示 3500 / 6500 分，ArgumentMap
+	// strokeWidth 算出 172.5px。pair 版 35/65 → 0.35/0.65 保留偏向。
+	cleanA, cleanB := agent.ClampProbabilityPair(
+		getFloat(result, "option_a_score"),
+		getFloat(result, "option_b_score"),
+	)
 	verdict := model.Verdict{
 		SessionID:        session.ID,
 		Content:          getString(result, "content"),
 		Summary:          getString(result, "summary"),
 		TrialSummary:     getString(result, "trial_summary"),
-		OptionAScore:     getFloat(result, "option_a_score"),
-		OptionBScore:     getFloat(result, "option_b_score"),
+		OptionAScore:     cleanA,
+		OptionBScore:     cleanB,
 		Recommendation:   getString(result, "recommendation"),
 		UserFeedback:     "none",
 	}
@@ -1423,6 +1538,26 @@ func (s *Service) ExportSession(ctx context.Context, session model.CourtSession)
 	out["a2a_messages"] = a2aItems
 
 	return out, nil
+}
+
+// ListPrivateMemory returns all v0.5 episodic-memory A2A rows for the
+// session identified by `sessionUUID`, regardless of sender. This is the
+// hydration source for the user-facing MemoryAuditPanel when the frontend
+// needs to rebuild the timeline from REST (verdict page refresh, browser
+// back from verdict, court page reload mid-trial, etc.).
+//
+// The handler must look up the session by session_uuid first (so we can
+// return 404 when the session doesn't exist); we then resolve to the
+// internal session.ID primary key for the a2a_messages FK query.
+//
+// Returns (rows, nil) on success; (nil, err) only on DB failure. An empty
+// slice with nil error is the "no memory entries yet" case.
+func (s *Service) ListPrivateMemory(ctx context.Context, sessionUUID string) ([]model.A2AMessage, error) {
+	var session model.CourtSession
+	if err := s.db.Where("session_uuid = ?", sessionUUID).First(&session).Error; err != nil {
+		return nil, err
+	}
+	return s.a2aBus.ListPrivateMemory(ctx, session.ID)
 }
 
 func (s *Service) transitionPhase(session *model.CourtSession, phase model.CourtPhase, round int) error {

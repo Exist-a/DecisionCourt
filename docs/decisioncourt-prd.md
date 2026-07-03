@@ -1,11 +1,12 @@
 # 决策庭（DecisionCourt）产品需求文档
 
-> **版本**：v0.8
-> **状态**：v0.5 MemoryBus 统一 + ContextView 投影 + ReAct 私有策略自动分类 + 前端 MemoryAuditPanel；v0.5+ 修补 SessionUUID 房间钥匙 bug + MemoryEntry 结构化字段 + AgentAvatar 思考脉冲动画；v0.6 信念引擎升级（贝叶斯 log-odds + 锚定 + weaken 边）+ 智能收敛 4 信号优先级 + belief_diffs 审计 trail + BeliefDiffCard/BeliefTrajectoryTab/ConvergenceBadge + evidence_id 归一化；v0.7 整合文档结构 + ADR 提炼；**v0.8 白盒化（slog 结构化日志 / Prometheus-兼容业务指标 / Span + decision_events 业务事件审计 / 端到端 trace_id 串联）+ 文档整合（8 份主文档 + 10 份 ADR + 6 份归档）**。
+> **版本**：v0.8.3
+> **状态**：v0.5 MemoryBus 统一 + ContextView 投影 + ReAct 私有策略自动分类 + 前端 MemoryAuditPanel；v0.5+ 修补 SessionUUID 房间钥匙 bug + MemoryEntry 结构化字段 + AgentAvatar 思考脉冲动画；v0.6 信念引擎升级（贝叶斯 log-odds + 锚定 + weaken 边）+ 智能收敛 4 信号优先级 + belief_diffs 审计 trail + BeliefDiffCard/BeliefTrajectoryTab/ConvergenceBadge + evidence_id 归一化；v0.7 整合文档结构 + ADR 提炼；v0.8 白盒化（slog 结构化日志 / Prometheus-兼容业务指标 / Span + decision_events 业务事件审计 / 端到端 trace_id 串联）+ 文档整合；**v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭"5 个根因（verdict 页补齐水合 / memoryEntries REST 端点重启 / WS 心跳+重连 / reopen_trial action / 顶部按钮 phase 派生）**。
 > **目标**：为复杂人生/工作决策提供一个结构化、可审计、人机协作的多 Agent 辩论法庭。
 > **架构决策**：[`docs/adr/0002-a2a-private-channel.md`](./adr/0002-a2a-private-channel.md)、[`docs/adr/0003-contextview-projection.md`](./adr/0003-contextview-projection.md)、[`docs/adr/0004-bayesian-belief-engine.md`](./adr/0004-bayesian-belief-engine.md)、[`docs/adr/0005-investigation-findings.md`](./adr/0005-investigation-findings.md)
 > **设计演进（已归档）**：[`docs/archive/memory-a2a-redesign-v1.2.md`](./archive/memory-a2a-redesign-v1.2.md)
-> **2026-07-02 整理时同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md` 实装状态矩阵](./README.md#5-实装状态矩阵截至-2026-07-02)）。
+> **v0.8.3 实施记录**：[`.trae/documents/refresh-and-reopen-fix.md`](./refresh-and-reopen-fix.md)
+> **2026-07-02 整理时同步 + 2026-07-03 v0.8.3 修复同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md` 实装状态矩阵](./README.md#5-实装状态矩阵截至-2026-07-02)）。
 
 ---
 
@@ -601,7 +602,13 @@ type SearchProvider interface {
          [Verdict] 生成判决书
              ↓
          [Appeal] 用户补充证据 / 修改偏好 → 回到 Evidence
+         （v0.8.3 新增 fast-path：[Verdict] → 直接 reopen_trial → [Evidence]）
 ```
+
+**v0.8.3 状态机更新**：
+- `verdict → evidence` 新增合法边（保留 `verdict → appeal` 旧边）。`reopen_trial` action 在 `verdict` 和 `appeal` 两个阶段都接受；fast-path 让"补充证据重开"按钮可以一步到位回 evidence 阶段（不必走 appeal 中间状态）。
+- `reopen_trial` 保持当前 round 不变。用户后续点 `continue_cross_exam` 触发 `round+1` ——"原来打 3 轮，重开后接着第 4 轮"。
+- beliefs / evidences / messages / verdict 行全部保留，律师能看到完整历史（这是 B-4 的产品决策）。
 
 ### 7.3 用户控制点
 
@@ -1077,7 +1084,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | 前端编译 | ✅ | `pnpm build` 通过 |
 | 后端 LLM 客户端 | ✅ | DeepSeek 客户端含 `Complete` + `StreamComplete` 流式方法 |
 | 后端 Agent 编排 | ✅ | Orchestrator + Prompt 模板 + ReAct 协议（action / tool_call / reflect / speak） |
-| 后端庭审状态机 | ✅ | idle → opening → cross_exam → closing → deliberation → verdict |
+| 后端庭审状态机 | ✅ | idle → opening → cross_exam → closing → deliberation → verdict（v0.8.3 新增 `verdict → evidence` fast-path via `reopen_trial`）|
 | 后端证据服务 | ✅ | 证据提交、影响评估（**仅**用户证据） |
 | 后端 WebSocket | ✅ | Hub + Room 广播，hub.Broadcast sleep 30ms 保流式帧间隔 |
 | 后端判决书 | ✅ | ClerkAgent 生成结构化判决书 |

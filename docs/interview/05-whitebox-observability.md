@@ -196,7 +196,7 @@ CREATE TABLE decision_events (
 | 实时指标 | 11 类业务指标 | **内存**（`GET /metrics` 返回） | ❌（接 Prometheus 才持久化） |
 | 业务审计 | decision_events | **PostgreSQL** | ✅ 持久化 |
 | LLM 审计 | llm_calls | **PostgreSQL** + **文件 JSON Lines** | ✅ 双写 |
-| A2A 消息 | a2a_messages | **PostgreSQL** | ✅ 持久化 |
+| 消息 | a2a_messages | **PostgreSQL** | ✅ 持久化 |
 
 **设计原则**：
 1. **结构化数据（业务事件）→ 永远进数据库**（可 SQL 查询、可索引）
@@ -240,7 +240,7 @@ v0.8 + v0.8.3 一共暴露 **5 个 bug**：
 | Bug | 严重度 | 暴露路径 |
 |---|---|---|
 | `llm_calls` 外键约束失败 | 🔴 P1 | v0.8 demo 当天 stdout ERROR |
-| A2A SessionID fallback WARN | 🟡 P2 | v0.8 demo 当天 stdout WARN |
+| SessionID fallback WARN | 🟡 P2 | v0.8 demo 当天 stdout WARN |
 | `a2a_message_throughput_total` 计数缺失 | 🟢 P3 | v0.8 demo 查 /metrics 端点 |
 | **信念轨迹只显示 1 条** | 🟡 P2 | **v0.8.3 真实庭审回归** |
 | 判决书按钮无响应 | 🟢 P3 UX | v0.8.3 真实庭审回归 |
@@ -327,7 +327,7 @@ v0.8 + v0.8.3 一共暴露 **5 个 bug**：
 >
 > **v0.8 我具体做了什么**：
 > 1. **Logging**：Go 1.21+ `log/slog` JSON handler，自动注入 trace_id 到每条 log
-> 2. **Metrics**：11 类业务指标（不是 CPU/内存，是"每个庭审花了多少 token"、"A2A 消息有多少"），`GET /metrics` 端点暴露 JSON，**label 用有限集合**（cardinality 控制）
+> 2. **Metrics**：11 类业务指标（不是 CPU/内存，是"每个庭审花了多少 token"、"消息有多少"），`GET /metrics` 端点暴露 JSON，**label 用有限集合**（cardinality 控制）
 > 3. **Tracing**：自实现 `Span` / `Tracer` 接口，内存实现，**OTel 兼容属性命名**为未来预留
 > 4. **Business events**：`decision_events` 表，**业务级事件独立落库**（区别于普通日志：审计 / 庭审回放 / BI）
 > 5. **4 个 sink 设计**：实时 log → stdout；实时 metric → 内存；业务 event → 数据库；LLM 审计 → 数据库 + 文件

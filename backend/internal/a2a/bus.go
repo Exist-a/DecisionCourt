@@ -22,6 +22,17 @@ type Broadcaster func(sessionUUID string, eventType string, payload map[string]i
 type Repository interface {
 	Insert(ctx context.Context, row model.A2AMessage) (model.A2AMessage, error)
 	ListVisibleTo(ctx context.Context, sessionID uuid.UUID, viewer string) ([]model.A2AMessage, error)
+	// ListPrivateMemory returns every A2A row in `sessionID` whose
+	// message_type is one of the four v0.5 episodic-memory kinds
+	// (strategy_note / opponent_weakness / self_correction / evidence_eval).
+	//
+	// Unlike ListVisibleTo this is NOT scoped by a viewer — by product
+	// design the user-facing MemoryAuditPanel renders BOTH sides' private
+	// strategy notes (the "差异化卖点" — users see lawyers' "内心戏").
+	// The Real-Courthouse toggle is a UI-only redacted view; the backend
+	// always returns the full set so toggling mid-trial cannot desync the
+	// LLM or backend state.
+	ListPrivateMemory(ctx context.Context, sessionID uuid.UUID) ([]model.A2AMessage, error)
 }
 
 // Clock returns the current time. The Bus uses this to stamp CreatedAt on
@@ -88,6 +99,29 @@ func (r *gormRepository) ListVisibleTo(ctx context.Context, sessionID uuid.UUID,
 		)
 	}
 	if err := q.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// ListPrivateMemory returns all rows whose message_type is one of the four
+// v0.5 episodic-memory kinds. See Repository.ListPrivateMemory for the
+// rationale (MemoryAuditPanel renders both sides' notes by design).
+//
+// SQL: WHERE session_id = ? AND message_type IN (?,?,?,?) ORDER BY created_at
+func (r *gormRepository) ListPrivateMemory(ctx context.Context, sessionID uuid.UUID) ([]model.A2AMessage, error) {
+	var rows []model.A2AMessage
+	err := r.db.WithContext(ctx).
+		Where("session_id = ?", sessionID).
+		Where("message_type IN ?", []string{
+			string(MessageTypeStrategyNote),
+			string(MessageTypeOpponentWeakness),
+			string(MessageTypeSelfCorrection),
+			string(MessageTypeEvidenceEval),
+		}).
+		Order("created_at asc").
+		Find(&rows).Error
+	if err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -184,6 +218,14 @@ func (b *Bus) Send(ctx context.Context, msg Message) (Message, error) {
 // to the named To recipient (and to the sender of the message).
 func (b *Bus) ListVisibleTo(ctx context.Context, sessionID uuid.UUID, viewer string) ([]model.A2AMessage, error) {
 	return b.repo.ListVisibleTo(ctx, sessionID, viewer)
+}
+
+// ListPrivateMemory returns every v0.5 episodic-memory row in `sessionID`,
+// regardless of sender. See Repository.ListPrivateMemory for why this is
+// the correct primitive for user-facing MemoryAuditPanel hydration on
+// session restore (verdict page refresh, browser back from verdict, etc.).
+func (b *Bus) ListPrivateMemory(ctx context.Context, sessionID uuid.UUID) ([]model.A2AMessage, error) {
+	return b.repo.ListPrivateMemory(ctx, sessionID)
 }
 
 // DecodePayload unmarshals a persisted row's payload into a typed map.

@@ -8,7 +8,7 @@
 
 ## 0. 我是谁（30 秒版）
 
-后端工程师转型 AI 全栈，做了 DecisionCourt —— 一个"AI 庭审模拟系统"。**对外像产品**（用户提交事实、双方立场，看到判决），**对内是 AI Agent 编排系统**（5 个 Agent 角色 + 状态机 + A2A 通信 + 信念引擎 + 装饰器链网关 + 白盒化）。**最大亮点是白盒化**——让 LLM 系统像传统后端一样可调试。
+后端工程师转型 AI 全栈，做了 DecisionCourt —— 一个"AI 庭审模拟系统"。**对外像产品**（用户提交事实、双方立场，看到判决），**对内是 AI Agent 编排系统**（5 个 Agent 角色 + 状态机 + Agent 间通信 + 信念引擎 + 装饰器链网关 + 白盒化）。**最大亮点是白盒化**——让 LLM 系统像传统后端一样可调试。
 
 ---
 
@@ -18,7 +18,7 @@
 |---|---|---|
 | ① | "简单介绍下这个项目" | [`00-self-intro.md`](./00-self-intro.md) |
 | ② | "整体架构怎么设计的" | [`01-architecture-mindmap.md`](./01-architecture-mindmap.md) |
-| ③ | "为什么用 A2A 总线不直接调 LLM" | [`02-a2a-bus.md`](./02-a2a-bus.md) |
+| ③ | "为什么用 消息总线不直接调 LLM" |  |
 | ④ | "信念引擎是什么" | [`03-belief-engine.md`](./03-belief-engine.md) |
 | ⑤ | "Gateway 装饰器怎么做的" | [`04-agent-gateway-v2.md`](./04-agent-gateway-v2.md) |
 | ⑥ | "白盒化具体怎么做的" | [`05-whitebox-observability.md`](./05-whitebox-observability.md) |
@@ -36,7 +36,7 @@ interview/
 ├── README.md                       ← 你正在看
 ├── 00-self-intro.md                ← ① 自我介绍
 ├── 01-architecture-mindmap.md      ← ② 整体架构思想
-├── 02-a2a-bus.md                   ← ③ A2A 消息总线
+├── 02-a2a-bus.md                   ← ③ 消息总线
 ├── 03-belief-engine.md             ← ④ v0.6 贝叶斯信念引擎
 ├── 04-agent-gateway-v2.md          ← ⑤ v0.7 Gateway 装饰器
 ├── 05-whitebox-observability.md     ← ⑥ v0.8 白盒化
@@ -71,7 +71,7 @@ interview/
 
 | 亮点 | 章节 | 30 秒电梯版 |
 |---|---|---|
-| **A2A 总线** | §02 | Agent 间通信不走 prompt，走显式消息总线。3 种可见性（public/private/team）+ 落库审计 = 庭审可回放。 |
+| **消息总线** | §02 | Agent 间通信不走 prompt，走显式消息总线。3 种可见性（public/private/team）+ 落库审计 = 庭审可回放。 |
 | **信念引擎 v0.6** | §03 | 不用 0-100 主观分，用**贝叶斯 log-odds** 数学严谨地表达"AI 法官的相信度"。weaken 边 + 锚定 + belief_diffs 审计 trail。 |
 | **Gateway v2 装饰器** | §04 | 把"压缩 / 预算 / 限流 / 降级 / 审计"做成**装饰器链**，可插拔、可独立测。Smart Compression 关键消息不压缩。 |
 | **白盒化 v0.8** | §05 | **AI 系统的可观测性** = 三大支柱（slog / metrics / decision_events）+ 端到端 trace_id 串联。**最强杀手锏**——让 AI 调试像传统后端一样。 |
@@ -85,7 +85,7 @@ interview/
 | # | bug | 严重度 | 暴露 |
 |---|---|---|---|
 | 1 | llm_calls 外键约束失败 | 🔴 P1 | v0.8 demo 当天 stdout |
-| 2 | A2A SessionID fallback WARN | 🟡 P2 | v0.8 demo 当天 stdout |
+| 2 | SessionID fallback WARN | 🟡 P2 | v0.8 demo 当天 stdout |
 | 3 | a2a_message_throughput 计数缺失 | 🟢 P3 | v0.8 demo /metrics |
 | 4 | 信念轨迹只显示 1 条（应是 16 条） | 🟡 P2 | v0.8.3 真实庭审回归 |
 | 5 | 判决书"AI 可视化"按钮无响应 | 🟢 P3 UX | v0.8.3 真实庭审回归 |
@@ -110,11 +110,11 @@ interview/
 
 ---
 
-## 7. 5 大亮点（用这 5 个撑起整个面试）
+## 7. 4 大亮点（用这 4 个撑起整个面试）
 
 | 亮点 | 章节 | 30 秒电梯版 |
 |---|---|---|
-| **A2A 总线** | §02 | Agent 间通信不走 prompt，走显式消息总线。3 种可见性（public/private/team）+ 落库审计 = 庭审可回放。 |
+| **消息总线** | §02 | Agent 间通信不走 prompt，走显式消息总线。3 种可见性（public/private/team）+ 落库审计 = 庭审可回放。 |
 | **信念引擎 v0.6** | §03 | 不用 0-100 主观分，用**贝叶斯 log-odds** 数学严谨地表达"AI 法官的相信度"。weaken 边 + 锚定 + belief_diffs 审计 trail。 |
 | **Gateway v2 装饰器** | §04 | 把"压缩 / 预算 / 限流 / 降级 / 审计"做成**装饰器链**，可插拔、可独立测。Smart Compression 关键消息不压缩。 |
 | **白盒化 v0.8** | §05 | **AI 系统的可观测性** = 三大支柱（slog / metrics / decision_events）+ 端到端 trace_id 串联。**最强杀手锏**——让 AI 调试像传统后端一样。 |

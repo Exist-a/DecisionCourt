@@ -21,7 +21,13 @@ func (sm *StateMachine) CanTransition(from model.CourtPhase, to model.CourtPhase
 		model.PhaseCrossExam:    {model.PhaseCrossExam, model.PhaseClosing},
 		model.PhaseClosing:      {model.PhaseDeliberation},
 		model.PhaseDeliberation: {model.PhaseVerdict},
-		model.PhaseVerdict:      {model.PhaseAppeal},
+		// v0.8.3 修复："判决书回退无法继续开庭" —— 法官在 verdict 阶段可以
+		// 走 reopen_trial 直接回到 evidence 阶段（保持当前轮次不变），也可以
+		// 走 appeal 中间状态。verdict → evidence 是用户能"补充证据重开"的
+		// 唯一后端支撑。appealed → evidence 给前端留了显式中转，但目前
+		// reopen_trial 直接走 fast-path，所以 appeal 主要保留语义占位。
+		model.PhaseVerdict: {model.PhaseAppeal, model.PhaseEvidence},
+		model.PhaseAppeal:  {model.PhaseEvidence, model.PhaseClosing},
 	}
 
 	allowed, ok := transitions[from]
@@ -83,6 +89,13 @@ func (sm *StateMachine) ValidateAction(phase model.CourtPhase, action string) er
 	case "start_cross_exam":
 		if phase != model.PhaseOpening {
 			return fmt.Errorf("can only start cross exam from opening phase")
+		}
+	case "reopen_trial":
+		// v0.8.3 新增：法官在 verdict/appeal 阶段可以"补充证据重开"，回到
+		// evidence 阶段但不重置 beliefs/evidences/messages —— 保留全部历史
+		// 让律师能基于之前的辩论继续交锋。
+		if phase != model.PhaseVerdict && phase != model.PhaseAppeal {
+			return fmt.Errorf("can only reopen trial from verdict or appeal phase")
 		}
 	default:
 		return fmt.Errorf("unknown action: %s", action)

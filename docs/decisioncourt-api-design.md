@@ -1,10 +1,11 @@
 # 决策庭（DecisionCourt）API 接口设计文档
 
-> **版本**：v0.8
-> **状态**：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点；v0.6 增补 `GET /api/v1/courtrooms/:uuid/belief-diffs` + WS `belief.diff` / `belief.convergence` 事件；v0.7 整合文档结构 + ADR 提炼；**v0.8 新增 `GET /metrics` 端点（白盒化）+ HTTP `X-Request-ID` 头 / `trace_id` 字段（端到端 trace 串联）**。
+> **版本**：v0.8.3
+> **状态**：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点；v0.6 增补 `GET /api/v1/courtrooms/:uuid/belief-diffs` + WS `belief.diff` / `belief.convergence` 事件；v0.7 整合文档结构 + ADR 提炼；v0.8 新增 `GET /metrics` 端点（白盒化）+ HTTP `X-Request-ID` 头 / `trace_id` 字段（端到端 trace 串联）；**v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭"——新增 `GET /api/v1/courtrooms/:uuid/memory` 端点 / `reopen_trial` action / `verdict → evidence` 状态机边 / WS `ping/pong` 心跳 / WebSocket 自动重连退避**。
 > **目标**：定义决策庭前后端交互的 RESTful API 和 WebSocket 事件协议。
 > **设计演进（已归档）**：[`docs/archive/memory-a2a-redesign-v1.2.md`](./archive/memory-a2a-redesign-v1.2.md)
-> **2026-07-02 整理时同步 + 2026-07-02 v0.8 白盒化升级同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
+> **实施记录**：[`.trae/documents/refresh-and-reopen-fix.md`](./refresh-and-reopen-fix.md)（v0.8.3 5 个根因 + 修复方案 + 测试矩阵）
+> **2026-07-02 整理时同步 + 2026-07-02 v0.8 白盒化升级同步 + 2026-07-03 v0.8.3 体验修复同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
 
 ## 1. 设计原则
 
@@ -413,6 +414,7 @@ POST /api/v1/courtrooms/:session_uuid/actions
 | `answer_question` | 回答 Agent 主动提问 | `{"question_id": "q_001", "answer": "月收入 3 万"}` |
 | `pause` | 暂停庭审 | `{}` |
 | `resume` | 恢复庭审 | `{}` |
+| `reopen_trial`（v0.8.3）| 判决书"补充证据重开"按钮：仅在 `verdict` / `appeal` 阶段有效，把 phase 转回 `evidence`（保持当前 round），beliefs/evidences/messages 不重置 | `{}` |
 
 > **v0.2 修订**：`dispatch_investigator` 不再作为用户 action。它是控辩方 LLM 通过 `agent.cot_step(tool_call, tool=investigator_search)` 内部决策触发的，由后端 `courtroom.Service.DispatchInvestigator` 处理，**不**走 `/actions` REST 端点。
 
@@ -557,6 +559,60 @@ GET /api/v1/courtrooms/:session_uuid/belief-diffs?round=2
 - 找不到庭审时返回 404 `{"code":1002,...}`
 - 不存在的 `round` 过滤值返回 400 `{"code":1001,...}`
 - 后端 belief 引擎未启用（diffRepo == nil）时返回 200 + 空数组（向后兼容老部署）
+
+#### 3.5.3 获取 v0.5 情节记忆时间线（v0.8.3）
+
+```http
+GET /api/v1/courtrooms/:session_uuid/memory
+```
+
+**用途**：前端刷新 / 浏览器后退 / 案件重连时还原"策略笔记"Tab 完整时间线。v0.5 PR 4 时该端点被撤销（改为纯 WebSocket 推送），v0.8.3 重新启用——详情见 [`.trae/documents/refresh-and-reopen-fix.md`](./refresh-and-reopen-fix.md)。
+
+**可见性**：
+- 返回全部 4 种 v0.5 私有 memory 类型（`strategy_note` / `opponent_weakness` / `self_correction` / `evidence_eval`），**包括双方律师的笔记**
+- 与 `ListVisibleTo("user")` 行为不同：后者会按 viewer 角色过滤，**不**返回对家 private memory。前端 MemoryAuditPanel 走的是"AI 可视化模式"——产品要求展示全部策略笔记
+- "真实法庭"切换是 UI-only filter，不改变后端返回内容
+
+**响应**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "memory": [
+      {
+        "id": "a2a-msg-uuid-1",
+        "message_uuid": "mem_pro_001",
+        "round": 1,
+        "phase": "cross_exam",
+        "from": "prosecutor",
+        "to": "prosecutor",
+        "message_type": "strategy_note",
+        "visibility": "private",
+        "payload": {
+          "stance": "support_a",
+          "content": "对方逻辑漏洞在 X 点",
+          "confidence": 0.85,
+          "linked_evidence_ids": ["E001"]
+        },
+        "created_at": "2026-07-01T10:20:00Z"
+      }
+    ],
+    "count": 1
+  }
+}
+```
+
+**字段说明**：
+- 字段名 `from` / `to`（不是 `from_agent` / `to_agent`）—— 与 WebSocket `a2a.message` envelope 保持一致，前端用同一份 parser 解析
+- `payload` 字段是 decoded map，前端可直接读 `payload.content` / `payload.stance` 等结构化字段
+- `visibility` 字段永远是 `"private"`（v0.5 私有 memory 类型的固有属性）
+
+**错误码**：
+- 404 `{"code":1002,...}`：session 不存在
+- 500 `{"code":1500,...}`：DB 故障 / lister 未配置
+
+**实现位置**：`backend/internal/api/handler.go::GetVisibleMemory` + `backend/internal/a2a/bus.go::Bus.ListPrivateMemory`
 
 #### 3.6 判决书
 
@@ -1211,6 +1267,59 @@ A2A 消息总线广播事件，用于审计与可视化。**公开消息**会携
     "option_a_score": 0.68,
     "option_b_score": 0.52
   }
+}
+```
+
+---
+
+#### 4.3.9a trial.reopened（v0.8.3 新增）
+
+法官在 verdict / appeal 阶段点"补充证据重新开庭"按钮后广播。前端
+订阅此事件可决定 toast 提示、自动 router.push 回 `/court/[id]`，或
+者让 verdictReady 立刻转 false（按钮状态联动）。
+
+```json
+{
+  "type": "trial.reopened",
+  "payload": {
+    "previous_phase": "verdict",
+    "current_phase": "evidence",
+    "current_round": 2,
+    "max_rounds": 3,
+    "message": "法官决定补充证据，重新开庭"
+  }
+}
+```
+
+**字段**：
+- `previous_phase` — 触发重开前的 phase（"verdict" 或 "appeal"）
+- `current_phase` — 永远为 "evidence"（重开后律师先看证据板）
+- `current_round` — 保持原 round（用户后续点 continue_cross_exam 触发 +1）
+- `message` — 客户端可直接展示的人类可读说明
+
+**触发位置**：`backend/internal/courtroom/service.go::reopenTrial`
+
+---
+
+#### 4.3.9b ping / pong（v0.8.3 新增）
+
+WebSocket 心跳。前端每 25s 发一次 `{type:"ping"}`，服务端立即回
+`{type:"pong", payload:{ts:"..."}}`。让前端能：
+1. 探测连接是否真的活着（TCP 缓冲不能区分活/死）
+2. 通过 `SetReadDeadline` 让中间代理（nginx/ALB）不掉 idle 连接
+
+前端 `lib/websocket.ts` 跟踪连续未收到 pong 的周期数：累计 2 次
+（≈50s）还没收到则主动 `close()` 触发 onclose 重连路径。算法实现
+见 `frontend/lib/reconnect.ts::computeBackoff`（独立可测）。
+
+```json
+// 客户端发送
+{ "type": "ping" }
+
+// 服务端响应
+{
+  "type": "pong",
+  "payload": { "ts": "2026-07-03T07:12:34Z" }
 }
 ```
 

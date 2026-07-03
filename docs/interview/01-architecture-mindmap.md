@@ -12,7 +12,7 @@
 >
 > - **5 个角色** = 控方 / 辩方 / 法官 / 调查员 / 书记员
 > - **1 个状态机** = idle → opening → cross_exam → closing → verdict
-> - **1 个总线** = A2A 消息总线（所有 Agent 间的通信）
+> - **1 个总线** = 消息总线（所有 Agent 间的通信）
 > - **1 个信念引擎** = 控辩双方各自对"事实"的相信度（贝叶斯 log-odds）
 
 **关键洞察**：业务语义（庭审、阶段、证据、信念）全部是**显式数据结构**，**不是 LLM 自己理解的**。LLM 只是"推理引擎"，业务逻辑是上层硬约束。
@@ -28,7 +28,7 @@
 | **L1 入口** | HTTP / WebSocket 入口 + 中间件 | Gin + Trace middleware + Metrics middleware |
 | **L2 API + 业务编排** | 庭审生命周期 + 状态机 | Service + State Machine + 5 个 Agent Orchestrator |
 | **L3 Agent 引擎** | 单个 Agent 推理循环 | ReAct Runner + ContextView 投影 + 私有记忆 |
-| **L4 基础设施** | A2A 通信 / 信念引擎 / 调查员 | A2A Bus + Bayesian Engine + Investigation Service |
+| **L4 基础设施** | Agent 间通信 / 信念引擎 / 调查员 | Bus + Bayesian Engine + Investigation Service |
 | **L5 装饰器链网关** | LLM 调用的所有附加能力 | Agent Gateway（压缩 / 预算 / 限流 / 降级 / 审计） |
 
 **关键洞察**：**L1 ~ L4 都是"业务侧"，L5 才是"AI 侧"**。LLM 退化为推理引擎，业务语义在 L1-L4 显式建模。
@@ -45,21 +45,21 @@
 
 举例：
 - 状态机迁移不放在 prompt 里让 LLM "记得当前阶段"，而是显式状态机 + 数据库字段 + 状态机校验函数。LLM 想 transition 也得过 `stateMachine.CanTransition()` 这道关。
-- A2A 消息可见性不放在 prompt 里让 LLM "自己保密草稿"，而是 `Visibility = public / private / team_only` 枚举，bus 自动按可见性广播。
+- 消息可见性不放在 prompt 里让 LLM "自己保密草稿"，而是 `Visibility = public / private / team_only` 枚举，bus 自动按可见性广播。
 - 信念不用 0-100 主观分，用贝叶斯 log-odds 数学严谨计算。
 
 **为什么**：LLM 不可靠（幻觉、漂移、遗忘），**业务语义放 LLM 里等于放定时炸弹**。
 
-### 哲学 2：**A2A 总线 = 单一事实源**
+### 哲学 2：**消息总线 = 单一事实源**
 
 **Agent 间通信不走 prompt 拼接，走显式消息总线**。
 
 - 所有消息**显式发出 / 显式收到 / 显式落库 / 显式设可见性**
 - 公开 vs 私有策略**分得开**（控方草稿笔记不会泄露给对方）
-- 审判长决策**可追溯**（"为什么 AI 法官采信 A？" → 查 A2A 流 + 信念轨迹）
-- 支持**庭审回放**（把 1 场庭审的 A2A 流重放成新一场）
+- 审判长决策**可追溯**（"为什么 AI 法官采信 A？" → 查消息流 + 信念轨迹）
+- 支持**庭审回放**（把 1 场庭审的消息流重放成新一场）
 
-**为什么**：直接调 LLM = Agent 自己 query 历史。**问题**：跨 Agent 信息隔离做不到、私有草稿做不到、行为可追溯做不到。A2A 把"通信"做成 first-class 数据结构。
+**为什么**：直接调 LLM = Agent 自己 query 历史。**问题**：跨 Agent 信息隔离做不到、私有草稿做不到、行为可追溯做不到。消息总线把"通信"做成 first-class 数据结构。
 
 ### 哲学 3：**白盒化 = 可调试性**
 
@@ -120,7 +120,7 @@
    ▼
 [DeepSeek API] → response
    ▼
-[A2A Bus.Publish]  ← Agent 间通信走这里
+[Bus.Publish]  ← Agent 间通信走这里
    │ 1. 落库 a2a_messages
    │ 2. 广播给 Hub (按可见性)
    │ 3. metric 计数
@@ -138,8 +138,8 @@
 
 | 哲学 | 落地的模块 | 章节 |
 |---|---|---|
-| 业务语义 | 状态机 + 信念引擎 + A2A 可见性 | [`02`](./02-a2a-bus.md) [`03`](./03-belief-engine.md) |
-| A2A 总线 | A2A Bus + ContextView 投影 + 私有记忆 | [`02`](./02-a2a-bus.md) |
+| 业务语义 | 状态机 + 信念引擎 + 消息可见性 | [`03`](./03-belief-engine.md) |
+| 消息总线 | Bus + ContextView 投影 + 私有记忆 | [`01`](./01-architecture-mindmap.md) |
 | 白盒化 | 三大支柱 + decision_events + trace 串联 | [`05`](./05-whitebox-observability.md) |
 | 装饰器 | Agent Gateway v2 装饰器链 | [`04`](./04-agent-gateway-v2.md) |
 
@@ -149,9 +149,9 @@
 
 | 名词 | 1 句话 |
 |---|---|
-| **A2A Bus** | Agent-to-Agent 消息总线。3 种可见性 + 落库审计 + 实时广播。 |
+| **Bus** | Agent-to-Agent 消息总线。3 种可见性 + 落库审计 + 实时广播。 |
 | **ReAct** | Reasoning + Acting 循环。LLM "思考 → 行动 → 观察" 模式。 |
-| **ContextView** | LLM 提示词投影层。把 A2A 历史 + 私有记忆 + 公开状态投影到 LLM 看得懂的 prompt。 |
+| **ContextView** | LLM 提示词投影层。把 消息历史 + 私有记忆 + 公开状态投影到 LLM 看得懂的 prompt。 |
 | **Bayesian log-odds** | 贝叶斯对数几率。相信度的数学表达，可加可减。 |
 | **Decorator Pattern** | 装饰器模式。把"附加能力"叠加到核心功能上。 |
 | **state_machine** | 状态机。庭审阶段的硬约束。 |
@@ -174,4 +174,4 @@
 
 ---
 
-**配套**：[`02-a2a-bus.md`](./02-a2a-bus.md)（A2A 详解）· [`03-belief-engine.md`](./03-belief-engine.md)（信念引擎）· [`05-whitebox-observability.md`](./05-whitebox-observability.md)（白盒化）
+**配套**：[`03-belief-engine.md`](./03-belief-engine.md)（信念引擎）· [`04-agent-gateway-v2.md`](./04-agent-gateway-v2.md)（Gateway 装饰器）· [`05-whitebox-observability.md`](./05-whitebox-observability.md)（白盒化）

@@ -16,7 +16,7 @@
 | # | 名称 | 严重度 | 暴露路径 | 关键代码 |
 |---|---|---|---|---|
 | 1 | llm_calls 外键约束失败 | 🔴 P1 | v0.8 demo 当天 stdout ERROR | `agent_gateway/gorm_store.go` |
-| 2 | A2A SessionID fallback WARN | 🟡 P2 | v0.8 demo 当天 stdout WARN | `a2a/bus.go:170-174` |
+| 2 | SessionID fallback WARN | 🟡 P2 | v0.8 demo 当天 stdout WARN | `a2a/bus.go:170-174` |
 | 3 | a2a_message_throughput 计数缺失 | 🟢 P3 | v0.8 demo 查 /metrics 端点 | `api/hub.go:Broadcast` |
 | 4 | **信念轨迹只显示 1 条（应是 16 条）** | 🟡 P2 | **v0.8.3 真实庭审回归** | `belief/engine_v06.go:97` |
 | 5 | 判决书"AI 可视化"按钮无响应 | 🟢 P3 UX | v0.8.3 真实庭审回归 | `BehindTheScenesPanel.tsx` |
@@ -98,7 +98,7 @@ if r.SessionUUID != "" {
 
 ---
 
-## Bug 2：🟡 P2 · A2A SessionID fallback WARN（数据库主键 vs 业务 key 混用）
+## Bug 2：🟡 P2 · SessionID fallback WARN（数据库主键 vs 业务 key 混用）
 
 ### 现象
 
@@ -140,7 +140,7 @@ WARN 是"调用方提醒"，fallback 行为安全（数据库主键刚好兼容 
 
 ### 现象
 
-`GET /metrics` 返回的 `counters` 里**没有** `a2a_message_throughput_total`，但 A2A 业务明明在跑（stdout 看到 `[a2a] prosecutor → investigator`）。
+`GET /metrics` 返回的 `counters` 里**没有** `a2a_message_throughput_total`，但消息总线明明在跑（stdout 看到 `[a2a] prosecutor → investigator`）。
 
 ### 根因
 
@@ -161,7 +161,7 @@ func (h *Hub) Broadcast(sessionUUID string, event courtroom.Event) {
 }
 ```
 
-**问题**：没人订阅时 `!ok` → 直接 return → metrics 不执行 → "业务上 A2A 真的发了"但"metrics 显示 0"。
+**问题**：没人订阅时 `!ok` → 直接 return → metrics 不执行 → "业务上消息真的发了"但"metrics 显示 0"。
 
 ### 修复（7 行）
 

@@ -94,7 +94,7 @@ export class MockWebSocket {
         );
       }
 
-      if (action.action === "request_search") {
+      if ((action as { action: string }).action === "request_search") {
         this.emit({
           type: "search.started",
           payload: {

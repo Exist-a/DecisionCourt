@@ -64,3 +64,25 @@ func (r *InMemoryRepository) ListVisibleTo(_ context.Context, sessionID uuid.UUI
 	})
 	return out, nil
 }
+
+// ListPrivateMemory returns every v0.5 episodic-memory row in `sessionID`.
+// See a2a.Repository.ListPrivateMemory for rationale.
+func (r *InMemoryRepository) ListPrivateMemory(_ context.Context, sessionID uuid.UUID) ([]model.A2AMessage, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	out := make([]model.A2AMessage, 0, len(r.rows))
+	for _, row := range r.rows {
+		if row.SessionID != sessionID {
+			continue
+		}
+		if !IsPrivateMemoryMessageType(MessageType(row.MessageType)) {
+			continue
+		}
+		out = append(out, row)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}

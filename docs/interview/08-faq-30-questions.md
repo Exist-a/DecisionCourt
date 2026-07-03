@@ -76,12 +76,12 @@
 ## 3. AI / Agent 相关（8 个）
 
 ### Q11: 怎么做的 Multi-Agent 通信？
-> **A2A 消息总线模式**——5 个 Agent 通过 in-process Bus 通信。**3 个关键设计**：
+> **in-process 消息总线模式**——5 个 Agent 通过 Bus 通信。**3 个关键设计**：
 > 1. **3 种可见性**（public / private / team_only）——控方草稿不能泄露给对方
 > 2. **必须落 `a2a_messages` 表**——庭审可回放
 > 3. **跨 Agent 状态同步**——状态机迁移是 5 个 Agent 共同感知的事实
 >
-> **业内对比**：不用 function call 直接调来调去，因为有**可见性 + 审计 + 跨 Agent 同步** 3 个硬需求，消息总线 ROI 为正。**详见 [`02-a2a-bus.md`](02-a2a-bus.md) §2 防堆砌质疑**。
+> **业内对比**：不用 function call 直接调来调去，因为有**可见性 + 审计 + 跨 Agent 同步** 3 个硬需求，消息总线 ROI 为正。**详见 [`01-architecture-mindmap.md`](01-architecture-mindmap.md) §3 哲学 2（消息总线 = 单一事实源）**。
 
 ### Q12: 为什么用 Bayesian log-odds 不用 LLM 直接打分？
 > **2 个核心原因**：
@@ -172,7 +172,7 @@
 > **反范式设计**：`belief_diffs` 的 `prior_logit` / `posterior_logit` 是反范式（可计算但存表），**这是为了让审计行可自包含**，不需要 JOIN agents 表。
 
 ### Q23: WebSocket 推送怎么设计？
-> **A2A Bus → hub.Broadcast() → 各订阅者**。**3 个可靠性考量**：
+> **Bus → hub.Broadcast() → 各订阅者**。**3 个可靠性考量**：
 > 1. **流式 chunk throttle** —— 30ms 一个 chunk，给前端"打字机"效果
 > 2. **消息不丢失** —— 前端 reconnect 时根据 last received id 重发（v0.6 实现）
 > 3. **多实例后** —— v0.9+ 接 Redis Pub/Sub（避免每个实例只发给本实例订阅者）
@@ -215,13 +215,13 @@
 
 ### Q30: 你未来 1 年的规划？
 > **DecisionCourt 商业化**：
-> - **v0.9** 接外部 Agent（Google A2A 协议实装已完成 v0.8.2）
+> - **v0.9** 接外部 Agent（如有需求评估接 Google A2A 协议，当前 YAGNI）
 > - **v1.0** 接 Prometheus + Grafana
 > - **数据仓库** —— decision_events 入 ClickHouse 做 BI
 >
 > **个人成长**：
 > - **继续在 AI 系统可观测性领域深耕**（业内还没形成共识，这是机会）
-> - **接外部开源** —— A2A 总线模式 + Bayesian Belief Engine 抽象出来可独立库
+> - **接外部开源** —— 消息总线模式 + Bayesian Belief Engine 抽象出来可独立库
 > - **写技术博客** —— "AI 系统白盒化" 系列，复盘 5 个 bug 故事
 
 ---
@@ -257,7 +257,7 @@
 | 8 | Next.js | 路由 + SSR + API proxy |
 | 9 | LangChain 不用 | 抽象不对齐 / debug 难 |
 | 10 | 白盒化时机 | L2 完整 / 避免过度 |
-| 11 | A2A 通信 | 总线 / 可见性 / 审计 |
+| 11 | Agent 间通信 | 总线 / 可见性 / 审计 |
 | 12 | Bayesian vs LLM 评分 | 可解释 / 可审计 |
 | 13 | AI 幻觉 | 4 个机制 / 不幻想 0 幻觉 |
 | 14 | 收敛机制 | 3 信号 OR |
