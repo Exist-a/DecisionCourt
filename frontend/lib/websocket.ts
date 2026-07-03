@@ -1,6 +1,7 @@
 import type { CourtEvent, UserActionRequest } from "@/types";
 import { getMockWebSocket } from "./mock/mockWebSocket";
-import { computeBackoff, resetBackoff, INITIAL_RETRY_DELAY_MS, MAX_RETRY_DELAY_MS } from "./reconnect";
+import { computeBackoff, resetBackoff, INITIAL_RETRY_DELAY_MS, MAX_RETRY_DELAY_MS as _MAX_RETRY_DELAY_MS } from "./reconnect";
+import { ensureAuthToken, getWSURL } from "./auth";
 
 export type CourtEventHandler = (event: CourtEvent) => void;
 
@@ -34,15 +35,21 @@ export class CourtWebSocket {
       onConnectionStateChange?: (state: "connected" | "reconnecting" | "closed") => void;
     },
   ) {
-    const baseUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080";
-    this.url = `${baseUrl}/ws/courtrooms/${sessionId}`;
+    // v0.8.3 安全(P0-1 + Q4)：URL 自动加 ?token=xxx（auth 助手负责）。
+    // 后端 query 优先验签,失败回落到 cookie。
+    this.url = useMock ? "" : getWSURL(sessionId);
     this.onReconnectAttempt = options?.onReconnectAttempt;
     this.onConnectionStateChange = options?.onConnectionStateChange;
 
     if (useMock) {
       this.socket = getMockWebSocket();
     } else {
-      this.connectRealSocket();
+      // 确保有有效 token(异步,但不阻塞构造)
+      void ensureAuthToken().then(() => {
+        // 拿到新 token 后用最新 URL 重连
+        this.url = getWSURL(sessionId);
+        this.connectRealSocket();
+      });
     }
   }
 

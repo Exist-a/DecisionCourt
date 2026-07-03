@@ -11,6 +11,7 @@ import type {
   Verdict,
 } from "@/types";
 import { mockApi } from "./mock/mockApi";
+import { ensureAuthToken, getAuthToken } from "./auth";
 
 const useMock = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
@@ -198,14 +199,29 @@ async function fetchJson<Req, Res>(
   body?: Req,
   method?: string
 ): Promise<Res> {
-  // 端口配置完全由 .env.local 决定（v0.8.3 修复：不要硬编码默认值覆盖用户配置）
+  // v0.8.3 安全(P0-1)：先确保 token 有效,失败则请求会 401。
+  await ensureAuthToken();
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    // 同时带 cookie(同源自动) + Authorization 头(给非浏览器 client 用)
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   const res = await fetch(`${baseUrl}${path}`, {
     method: method || (body ? "POST" : "GET"),
-    headers: { "Content-Type": "application/json" },
+    headers,
+    credentials: "include", // v0.8.3：带 cookie 让服务端也能从 Cookie 头验签
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
+    if (res.status === 401) {
+      // token 过期 / 无效 — 触发下一轮重签发
+      localStorage.removeItem("dc_token");
+      localStorage.removeItem("dc_token_exp");
+    }
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
   return res.json() as Promise<Res>;

@@ -51,7 +51,7 @@ export function CotStepsPanel({ steps }: CotStepsPanelProps) {
       </div>
 
       <ol className="space-y-1.5">
-        {steps.map((step, idx) => {
+        {steps.map((step, _idx) => {
           const isThoughtOpen = expandedAll || openThought.has(step.index);
           const isToolCall = step.action === "tool_call";
           const summary = summarizeStep(step);

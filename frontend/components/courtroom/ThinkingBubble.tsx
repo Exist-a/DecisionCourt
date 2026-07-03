@@ -16,7 +16,7 @@ import type { AgentType, CotStep } from "@/types";
  */
 export function ThinkingBubble() {
   const activeThinking = useCourtroomStore((s) => s.activeThinking);
-  const cotTrail = useCourtroomStore((s) => s.cotTrail);
+  const _cotTrail = useCourtroomStore((s) => s.cotTrail);
   const agents = [
     activeThinking.prosecutor && ("prosecutor" as AgentType),
     activeThinking.defender && ("defender" as AgentType),
