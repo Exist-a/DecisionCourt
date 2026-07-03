@@ -123,6 +123,11 @@ func main() {
 	wsServer := api.NewWebSocketServer(hub, courtroomSvc)
 
 	r := gin.New()
+	// v0.8.3 安全(P2-2):生产模式 — 默认 debug 日志关掉,改用 slog 接管。
+	// dev (GIN_MODE=debug) 留个口子,便于本地排查。
+	if os.Getenv("GIN_MODE") == "" {
+		gin.SetMode(gin.ReleaseMode)
+	}
 	// v0.8 白盒化：trace middleware 在最前——给每个 HTTP 请求生成/提取 trace_id 并注入 ctx。
 	// metrics middleware 紧跟其后——记录 HTTP 请求耗时直方图。
 	r.Use(observability.TraceMiddleware())

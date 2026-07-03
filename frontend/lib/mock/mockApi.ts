@@ -21,12 +21,25 @@ function delay(ms = 500) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function generateUUID() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+// v0.8.3 安全(P2-3):用 Web Crypto API 的 randomUUID() 替代 Math.random。
+// Math.random 不是 CSPRNG,理论上可预测;crypto.randomUUID() 走系统熵源。
+// mock 模式虽不直接进生产,但代码会被复制/借鉴,所以源头要安全。
+function generateUUID(): string {
+	if (typeof crypto !== "undefined" && crypto.randomUUID) {
+		return crypto.randomUUID();
+	}
+	// Fallback for very old environments (Node < 14.17 / browsers pre-2022):
+	// 仍用 Math.random 但加 warning 提示升级。
+	if (typeof console !== "undefined") {
+		console.warn(
+			"[mockApi] crypto.randomUUID unavailable, falling back to Math.random — please upgrade your runtime",
+		);
+	}
+	return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+		const r = (Math.random() * 16) | 0;
+		const v = c === "x" ? r : (r & 0x3) | 0x8;
+		return v.toString(16);
+	});
 }
 
 export const mockApi = {

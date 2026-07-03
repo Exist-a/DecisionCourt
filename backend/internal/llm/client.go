@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/decisioncourt/backend/internal/config"
@@ -241,29 +242,70 @@ func (c *openAIClient) StreamComplete(
 	return out
 }
 
+// extractJSON 从 LLM 输出中提取 JSON 字符串。
+//
+// v0.8.3 安全(P2-5):用 strings.Index 替代手写 substring 扫描;用
+// strings.LastIndex 找最右 ``` 防止 LLM 嵌套 ```;trim 前后空白;
+// 最后用 json.Valid 兜底,确保返回合法 JSON。
+//
+// 优先级链:
+//   1. ```json ... ``` 块(标准 markdown 包裹)
+//   2. ``` ... ``` 块(无语言标记的代码块)
+//   3. 裸 JSON(首 { + 末 } 之间),用 json.Valid 验证合法性
+//
+// 如果所有尝试都失败,返回原始 content(让调用方决定如何处理)。
 func extractJSON(content string) string {
-	// Simple extraction of JSON from ```json ... ``` blocks
-	start := -1
-	for i := 0; i < len(content)-5; i++ {
-		if content[i:i+5] == "```json" {
-			start = i + 5
-			break
-		}
-	}
-	if start == -1 {
-		return content
+	const maxLen = 64 * 1024 // 64KB cap,防 LLM 异常输出大字符串把内存吃满
+	if len(content) > maxLen {
+		content = content[:maxLen]
 	}
 
-	end := -1
-	for i := start; i < len(content)-3; i++ {
-		if content[i:i+3] == "```" {
-			end = i
-			break
+	// 1) ```json ... ```
+	if i := strings.Index(content, "```json"); i >= 0 {
+		start := i + len("```json")
+		// skip 紧随其后的换行
+		start = skipWhitespaceNewline(content, start)
+		// 找最右一个 ``` 结束(LastIndex 抗嵌套)
+		if j := strings.LastIndex(content, "```"); j > start {
+			return strings.TrimSpace(content[start:j])
 		}
-	}
-	if end == -1 {
-		return content
+		// 没找到结束 ```,截到末尾
+		return strings.TrimSpace(content[start:])
 	}
 
-	return content[start:end]
+	// 2) ``` ... ``` (无 json 标记)
+	if i := strings.Index(content, "```"); i >= 0 {
+		start := i + 3
+		start = skipWhitespaceNewline(content, start)
+		if j := strings.LastIndex(content, "```"); j > start {
+			candidate := strings.TrimSpace(content[start:j])
+			if json.Valid([]byte(candidate)) {
+				return candidate
+			}
+		}
+	}
+
+	// 3) 裸 JSON:首 { + 末 } 区间
+	if first := strings.IndexByte(content, '{'); first >= 0 {
+		if last := strings.LastIndexByte(content, '}'); last > first {
+			candidate := content[first : last+1]
+			if json.Valid([]byte(candidate)) {
+				return candidate
+			}
+		}
+	}
+
+	// 都失败,返回原内容(调用方做最终 fallback)
+	return content
+}
+
+// skipWhitespaceNewline 跳过空白 + 换行。如果 start 已越界返回 len。
+func skipWhitespaceNewline(s string, start int) int {
+	if start >= len(s) {
+		return start
+	}
+	for start < len(s) && (s[start] == ' ' || s[start] == '\n' || s[start] == '\r' || s[start] == '\t') {
+		start++
+	}
+	return start
 }

@@ -8,6 +8,12 @@
         "varsIgnorePattern": "^_",
         "caughtErrorsIgnorePattern": "^_"
       }
-    ]
+    ],
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "no-script-url": "error",
+    "react/no-danger": "error",
+    "react/jsx-no-script-url": "error"
   }
 }
