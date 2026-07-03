@@ -1,78 +1,142 @@
+# syntax=docker/dockerfile:1.6
+# DecisionCourt docker-compose v0.8.3 (P0-3 容器硬化)
+#
+# 关键安全变更:
+#   1. 所有 image 锁具体版本(去掉 :latest)
+#   2. postgres / redis / searxng 端口从 host 网络移除(只走 backend 内部访问)
+#   3. backend / frontend 加 user: "1001:1001" 切非 root
+#   4. cap_drop: [ALL] + no-new-privileges 限制容器能力
+#   5. 关键卷 read_only: true + tmpfs 写临时目录
+#   6. JWT_SECRET 必填(:?报错),不再有默认值
+#
+# 注意:
+#   - 本 compose 文件只用于生产/部署。开发请用 docker-compose.dev.yml
+#   - .env 必须在宿主机存在(里面含真实 LLM_KEY / JWT_SECRET / DB_PASSWORD)
+#   - POSTGRES_PASSWORD 必须足够长(建议 32 字符)
 version: "3.8"
 
 services:
   postgres:
-    image: postgres:15-alpine
+    # P0-3：锁版本(去 :latest)。postgres 15.x 是稳定 LTS。
+    image: postgres:15.13-alpine
     container_name: dc_postgres
+    # v0.8.3 安全：去掉 host 端口映射(只允许内部网络访问)
+    expose:
+      - "5432"
     environment:
-      POSTGRES_USER: decisioncourt
-      POSTGRES_PASSWORD: decisioncourt
-      POSTGRES_DB: decisioncourt
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-decisioncourt}
+      # P0-3：DB 密码从 env 读(无默认值)。docker-compose fail-fast。
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-decisioncourt}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # v0.8.3 安全：postgres 进程在容器内以非 root 运行
+    user: "70:70"  # postgres user
+    # v0.8.3 安全：read_only: true + tmpfs 给临时目录
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/postgresql
+    # v0.8.3 安全：最小权限
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U decisioncourt -d decisioncourt"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    container_name: dc_redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  searxng:
-    image: searxng/searxng:latest
-    container_name: dc_searxng
-    ports:
-      - "8081:8080"
-    environment:
-      - BASE_URL=http://localhost:8081
-      - INSTANCE_NAME=DecisionCourtSearx
-    volumes:
-      - searxng_data:/etc/searxng
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-decisioncourt} -d ${POSTGRES_DB:-decisioncourt}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4.1-alpine
+    container_name: dc_redis
+    # v0.8.3 安全：去掉 host 端口
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    user: "999:999"  # redis user
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # v0.8.3 安全：searxng 不再默认启动（search 路径用 mock / duckduckgo / bocha）。
+  # 启用请在 .env 设 SEARCH_PROVIDER=searxng 并取消下面注释。
+  # searxng:
+  #   # P0-3：锁版本(去 :latest)。pin 到具体 digest 最佳。
+  #   image: searxng/searxng:2025.5.21-b8c1e1e3
+  #   container_name: dc_searxng
+  #   expose:
+  #     - "8080"
+  #   environment:
+  #     - BASE_URL=http://localhost:8080
+  #     - INSTANCE_NAME=DecisionCourtSearx
+  #   volumes:
+  #     - searxng_data:/etc/searxng
+  #   read_only: true
+  #   tmpfs:
+  #     - /tmp
+  #   cap_drop: [ALL]
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #   restart: unless-stopped
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: dc_backend
+    user: "1001:1001"  # 与 Dockerfile adduser uid:gid 对齐
     environment:
       PORT: 8080
-      DATABASE_URL: postgres://decisioncourt:decisioncourt@postgres:5432/decisioncourt?sslmode=disable
-      REDIS_URL: redis://redis:6379
+      # P0-3：DATABASE_URL 从 env 读,无默认值。
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
       LLM_MODEL_V3: ${LLM_MODEL_V3:-deepseek-chat}
       LLM_MODEL_R1: ${LLM_MODEL_R1:-deepseek-reasoner}
-      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-searxng}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-duckduckgo}
       SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
-      JWT_SECRET: ${JWT_SECRET:-decisioncourt-secret}
-    ports:
-      - "8080:8080"
+      BOCHA_API_KEY: ${BOCHA_API_KEY:-}
+      # P0-2：JWT_SECRET 必填,无默认值。docker-compose :? 报 fail。
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-168}
+      # P1-1：AllowedOrigins 生产必须覆盖为 https://yourdomain.com
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      # 生产 COOKIE_SECURE 必须 true(HTTPS-only)
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
+    # v0.8.3 安全：去掉 host 端口(只通过 nginx/ALB 反代访问)
+    expose:
+      - "8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      searxng:
         condition: service_healthy
     restart: unless-stopped
 
@@ -81,20 +145,25 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: dc_frontend
+    user: "1001:1001"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
-      NEXT_PUBLIC_WS_URL: ws://localhost:8080
-    ports:
-      - "3000:3000"
+      # 容器间访问 backend(同 docker 网络)
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8080}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://backend:8080}
+      NEXT_PUBLIC_USE_MOCK: ${NEXT_PUBLIC_USE_MOCK:-false}
+    expose:
+      - "3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
-  searxng_data:
+  # searxng_data:  # 默认注释,启用 searxng 时取消
