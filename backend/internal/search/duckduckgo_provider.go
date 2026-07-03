@@ -29,8 +29,13 @@ func (d *duckDuckGoProvider) Name() string {
 }
 
 func (d *duckDuckGoProvider) Search(ctx context.Context, query string) ([]Result, error) {
+	// v0.8.3 安全(P3-2 query escape):user-controlled query 必须先 sanitize
+	cleanQuery, err := SanitizeQuery(query)
+	if err != nil {
+		return nil, fmt.Errorf("duckduckgo: %w", err)
+	}
 	params := url.Values{}
-	params.Set("q", query)
+	params.Set("q", cleanQuery)
 	params.Set("format", "json")
 	params.Set("pretty", "1")
 	params.Set("no_html", "1")

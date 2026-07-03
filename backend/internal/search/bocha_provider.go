@@ -87,6 +87,12 @@ func (b *bochaProvider) Search(ctx context.Context, query string) ([]Result, err
 		return nil, fmt.Errorf("bocha: API key is required")
 	}
 
+	// v0.8.3 安全(P3-2 query escape):user-controlled query 必须先 sanitize
+	cleanQuery, err := SanitizeQuery(query)
+	if err != nil {
+		return nil, fmt.Errorf("bocha: %w", err)
+	}
+
 	body, err := json.Marshal(bochaRequest{
 		Query:     query,
 		Count:     10,
@@ -145,9 +151,9 @@ func (b *bochaProvider) Search(ctx context.Context, query string) ([]Result, err
 
 	if len(results) == 0 {
 		results = append(results, Result{
-			Title:   fmt.Sprintf("未找到与 %s 相关的高质量结果", query),
+			Title:   fmt.Sprintf("未找到与 %s 相关的高质量结果", cleanQuery),
 			URL:     "",
-			Content: fmt.Sprintf("博查搜索 %q 未返回相关信息。", query),
+			Content: fmt.Sprintf("博查搜索 %q 未返回相关信息。", cleanQuery),
 			Score:   0.5,
 		})
 	}
