@@ -538,7 +538,7 @@ type SearchProvider interface {
 | **单元测试** | **MockProvider** | 零依赖，可预测输出 |
 | **测试/部署** | **Bocha / Tavily** | Bocha 国内友好；Tavily 海外质量高 |
 
-> **v0.3 修订**：原 v0.2 的 DuckDuckGo Provider 因经常触发反爬已弃用。Bocha 成为默认（API 简洁 + 国内可稳定访问）。
+> **v0.8.3 修订**：v0.3 弃用了原 v0.2 的 DuckDuckGo（反爬）,v0.8.3 进一步简化:provider 只剩 Bocha / Mock(DuckDuckGo 全部代码 + 测试删除)。
 
 ### 6.3 调查员搜索流程
 
@@ -1065,7 +1065,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | Agent 通信协议 | **A2A（Agent-to-Agent）**，由 Orchestrator 统一路由 |
 | 记忆模型 | **公共证据板 + 私有记忆池**：控方、辩方、调查员各自维护私有记忆，互不访问 |
 | 模型策略 | 单一模型，通过 prompt/信念引擎/私有记忆保证对抗性 |
-| WebSearch | 开发用 SearXNG/DuckDuckGo，部署用 Tavily |
+| WebSearch | 生产用 Bocha，dev 可用 Mock (v0.8.3 起) |
 | 可视化风格 | 极简白底法庭风格 |
 | 部署 | Docker Compose 一键启动 |
 | Agent Gateway（v0.5+） | 统一接入、审计、Prompt 压缩、Token 预算、限流、Fallback |
@@ -1090,7 +1090,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | 后端判决书 | ✅ | ClerkAgent 生成结构化判决书 |
 | 后端编译 | ✅ | `go build` 通过 |
 | 架构设计 | ✅ | A2A 协议、私有记忆池、信念引擎、ReAct、流式 写入 PRD/Agent/技术文档 |
-| **WebSearch（Bocha）** | ✅ | `internal/search/bocha.go` 实装，HTTP 200 实测。SearXNG/DuckDuckGo 留作可选 |
+| **WebSearch（Bocha）** | ✅ | `internal/search/bocha.go` 实装,HTTP 200 实测。SearXNG/DuckDuckGo 已在 v0.8.3 删除 |
 | **A2A 消息总线** | ✅ | `internal/a2a` 包实装：Bus + Repository 接口 + InMemory/GORM 实现 + 12 项隔离测试。`A2AMessage` 表 + 公开/私有可见性 + Orchestrator `a2a.message` 审计广播 + `dispatch_investigator` / `investigation_report` 公开 |
 | **私有记忆池** | ✅ | `internal/private_memory` 包实装：Repository 接口 + InMemory/GORM 实现 + 9 项隔离测试。`PrivateMemory` 表 + 四类记忆 + Orchestrator `ProsecutorSpeak/DefenderSpeak` 自动写 `strategy_note` |
 | **ReAct 循环** | ✅ | `internal/agent/react_runner.go` 实装 ReAct 协议 + `OnIterStart` / `OnSpeakChunk` 钩子 + `ActionReflect` |

@@ -948,7 +948,7 @@ Orchestrator 将 Agent 原始输出封装为 A2A 消息后广播或转发：
 | 调查员派遣 | `internal/investigation/` + `investigation_findings` 表 + InvestigationFinding 端点 |
 | 调查员视觉 | `InvestigatorPanel.tsx` + Avatar isSearching 状态 + 状态机 dispatch→report 升级 |
 | Bubbles 优先级 | AgentAvatar streaming > thinking 互斥守卫 |
-| Bocha 搜索 | `internal/search/bocha.go` + DuckDuckGo 弃用 |
+| Bocha 搜索 | `internal/search/bocha.go` + Mock Provider |
 | ReAct 集成测试 | `internal/courtroom/service_react_helpers_test.go` + dispatch_investigator_events_test.go |
 
 ### 10.3 尚未在代码中实现（后续迭代）

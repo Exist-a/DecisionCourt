@@ -50,16 +50,16 @@ func (m *mockProvider) Search(_ context.Context, query string) ([]Result, error)
 }
 
 // NewProvider returns a Provider by name. apiKey is needed by Bocha and
-// Tavily; pass "" for providers that don't need one (mock / duckduckgo).
+// Tavily; pass "" for mock.
 //
-// v0.8.3 决定：SearXNG 已弃用,provider 选项只剩 mock / duckduckgo / bocha / tavily。
-// 未知 provider 名称:有 apiKey 走 bocha,无 apiKey 走 duckduckgo。
+// v0.8.3 决定：SearXNG / DuckDuckGo 已弃用,provider 选项只剩
+// mock / bocha / tavily(占位)。未知 provider 名称:有 apiKey 走 bocha,
+// 无 apiKey 走 mock(dev 用)。生产 docker-compose 强制 BOCHA_API_KEY,
+// 必走 bocha 路径。
 func NewProvider(providerName, apiKey string) (Provider, error) {
 	switch providerName {
 	case "mock":
 		return NewMockProvider(), nil
-	case "duckduckgo":
-		return NewDuckDuckGoProvider(), nil
 	case "bocha":
 		if apiKey == "" {
 			return nil, fmt.Errorf("bocha provider requires BOCHA_API_KEY")
@@ -73,11 +73,12 @@ func NewProvider(providerName, apiKey string) (Provider, error) {
 		if apiKey != "" {
 			return NewBochaProvider(apiKey), nil
 		}
-		return NewDuckDuckGoProvider(), nil
+		return NewMockProvider(), nil
 	default:
+		// 未知名称:有 apiKey 走 bocha,无 apiKey 走 mock
 		if apiKey != "" {
 			return NewBochaProvider(apiKey), nil
 		}
-		return NewDuckDuckGoProvider(), nil
+		return NewMockProvider(), nil
 	}
 }

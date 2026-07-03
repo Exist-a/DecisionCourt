@@ -216,8 +216,7 @@ backend/
 │   ├── search/
 │   │   ├── provider.go          # 搜索接口
 │   │   ├── bocha.go             # Bocha API 实现（v0.8.3 生产默认）
-│   │   ├── duckduckgo.go        # DuckDuckGo 实现（fallback）
-│   │   └── mock.go              # MockProvider（测试用）
+│   │   └── mock.go              # MockProvider（开发 / 测试用）
 │   ├── agent_gateway/
 │   │   ├── gateway.go           # 网关入口
 │   │   ├── router.go            # 模型路由
@@ -701,7 +700,7 @@ LLM_MODEL_R1=deepseek-reasoner
 # Search (v0.8.3 起:SearXNG 已弃用,统一 Bocha)
 SEARCH_PROVIDER=bocha
 BOCHA_API_KEY=sk-bocha-xxx
-# 部署时切换为 mock / duckduckgo(无需 key)
+# 部署时切换为 mock(无需 key)
 # SEARCH_PROVIDER=tavily
 # TAVILY_API_KEY=tvly-xxx
 

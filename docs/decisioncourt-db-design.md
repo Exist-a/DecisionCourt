@@ -295,7 +295,7 @@
 | `id` | UUID PK | 自增主键 |
 | `session_id` | UUID FK | 所属庭审 |
 | `agent_id` | UUID FK | 调查员 Agent |
-| `provider` | VARCHAR(30) | 搜索提供商：`bocha` / `duckduckgo` / `tavily` (v0.8.3 起弃用 searxng) |
+| `provider` | VARCHAR(30) | 搜索提供商：`bocha` / `mock` / `tavily` (v0.8.3 起) |
 | `query` | TEXT | 搜索 query |
 | `result_count` | INT | 返回结果数 |
 | `latency_ms` | INT | 搜索延迟 |
@@ -317,7 +317,7 @@
 | `query` | TEXT | 派遣时的搜索 query（tool_input.query） |
 | `summary` | TEXT | 搜索结果摘要（截断 ≤ 1KB，前 5 条结果的标题 + URL） |
 | `raw_result` | JSONB | 完整搜索结果（标题/URL/content），便于审计 + 前端可点击展开 |
-| `source_provider` | VARCHAR(32) | 搜索提供商：`bocha` / `duckduckgo` / `mock` |
+| `source_provider` | VARCHAR(32) | 搜索提供商：`bocha` / `mock` (v0.8.3 起) |
 | `result_count` | INT | 本次搜索返回的结果数 |
 | `a2a_message_id` | UUID | 对应的 A2A 消息 id（可追溯） |
 | `created_at` | TIMESTAMP | 创建时间 |

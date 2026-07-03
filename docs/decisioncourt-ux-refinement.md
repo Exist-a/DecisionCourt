@@ -44,7 +44,7 @@ CREATE TABLE investigation_findings (
   query           TEXT NOT NULL,                -- 派遣时的 tool_input.query
   summary         TEXT NOT NULL,                -- 搜索结果摘要（截断 ≤ 1KB）
   raw_result      JSONB,                        -- 完整搜索结果（标题/URL/content），便于审计 + 前端可点击展开
-  source_provider VARCHAR(32) NOT NULL,        -- 'bocha' | 'duckduckgo' | 'mock'
+  source_provider VARCHAR(32) NOT NULL,        -- 'bocha' | 'mock' (v0.8.3 起)
   result_count    INT NOT NULL DEFAULT 0,      -- 本次搜索返回的结果数
   a2a_message_id  UUID,                        -- 对应的 A2A 消息 id（可追溯）
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -102,7 +102,7 @@ internal/investigation/
 type Service struct {
     repo     Repository
     a2aBus   A2ABus              // 用于公开 A2A dispatch / report
-    searcher search.Provider     // Bocha / DuckDuckGo / Mock
+    searcher search.Provider     // Bocha / Mock (v0.8.3 起)
     logger   *log.Logger
 }
 ```

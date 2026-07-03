@@ -238,7 +238,7 @@ DecisionCourt/
 │   │   ├── evidence/              # 用户证据
 │   │   ├── investigation/         # 调查发现
 │   │   ├── private_memory/        # 私有记忆池
-│   │   ├── search/                # Bocha / SearXNG / DuckDuckGo
+│   │   ├── search/                # Bocha / Mock
 │   │   ├── llm/                   # DeepSeek / Kimi 客户端
 │   │   └── model/                 # GORM models
 │   └── test-output/               # 端到端测试 JSON 样本
@@ -269,7 +269,7 @@ DecisionCourt/
 | `LLM_BASE_URL` | 否 | DeepSeek 官方 | LLM API 基础地址 |
 | `LLM_MODEL_V3` | 否 | `deepseek-chat` | 常规轮次模型 |
 | `LLM_MODEL_R1` | 否 | `deepseek-reasoner` | 关键轮次推理模型 |
-| `SEARCH_PROVIDER` | 否 | `searxng` | `mock` / `searxng` / `bocha` / `tavily` |
+| `SEARCH_PROVIDER` | 否 | `searxng` | `mock` / `searxng` / `bocha` / `tavily` (v0.8.3 起) |
 | `BOCHA_API_KEY` | 视 provider | - | Bocha 搜索 key（国内友好） |
 | `DATABASE_URL` | 是 | - | PostgreSQL 连接字符串 |
 | `REDIS_URL` | 否 | - | Redis 连接字符串（高可用时使用） |
@@ -323,7 +323,7 @@ go test ./internal/... -v
 - `internal/investigation`：10 项（dispatch + 持久化 + 公开广播）
 - `internal/agent`：ReAct Runner + Reflect Classifier + Prompt 注入
 - `internal/courtroom`：State Machine + DispatchInvestigator + Speak Streaming
-- `internal/search`：Bocha / DuckDuckGo Provider
+- `internal/search`：Bocha Provider(默认) / Mock Provider(dev)
 - `internal/api`：Hub 流式时序
 - `internal/agent_gateway`：63 项（Token Budget v2 / Smart Compression v2 / Gateway reject + 三策略压缩对比 baseline）
 
