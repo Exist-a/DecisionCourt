@@ -3,15 +3,17 @@
 #
 # 关键安全变更:
 #   1. 所有 image 锁具体版本(去掉 :latest)
-#   2. postgres / redis / searxng 端口从 host 网络移除(只走 backend 内部访问)
+#   2. postgres / redis 端口从 host 网络移除(只走 backend 内部访问)
 #   3. backend / frontend 加 user: "1001:1001" 切非 root
 #   4. cap_drop: [ALL] + no-new-privileges 限制容器能力
 #   5. 关键卷 read_only: true + tmpfs 写临时目录
 #   6. JWT_SECRET 必填(:?报错),不再有默认值
 #
+# v0.8.3 决定:统一用 Bocha API 做 search,SearXNG 服务已移除。
+#
 # 注意:
 #   - 本 compose 文件只用于生产/部署。开发请用 docker-compose.dev.yml
-#   - .env 必须在宿主机存在(里面含真实 LLM_KEY / JWT_SECRET / DB_PASSWORD)
+#   - .env 必须在宿主机存在(里面含真实 LLM_KEY / JWT_SECRET / DB_PASSWORD / BOCHA_API_KEY)
 #   - POSTGRES_PASSWORD 必须足够长(建议 32 字符)
 version: "3.8"
 
@@ -70,32 +72,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # v0.8.3 安全：searxng 不再默认启动（search 路径用 mock / duckduckgo / bocha）。
-  # 启用请在 .env 设 SEARCH_PROVIDER=searxng 并取消下面注释。
-  # searxng:
-  #   # P0-3：锁版本(去 :latest)。pin 到具体 digest 最佳。
-  #   image: searxng/searxng:2025.5.21-b8c1e1e3
-  #   container_name: dc_searxng
-  #   expose:
-  #     - "8080"
-  #   environment:
-  #     - BASE_URL=http://localhost:8080
-  #     - INSTANCE_NAME=DecisionCourtSearx
-  #   volumes:
-  #     - searxng_data:/etc/searxng
-  #   read_only: true
-  #   tmpfs:
-  #     - /tmp
-  #   cap_drop: [ALL]
-  #   security_opt:
-  #     - no-new-privileges:true
-  #   healthcheck:
-  #     test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #   restart: unless-stopped
-
   backend:
     build:
       context: ./backend
@@ -112,10 +88,10 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
       LLM_MODEL_V3: ${LLM_MODEL_V3:-deepseek-chat}
       LLM_MODEL_R1: ${LLM_MODEL_R1:-deepseek-reasoner}
-      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-duckduckgo}
-      SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
+      # v0.8.3 决定：默认 Bocha(必填 BOCHA_API_KEY)
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-bocha}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
-      BOCHA_API_KEY: ${BOCHA_API_KEY:-}
+      BOCHA_API_KEY: ${BOCHA_API_KEY:?BOCHA_API_KEY must be set in .env (or override SEARCH_PROVIDER)}
       # P0-2：JWT_SECRET 必填,无默认值。docker-compose :? 报 fail。
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
       JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-168}
@@ -166,4 +142,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  # searxng_data:  # 默认注释,启用 searxng 时取消

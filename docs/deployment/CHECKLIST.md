@@ -198,7 +198,6 @@ WebSocket 推回前端(streaming 推 token)
 | 8080 | backend  | 内部         | Go API + WS                    |
 | 5432 | postgres | **绝不暴露** | 数据库                         |
 | 6379 | redis    | **绝不暴露** | 缓存                           |
-| 8080 | searxng  | 内部         | 自部署搜索(可选)               |
 
 > ⚠️ **3000/8080/5432/6379 都不开放到公网**,走 Docker 内网
 

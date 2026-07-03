@@ -392,7 +392,7 @@ go test ./internal/... -v
 ## 致谢
 
 - LLM：[DeepSeek](https://www.deepseek.com/) · [Kimi (Moonshot)](https://www.moonshot.cn/)
-- 搜索：[Bocha AI Search](https://bochaai.com/) · [SearXNG](https://searxng.org/) · [Tavily](https://tavily.com/)
+- 搜索：[Bocha AI Search](https://bochaai.com/) · [Tavily](https://tavily.com/)
 - 前端：[Next.js](https://nextjs.org/) · [shadcn/ui](https://ui.shadcn.com/) · [Tailwind CSS](https://tailwindcss.com/) · [React Flow](https://reactflow.dev/) · [Recharts](https://recharts.org/) · [Zustand](https://zustand-demo.pmnd.rs/)
 - 后端：[Gin](https://gin-gonic.com/) · [GORM](https://gorm.io/) · [gorilla/websocket](https://github.com/gorilla/websocket)
 

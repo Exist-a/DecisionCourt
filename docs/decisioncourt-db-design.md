@@ -295,7 +295,7 @@
 | `id` | UUID PK | 自增主键 |
 | `session_id` | UUID FK | 所属庭审 |
 | `agent_id` | UUID FK | 调查员 Agent |
-| `provider` | VARCHAR(30) | 搜索提供商：`bocha` / `searxng` / `tavily` |
+| `provider` | VARCHAR(30) | 搜索提供商：`bocha` / `duckduckgo` / `tavily` (v0.8.3 起弃用 searxng) |
 | `query` | TEXT | 搜索 query |
 | `result_count` | INT | 返回结果数 |
 | `latency_ms` | INT | 搜索延迟 |

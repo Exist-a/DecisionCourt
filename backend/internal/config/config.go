@@ -43,7 +43,6 @@ type Config struct {
 	LLMModelR1  string `mapstructure:"LLM_MODEL_R1"`
 
 	SearchProvider string `mapstructure:"SEARCH_PROVIDER"`
-	SearxNGURL     string `mapstructure:"SEARXNG_URL"`
 	TavilyAPIKey   string `mapstructure:"TAVILY_API_KEY"`
 	BochaAPIKey    string `mapstructure:"BOCHA_API_KEY"`
 

@@ -215,8 +215,7 @@ backend/
 │   │   └── engine.go            # 信念引擎
 │   ├── search/
 │   │   ├── provider.go          # 搜索接口
-│   │   ├── bocha.go             # Bocha API 实现（生产默认）
-│   │   ├── searxng.go           # SearXNG 实现（开发可选）
+│   │   ├── bocha.go             # Bocha API 实现（v0.8.3 生产默认）
 │   │   ├── duckduckgo.go        # DuckDuckGo 实现（fallback）
 │   │   └── mock.go              # MockProvider（测试用）
 │   ├── agent_gateway/
@@ -587,19 +586,20 @@ type SearchItem struct {
 
 ### 7.3 SearXNG 配置
 
-在 `docker-compose.yml` 中增加：
+v0.8.3 起：SearXNG 不再自部署（实现复杂 + API 不稳定），统一用 Bocha API。
 
+如需自部署 SearXNG 替代 Bocha,可参考以下 compose 片段(未启用):
 ```yaml
-searxng:
-  image: searxng/searxng:latest
-  ports:
-    - "8080:8080"
-  environment:
-    - BASE_URL=http://localhost:8080
-    - INSTANCE_NAME=DecisionCourtSearx
+# searxng:
+#   image: searxng/searxng:2025.5.21-b8c1e1e3
+#   ports:
+#     - "8080:8080"
+#   environment:
+#     - BASE_URL=http://localhost:8080
+#     - INSTANCE_NAME=DecisionCourtSearx
 ```
 
-后端通过 `http://searxng:8080/search?q=xxx&format=json` 调用。
+后端通过 Bocha API(`https://api.bochaai.com/v1/web-search`,POST + JSON)调用,需在 `.env` 设 `BOCHA_API_KEY`。
 
 ---
 
@@ -698,10 +698,10 @@ LLM_BASE_URL=https://api.deepseek.com/v1
 LLM_MODEL_V3=deepseek-chat
 LLM_MODEL_R1=deepseek-reasoner
 
-# Search
-SEARCH_PROVIDER=searxng
-SEARXNG_URL=http://searxng:8080
-# 部署时切换
+# Search (v0.8.3 起:SearXNG 已弃用,统一 Bocha)
+SEARCH_PROVIDER=bocha
+BOCHA_API_KEY=sk-bocha-xxx
+# 部署时切换为 mock / duckduckgo(无需 key)
 # SEARCH_PROVIDER=tavily
 # TAVILY_API_KEY=tvly-xxx
 
