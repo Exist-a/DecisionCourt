@@ -80,6 +80,10 @@ const (
 type CourtSession struct {
 	ID             uuid.UUID   `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
 	SessionUUID    string      `gorm:"type:varchar(36);uniqueIndex;not null"`
+	// v0.8.3 安全：OwnerID 关联到 User.UserID(匿名 user_id)。
+	// 鉴权时若 viewer != session.OwnerID,GET 端点返回 403,write 端点 403。
+	// 旧 session 在迁移时 OwnerID 为空,后端按"未鉴权"对待(只允许 owner 访问)。
+	OwnerID        string      `gorm:"type:varchar(64);index;not null;default:''"`
 	Title          string      `gorm:"type:varchar(255);not null"`
 	OptionA        string      `gorm:"type:varchar(255)"`
 	OptionB        string      `gorm:"type:varchar(255)"`
@@ -129,7 +133,9 @@ type Evidence struct {
 	Source            string    `gorm:"type:varchar(30);not null" json:"source"`
 	Content           string    `gorm:"type:text;not null" json:"content"`
 	URL               string    `gorm:"type:varchar(500)" json:"url"`
-	SubmittedBy       string    `gorm:"type:varchar(50);not null" json:"submitted_by"`
+	// v0.8.3 安全：SubmittedBy 现在是真实的 anonymous user_id（不再是写死的 "user"）。
+	// 旧记录保持 "user" 字符串,但前端不再显示成"用户"——可选择性迁移为 "legacy_anon"。
+	SubmittedBy       string    `gorm:"type:varchar(64);not null" json:"submitted_by"`
 	CredibilityScore  float64   `gorm:"type:float;default:0.5" json:"credibility_score"`
 	RelevanceScore    float64   `gorm:"type:float;default:0.5" json:"relevance_score"`
 	ImpactOnOptionA    float64   `gorm:"type:float;default:0" json:"impact_on_option_a"`
@@ -247,6 +253,37 @@ type PrivateMemory struct {
 	LinkedEvidenceIDs  StringSlice `gorm:"type:jsonb;default:'[]'"`
 	LinkedMessageUUIDs StringSlice `gorm:"type:jsonb;default:'[]'"`
 	CreatedAt         time.Time
+}
+
+// User 记录匿名身份。user_id 由前端在 localStorage 生成(UUIDv4)首次访问
+// 时通过 POST /api/v1/auth/anon 报到后端；后端用 user_id 签发 JWT,后续
+// 请求带 cookie 即可。无密码 / 无邮箱 / 无 PII——纯匿名计数器。
+//
+// UserID 格式约定：`anon_<32-hex>`(前端用 `crypto.randomUUID().replace(/-/g,'')`)。
+// 我们不在这里强制格式(允许自定义前缀方便测试),但要 index 以便 JOIN 提速。
+type User struct {
+	UserID     string    `gorm:"type:varchar(64);primary_key" json:"user_id"`
+	FirstSeen  time.Time `gorm:"not null" json:"first_seen"`
+	LastSeen   time.Time `gorm:"not null" json:"last_seen"`
+	// 简单的 IP+UA 指纹,只用于风控(异常登录告警),不做任何反向追踪。
+	// 留空表示未记录(GDPR 友好)。
+	LastIP     string    `gorm:"type:varchar(45)" json:"last_ip,omitempty"`
+	LastUA     string    `gorm:"type:varchar(200)" json:"last_ua,omitempty"`
+}
+
+// AuditLog 记录所有"重要操作"用于安全审计。
+// 不记录常规 GET,只记录:登录/登出/Export/SubmitEvidence/ProcessUserAction/PhaseTransition。
+// 未来 CI 跑 `grep suspicious AuditLog` 自动告警。
+type AuditLog struct {
+	ID          uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	UserID      string    `gorm:"type:varchar(64);index;not null"`
+	Action      string    `gorm:"type:varchar(50);not null;index"`  // e.g. "auth.anon" / "session.export"
+	Target      string    `gorm:"type:varchar(100);index"`          // e.g. session_uuid
+	IP          string    `gorm:"type:varchar(45)"`
+	UA          string    `gorm:"type:varchar(200)"`
+	Result      string    `gorm:"type:varchar(20);default:'ok'"`    // "ok" / "denied" / "error"
+	Reason      string    `gorm:"type:varchar(200)"`                // 拒绝原因 / 错误摘要
+	CreatedAt   time.Time `gorm:"index"`
 }
 
 // Connect establishes the database connection and runs auto-migration.

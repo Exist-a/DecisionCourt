@@ -126,6 +126,7 @@ func TestGetVisibleMemory_EmptyArrayWhenNoMemory(t *testing.T) {
 	session := model.CourtSession{
 		ID:          uuid.New(),
 		SessionUUID: "mem-empty-" + uuid.New().String()[:8],
+		OwnerID:     "test-user",
 		Title:       "无策略笔记测试",
 		OptionA:     "A",
 		OptionB:     "B",
@@ -206,6 +207,7 @@ func TestGetVisibleMemory_MissingLister(t *testing.T) {
 	session := model.CourtSession{
 		ID:          uuid.New(),
 		SessionUUID: "mem-nolister-" + uuid.New().String()[:8],
+		OwnerID:     "test-user",
 		Title:       "no lister",
 		OptionA:     "A",
 		OptionB:     "B",

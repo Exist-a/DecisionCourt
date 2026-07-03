@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/decisioncourt/backend/internal/a2a"
+	"github.com/decisioncourt/backend/internal/auth"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/search"
@@ -23,12 +24,18 @@ func newInvestigationOnlyHandler(inv *investigation.Service) *Handler {
 	return &Handler{investigationService: inv}
 }
 
-// ginEngine wraps the Handler.RegisterRoutes inside a gin.Engine. We
-// avoid the package-level Default() to keep test output quiet.
+// ginEngine wraps the Handler.RegisterAPIRoutes inside a gin.Engine,
+//挂一个 fake auth 中间件把 viewer 设为 "test-user"(与下面 makeSession 的
+//OwnerID 对齐),这样 checkSessionAccess 能过。生产真实中间件见 auth.Middleware。
 func ginEngine(h *Handler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h.RegisterRoutes(r)
+	api := r.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set(auth.ContextKey, "test-user")
+		c.Next()
+	})
+	h.RegisterAPIRoutes(api)
 	return r
 }
 
@@ -47,10 +54,14 @@ func (s *stubSearcherForList) Search(_ context.Context, _ string) ([]search.Resu
 // makeSession returns an in-memory CourtSession with a stable
 // SessionUUID. The session isn't persisted to a DB; handler tests inject
 // the lookup directly.
+//
+// v0.8.3 安全：OwnerID = "test-user" 与 ginEngine fake auth 中间件注入的
+// viewer 对齐，这样 checkSessionAccess 能通过。
 func makeSession() model.CourtSession {
 	return model.CourtSession{
 		ID:             uuid.New(),
 		SessionUUID:    "sess-list-" + uuid.New().String()[:8],
+		OwnerID:        "test-user",
 		Title:          "列表测试庭审",
 		OptionA:        "A",
 		OptionB:        "B",

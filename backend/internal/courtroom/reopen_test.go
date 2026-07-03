@@ -44,6 +44,7 @@ func newReopenTestService(t *testing.T) (*Service, *a2a.InMemoryRepository, *[]E
 	require.NoError(t, db.Exec(`CREATE TABLE court_sessions (
 		id TEXT PRIMARY KEY,
 		session_uuid TEXT NOT NULL,
+		owner_id TEXT NOT NULL DEFAULT '',
 		title TEXT NOT NULL,
 		option_a TEXT,
 		option_b TEXT,

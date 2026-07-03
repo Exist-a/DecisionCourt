@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/decisioncourt/backend/internal/a2a"
+	"github.com/decisioncourt/backend/internal/auth"
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
@@ -110,44 +111,112 @@ func (h *Handler) lookupSession(sessionUUID string) (model.CourtSession, bool) {
 	return defaultSessionLookup(sessionUUID)
 }
 
+// RegisterRoutes 注册无需鉴权的根级路由(/health 等)。
+// /metrics 由 RegisterMetricsRoute 单独注册。
+// 鉴权 /api/v1/* 由 RegisterAPIRoutes 注册到带 auth 中间件的 group。
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.GET("/health", h.HealthHandler)
+}
 
-	api := r.Group("/api/v1")
-	{
-		api.POST("/courtrooms", h.CreateCourtroom)
-		api.GET("/courtrooms/:session_uuid", h.GetCourtroom)
-		api.POST("/courtrooms/:session_uuid/start", h.StartTrial)
-		api.POST("/courtrooms/:session_uuid/evidences", h.SubmitEvidence)
-		api.POST("/courtrooms/:session_uuid/actions", h.UserAction)
-		api.GET("/courtrooms/:session_uuid/messages", h.GetMessages)
-		api.GET("/courtrooms/:session_uuid/evidences", h.GetEvidences)
-		api.GET("/courtrooms/:session_uuid/agents", h.GetAgents)
-		api.GET("/courtrooms/:session_uuid/verdict", h.GetVerdict)
-		api.GET("/courtrooms/:session_uuid/investigations", h.GetInvestigations)
-		api.GET("/courtrooms/:session_uuid/export", h.ExportSession)
-		// v0.6 belief engine: structured belief-diff audit trail.
-		// Supports ?agent=prosecutor|defender|... and ?round=N filters.
-		api.GET("/courtrooms/:session_uuid/belief-diffs", h.GetBeliefDiffs)
-		// v0.5 episodic-memory REST hydration. Frontend MemoryAuditPanel
-		// can rebuild the full strategy-note timeline on verdict page
-		// refresh / browser-back / court page reload. See
-		// service.ListPrivateMemory for visibility rationale.
-		api.GET("/courtrooms/:session_uuid/memory", h.GetVisibleMemory)
-	}
+// RegisterAPIRoutes 把 /api/v1/* 路由注册到传入的 group。
+// 调用方需在调用前用 auth.Middleware(...) 给 group 挂中间件。
+//   authedGroup := r.Group("/api/v1")
+//   authedGroup.Use(auth.Middleware(...))
+//   handler.RegisterAPIRoutes(authedGroup)
+func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
+	api.POST("/courtrooms", h.CreateCourtroom)
+	api.GET("/courtrooms/:session_uuid", h.GetCourtroom)
+	api.POST("/courtrooms/:session_uuid/start", h.StartTrial)
+	api.POST("/courtrooms/:session_uuid/evidences", h.SubmitEvidence)
+	api.POST("/courtrooms/:session_uuid/actions", h.UserAction)
+	api.GET("/courtrooms/:session_uuid/messages", h.GetMessages)
+	api.GET("/courtrooms/:session_uuid/evidences", h.GetEvidences)
+	api.GET("/courtrooms/:session_uuid/agents", h.GetAgents)
+	api.GET("/courtrooms/:session_uuid/verdict", h.GetVerdict)
+	api.GET("/courtrooms/:session_uuid/investigations", h.GetInvestigations)
+	api.GET("/courtrooms/:session_uuid/export", h.ExportSession)
+	// v0.6 belief engine: structured belief-diff audit trail.
+	// Supports ?agent=prosecutor|defender|... and ?round=N filters.
+	api.GET("/courtrooms/:session_uuid/belief-diffs", h.GetBeliefDiffs)
+	// v0.5 episodic-memory REST hydration. Frontend MemoryAuditPanel
+	// can rebuild the full strategy-note timeline on verdict page
+	// refresh / browser-back / court page reload. See
+	// service.ListPrivateMemory for visibility rationale.
+	api.GET("/courtrooms/:session_uuid/memory", h.GetVisibleMemory)
 }
 
 func (h *Handler) HealthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+// checkSessionAccess 是 P0-1 + P0-5 鉴权核心:
+//   1. 用 sessionUUID 查 DB
+//   2. 比对 session.OwnerID 与 ctx viewer
+//   3. 旧 session(OwnerID="")默认拒绝访问(无 owner 不能鉴权)
+// 返回 (session, true) 继续;(zero, false) 已写完错误响应可直接 return。
+//
+// 调用方惯例:
+//   session, ok := h.checkSessionAccess(c, sessionUUID)
+//   if !ok { return }
+func (h *Handler) checkSessionAccess(c *gin.Context, sessionUUID string) (model.CourtSession, bool) {
+	session, ok := h.lookupSession(sessionUUID)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+			"code":    1002,
+			"message": "庭审不存在",
+		})
+		return model.CourtSession{}, false
+	}
+	viewer := auth.ViewerFromContext(c)
+	if session.OwnerID == "" {
+		// 旧 session 无 owner——不允许任何 viewer 访问(防历史数据泄漏)。
+		// 如果需要"匿名 session"工作流,OwnerID 应在 v0.8.3 之后的 create
+		// 时必填,不会留空。
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"code":    1403,
+			"message": "forbidden: session has no owner (legacy data; recreate to access)",
+		})
+		return model.CourtSession{}, false
+	}
+	if session.OwnerID != viewer {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"code":    1403,
+			"message": "forbidden: not the owner of this session",
+		})
+		return model.CourtSession{}, false
+	}
+	return session, true
+}
+
+// writeAudit 写一条审计日志(异步,不阻塞主流程)。
+// 失败时仅记 slog 警告,不返回错误——审计不是关键路径。
+func (h *Handler) writeAudit(c *gin.Context, action, target, result, reason string) {
+	if model.DB == nil {
+		return
+	}
+	viewer := auth.ViewerFromContext(c)
+	row := model.AuditLog{
+		UserID:  viewer,
+		Action:  action,
+		Target:  target,
+		IP:      c.ClientIP(),
+		UA:      c.GetHeader("User-Agent"),
+		Result:  result,
+		Reason:  reason,
+	}
+	if err := model.DB.Create(&row).Error; err != nil {
+		slog.Warn("audit log write failed",
+			"action", action, "target", target, "user", viewer, "error", err)
+	}
+}
+
 func (h *Handler) CreateCourtroom(c *gin.Context) {
 	var req struct {
-		Title   string `json:"title" binding:"required"`
-		OptionA string `json:"option_a"`
-		OptionB string `json:"option_b"`
-		Context string `json:"context"`
-		Mode    string `json:"mode"`
+		Title   string `json:"title" binding:"required,max=255"`
+		OptionA string `json:"option_a" binding:"required,max=255"`
+		OptionB string `json:"option_b" binding:"required,max=255"`
+		Context string `json:"context" binding:"max=2000"`
+		Mode    string `json:"mode" binding:"max=20"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -155,12 +224,22 @@ func (h *Handler) CreateCourtroom(c *gin.Context) {
 		return
 	}
 
-	session, err := h.service.CreateSession(req.Title, req.OptionA, req.OptionB, req.Context, req.Mode)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": err.Error()})
+	// v0.8.3 安全：OwnerID 来自 token 中的 viewer(由 auth.Middleware 注入)。
+	ownerID := auth.ViewerFromContext(c)
+	if ownerID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1401, "message": "missing viewer"})
 		return
 	}
 
+	session, err := h.service.CreateSession(req.Title, req.OptionA, req.OptionB, req.Context, req.Mode, ownerID)
+	if err != nil {
+		// 1001 是请求参数错误(不要泄露底层 err 细节给客户端)。
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": "invalid request"})
+		slog.Warn("create courtroom failed", "user", ownerID, "error", err)
+		return
+	}
+
+	h.writeAudit(c, "session.create", session.SessionUUID, "ok", "")
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": sessionResponse(session)})
 }
 
@@ -178,6 +257,11 @@ func (h *Handler) GetCourtroom(c *gin.Context) {
 
 func (h *Handler) StartTrial(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
+
+	if _, ok := h.checkSessionAccess(c, sessionUUID); !ok {
+		h.writeAudit(c, "session.start", sessionUUID, "denied", "owner check failed")
+		return
+	}
 
 	// v0.8.3 race 修复：把 phase transition 同步跑完，再让 LLM-backed
 	// opening speeches 在 goroutine 里跑。HTTP 200 返回时 DB 已经是
@@ -221,13 +305,20 @@ func (h *Handler) SubmitEvidence(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
 	var req struct {
-		Content string `json:"content" binding:"required"`
-		Type    string `json:"type"`
-		Source  string `json:"source"`
+		Content string `json:"content" binding:"required,min=1,max=4096"`
+		Type    string `json:"type" binding:"max=30,oneof=fact testimony expert_opinion constraint rebuttal"`
+		Source  string `json:"source" binding:"max=30,oneof=user investigator system"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": err.Error()})
+		return
+	}
+
+	// v0.8.3 安全：先 owner check,再看 service。
+	session, ok := h.checkSessionAccess(c, sessionUUID)
+	if !ok {
+		h.writeAudit(c, "evidence.submit", sessionUUID, "denied", "owner check failed")
 		return
 	}
 
@@ -238,13 +329,16 @@ func (h *Handler) SubmitEvidence(c *gin.Context) {
 		req.Source = "user"
 	}
 
-	// Run asynchronously with a detached context.
+	// v0.8.3 安全：submittedBy = viewer(不再是写死的 "user")。
+	// source 白名单已由 binding oneof 限制。
+	ownerID := auth.ViewerFromContext(c)
 	go func() {
-		if _, err := h.service.SubmitEvidence(context.Background(), sessionUUID, req.Content, req.Type, req.Source, "user"); err != nil {
-			log.Printf("submit evidence failed for %s: %v", sessionUUID, err)
+		if _, err := h.service.SubmitEvidence(context.Background(), session.SessionUUID, req.Content, req.Type, req.Source, ownerID); err != nil {
+			slog.Warn("submit evidence failed", "session", sessionUUID, "user", ownerID, "error", err)
 		}
 	}()
 
+	h.writeAudit(c, "evidence.submit", sessionUUID, "ok", "")
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
@@ -258,12 +352,18 @@ func (h *Handler) UserAction(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
 	var req struct {
-		Action  string                 `json:"action" binding:"required"`
+		Action  string                 `json:"action" binding:"required,max=50,oneof=direct_verdict continue_cross_exam start_cross_exam skip_agent dispatch_investigator reopen_trial"`
 		Payload map[string]interface{} `json:"payload"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": err.Error()})
+		return
+	}
+
+	// v0.8.3 安全：先 owner check。
+	if _, ok := h.checkSessionAccess(c, sessionUUID); !ok {
+		h.writeAudit(c, "user_action."+req.Action, sessionUUID, "denied", "owner check failed")
 		return
 	}
 
@@ -274,6 +374,7 @@ func (h *Handler) UserAction(c *gin.Context) {
 		}
 	}()
 
+	h.writeAudit(c, "user_action."+req.Action, sessionUUID, "ok", "")
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
@@ -343,9 +444,8 @@ func extractAgentTypeFromMetadata(metadataJSON string, agentID *uuid.UUID) strin
 func (h *Handler) GetEvidences(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
-	session, ok := h.lookupSession(sessionUUID)
+	session, ok := h.checkSessionAccess(c, sessionUUID)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"code": 1002, "message": "庭审不存在"})
 		return
 	}
 
@@ -373,9 +473,8 @@ func (h *Handler) GetAgents(c *gin.Context) {
 func (h *Handler) GetVerdict(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
-	session, ok := h.lookupSession(sessionUUID)
+	session, ok := h.checkSessionAccess(c, sessionUUID)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"code": 1002, "message": "庭审不存在"})
 		return
 	}
 
@@ -408,19 +507,21 @@ func (h *Handler) GetVerdict(c *gin.Context) {
 func (h *Handler) ExportSession(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
-	session, ok := h.lookupSession(sessionUUID)
+	// v0.8.3 安全：必须 owner 才能导出(下载整个 session 全部数据)。
+	session, ok := h.checkSessionAccess(c, sessionUUID)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"code": 1002, "message": "庭审不存在"})
+		h.writeAudit(c, "session.export", sessionUUID, "denied", "owner check failed")
 		return
 	}
 
 	payload, err := h.service.ExportSession(c.Request.Context(), session)
 	if err != nil {
-		log.Printf("[ExportSession] failed for %s: %v", sessionUUID, err)
+		slog.Warn("[ExportSession] failed", "session", sessionUUID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 1500, "message": "导出失败"})
 		return
 	}
 
+	h.writeAudit(c, "session.export", sessionUUID, "ok", "")
 	// Always include session_uuid as a query-string echo so the frontend
 	// can name the file with the case id.
 	filename := fmt.Sprintf("decisioncourt-%s-%s.json",
@@ -626,9 +727,8 @@ func evidenceUUIDString(id *uuid.UUID) string {
 func (h *Handler) GetInvestigations(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
-	session, ok := h.lookupSession(sessionUUID)
+	session, ok := h.checkSessionAccess(c, sessionUUID)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"code": 1002, "message": "庭审不存在"})
 		return
 	}
 

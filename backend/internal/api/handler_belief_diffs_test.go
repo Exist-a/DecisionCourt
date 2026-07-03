@@ -22,7 +22,7 @@ func TestGetBeliefDiffs_NoRepoReturnsEmpty(t *testing.T) {
 	h := &Handler{
 		service:  nil,
 		sessionLookup: func(_ string) (model.CourtSession, bool) {
-			return model.CourtSession{ID: uuid.New(), SessionUUID: "sess-no-repo"}, true
+			return model.CourtSession{ID: uuid.New(), SessionUUID: "sess-no-repo", OwnerID: "test-user"}, true
 		},
 	}
 	r := ginEngine(h)

@@ -172,15 +172,22 @@ func (s *Service) CreateSession(
 	optionB string,
 	context string,
 	mode string,
+	ownerID string,
 ) (model.CourtSession, error) {
 	if optionA == "" || optionB == "" {
 		return model.CourtSession{}, fmt.Errorf("option_a and option_b are required for MVP")
+	}
+	// v0.8.3 安全：ownerID 必填。空串意味着调用方未经过 auth 中间件
+	// (或 main.go 装配出错)——直接拒绝,防止匿名 session 漏建。
+	if ownerID == "" {
+		return model.CourtSession{}, fmt.Errorf("owner_id is required (P0-1 auth)")
 	}
 
 	maxRounds := s.stateMachine.MaxRounds(mode)
 
 	session := model.CourtSession{
 		SessionUUID:  uuid.New().String(),
+		OwnerID:      ownerID,
 		Title:        title,
 		OptionA:      optionA,
 		OptionB:      optionB,

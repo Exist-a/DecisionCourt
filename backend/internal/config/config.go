@@ -47,7 +47,15 @@ type Config struct {
 	TavilyAPIKey   string `mapstructure:"TAVILY_API_KEY"`
 	BochaAPIKey    string `mapstructure:"BOCHA_API_KEY"`
 
-	JWTSecret string `mapstructure:"JWT_SECRET"`
+	// v0.8.3 安全：JWTSecret 必填(无默认值,启动时校验)。JWTExpiryHours
+	// 默认 168 = 7 天,CookieSecure 默认 true(生产 HTTPS);CookieDomain/SameSite
+	// 用于跨域/iframe 场景,默认 SameSite=Lax。
+	JWTSecret       string        `mapstructure:"JWT_SECRET"`
+	JWTExpiryHours  int           `mapstructure:"JWT_EXPIRY_HOURS"`
+	CookieSecure    bool          `mapstructure:"COOKIE_SECURE"`
+	CookieSameSite  string        `mapstructure:"COOKIE_SAME_SITE"`
+	CookieDomain    string        `mapstructure:"COOKIE_DOMAIN"`
+	AllowedOrigins  []string      `mapstructure:"ALLOWED_ORIGINS"`
 
 	AgentGateway AgentGatewayConfig `mapstructure:",squash"`
 }
@@ -109,6 +117,30 @@ func Load() {
 
 	if err := viper.Unmarshal(&AppConfig); err != nil {
 		log.Fatalf("failed to load config: %v", err)
+	}
+
+	// P0-2 / P0-4 安全：关键密钥 / 连接串必须存在,缺失则 fail-fast。
+	// 不要在这里给"软警告"——生产部署一旦用错密钥,所有用户都会受影响。
+	mustEnvs := []struct {
+		name  string
+		value string
+		help  string
+	}{
+		{"JWT_SECRET", AppConfig.JWTSecret, "generate with: openssl rand -base64 48"},
+		{"DATABASE_URL", AppConfig.DatabaseURL, "set in .env (e.g. postgres://user:pass@host:5432/db)"},
+	}
+	for _, e := range mustEnvs {
+		if e.value == "" {
+			log.Fatalf("FATAL: required config %s is empty — %s", e.name, e.help)
+		}
+	}
+	// LLM_API_KEY 暂不强制（无 key 时 LLM client 返回 warning,程序继续跑），
+	// 但如果 SEARCH_PROVIDER=bocha / tavily 则对应 key 必须有。
+	if AppConfig.SearchProvider == "bocha" && AppConfig.BochaAPIKey == "" {
+		log.Fatalf("FATAL: SEARCH_PROVIDER=bocha requires BOCHA_API_KEY")
+	}
+	if AppConfig.SearchProvider == "tavily" && AppConfig.TavilyAPIKey == "" {
+		log.Fatalf("FATAL: SEARCH_PROVIDER=tavily requires TAVILY_API_KEY")
 	}
 }
 
