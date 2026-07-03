@@ -14,6 +14,9 @@ frontend/out/
 backend/bin/
 backend/tmp/
 backend/backend.exe
+backend/server.exe
+tmp-server.exe
+tmp-server.exe~
 frontend/dist/
 frontend/.vercel
 
