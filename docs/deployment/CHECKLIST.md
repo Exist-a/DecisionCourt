@@ -1,9 +1,10 @@
 # 部署规划讨论清单 (Deployment Planning Checklist)
 
-> **状态**: ✅ **规划完成 / 暂缓执行**(2026-07-03 第九次讨论完成,所有核心 Q 已答)
+> **状态**: ✅ **规划完成 + 2026-07-04 v0.8.3 安全全栈完成 + 本地冒烟通过**(20 项 P0-P3 + 4 项 smoke 修复)
 > **性质**: 活跃工作文档,执行阶段可继续更新
 > **目的**: 把"零经验者部署一个 LLM 多 Agent 全栈项目"的所有决策点铺开,逐项推进
-> **下次打开条件**:用户决定购机时(Q12 域名后缀顺便定)
+> **下次打开条件**:用户决定购机时 + 域名解析时(Q12 域名后缀顺便定)
+> **配套文档**: [`../security-audit-v0.8.3.md`](../security-audit-v0.8.3.md) — v0.8.3 安全状态详细
 
 ---
 
@@ -148,22 +149,22 @@
 ### 3.1 部署架构(单机 docker-compose,推荐方案)
 
 ```
-阿里云轻量(2C4G)
+阿里云轻量(2C2G 香港)
 ├── 公网 IP
 ├── 安全组:仅放行 22/80/443
 │
 ├── nginx(端口 80 + 443,Certbot SSL)
-│   ├── /         → frontend:3000
-│   ├── /api/     → backend:8080
-│   ├── /ws/      → backend:8080(WebSocket)
-│   └── /metrics  → backend:8080(限 127.0.0.1)
+│   ├── /         → dc_frontend:3000
+│   ├── /api/     → dc_backend:8080
+│   ├── /ws/      → dc_backend:8080(WebSocket)
+│   └── /metrics  → dc_backend:8080(限 127.0.0.1)
 │
-├── Docker
-│   ├── dc_frontend  (Next.js,3000)
-│   ├── dc_backend   (Go,8080)
-│   ├── dc_postgres  (5432)
-│   ├── dc_redis     (6379)
-│   └── dc_searxng   (8080,可选用 Bocha 代替)
+├── Docker(v0.8.3 容器硬化后)
+│   ├── dc_frontend  (Next.js,3000,非 root read_only)
+│   ├── dc_backend   (Go,8080,非 root read_only cap_drop)
+│   ├── dc_postgres  (5432,非 root)
+│   └── dc_redis     (6379,非 root)
+│   # ⚠️ v0.8.3 起 SearXNG 已弃用,改用 Bocha AI Search API
 │
 ├── systemd: docker compose 自动启动
 └── cron: 每日 pg_dump → OSS/本地
@@ -201,27 +202,48 @@ WebSocket 推回前端(streaming 推 token)
 
 > ⚠️ **3000/8080/5432/6379 都不开放到公网**,走 Docker 内网
 
+### 3.4 容器硬化(v0.8.3 `5938bbf` 已实装)
+
+| 措施 | 实现位置 | 作用 |
+|---|---|---|
+| **非 root 运行** | 2 个 Dockerfile `USER 1001:1001` + `appuser` 用户 | 容器逃逸攻击即使成功也只能拿到低权限用户 |
+| **`read_only: true`** | 4 个服务 compose 段 | 文件系统只读,只有 `tmpfs` 可写 |
+| **`cap_drop: [ALL]`** | backend/frontend | 丢弃所有 Linux capabilities,只保留必需 |
+| **`no-new-privileges: true`** | 4 个服务 | 禁止 suid 二进制提权 |
+| **`security_opt: no-new-privileges:true`** | 4 个服务(冗余兜底) | 同上,kernel-level |
+| **`tmpfs: /tmp`** | backend/frontend | 只读 fs 下的可写工作区,mem-backed |
+| **`--memory=1g`** | backend/frontend(postgres/redis 用 docker 默认) | 内存硬上限,避免一个 container 把整机吃光 |
+| **`:alpine` 镜像** | 全部 4 服务 | 基础镜像从 ubuntu 200MB 降到 alpine ~5MB,攻击面大幅缩小 |
+| **固定版本(非 `:latest`)** | `postgres:15-alpine` / `redis:7-alpine` / `node:20-alpine` / `golang:1.26-alpine` | 防止恶意更新偷偷塞进 base image |
+| **Compose 内网 alias** | `postgres:5432` / `redis:6379` 等 | 容器间走 docker 内网 DNS,而不是 IP |
+
+> 详见 [`../security-audit-v0.8.3.md`](../security-audit-v0.8.3.md) §2.1 P0-3
+
 ---
 
 ## 4. 🔴 必修问题清单(部署前必须解决)
 
+> ✅ **2026-07-04 更新**: 以下 P0 全部已在 10 个安全 commit 内修完。详细见 [`../security-audit-v0.8.3.md`](../security-audit-v0.8.3.md)。本节保留作为"过去的问题 + 修法"档案。
+
 ### 4.1 代码层(P0:代码 bug)
 
-| #   | 问题                                                | 位置                                                                                           | 风险                                | 状态    | 修法                                                                    |
-| --- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------- | ------- | ----------------------------------------------------------------------- |
-| 1   | **CORS 硬编码只允许 localhost**                     | [main.go:126](file:///d:/源码/FullStack/DecisionCourt/backend/cmd/server/main.go#L125-L131)    | 🔴 部署到任何域名浏览器都拦截       | ⏳ 待修 | 读 `config.AllowedOrigins` env,启动时校验                               |
-| 2   | **前端 Dockerfile 用 `pnpm dev`**                   | [frontend/Dockerfile:9](file:///d:/源码/FullStack/DecisionCourt/frontend/Dockerfile#L9)        | 🔴 跑的是 dev 模式(慢 + 报错不友好) | ⏳ 待修 | 改用 `pnpm build && pnpm start`                                         |
-| 3   | **JWT_SECRET 默认 `decisioncourt-secret`**          | [.env.example:21](file:///d:/源码/FullStack/DecisionCourt/.env.example#L21)                    | 🔴 任何部署者用户身份可伪造         | ⏳ 待修 | 启动时校验,默认值为空则 panic                                           |
-| 4   | **NEXT_PUBLIC_API_URL 写死 localhost**              | [docker-compose.yml:85-86](file:///d:/源码/FullStack/DecisionCourt/docker-compose.yml#L85-L86) | 🟡 部署后前端找不到后端             | ⏳ 待修 | 改用 build arg 在 build 时注入(用户决定先 IP 直连,需用 IP 作为 API URL) |
-| 5   | **没有数据库 migration 步骤**                       | [docker-compose.yml](file:///d:/源码/FullStack/DecisionCourt/docker-compose.yml)               | 🔴 第一次跑会报表不存在             | ⏳ 待修 | 加 `migrate` init container(参考 GORM AutoMigrate)                      |
-| 6   | **postgres 默认密码 `decisioncourt:decisioncourt`** | [docker-compose.yml:8-9](file:///d:/源码/FullStack/DecisionCourt/docker-compose.yml#L8-L9)     | 🟡 上线后任何人能连库               | ⏳ 待修 | 强制从 `.env` 读,默认空则 fail                                          |
+| #   | 问题                                                | 位置                                                                                           | 风险                                | 状态     | 修法 / Commit                                                          |
+| --- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------- | -------- | ---------------------------------------------------------------------- |
+| 1   | **CORS 硬编码只允许 localhost**                     | [main.go:126](file:///d:/源码/FullStack/DecisionCourt/backend/cmd/server/main.go#L125-L131)    | 🔴 部署到任何域名浏览器都拦截       | ✅ 已修 `2572b7e` | 读 `config.AllowedOrigins` env,启动时校验                              |
+| 2   | **前端 Dockerfile 用 `pnpm dev`**                   | [frontend/Dockerfile:9](file:///d:/源码/FullStack/DecisionCourt/frontend/Dockerfile#L9)        | 🔴 跑的是 dev 模式(慢 + 报错不友好) | ✅ 已修(早于本批 commit,见历史) | 改用 `pnpm build && pnpm start`                                        |
+| 3   | **JWT_SECRET 默认 `decisioncourt-secret`**          | [.env.example:21](file:///d:/源码/FullStack/DecisionCourt/.env.example#L21)                    | 🔴 任何部署者用户身份可伪造         | ✅ 已修 `b759d76` | 启动时校验,默认值为空则 panic                                          |
+| 4   | **NEXT_PUBLIC_API_URL 写死 localhost**              | [docker-compose.yml:85-86](file:///d:/源码/FullStack/DecisionCourt/docker-compose.yml#L85-L86) | 🟡 部署后前端找不到后端             | ✅ 已修(早于本批) | 改用 build arg 在 build 时注入(用户决定先 IP 直连,需用 IP 作为 API URL) |
+| 5   | **没有数据库 migration 步骤**                       | [docker-compose.yml](file:///d:/源码/FullStack/DecisionCourt/docker-compose.yml)               | 🔴 第一次跑会报表不存在             | ✅ 已修 `b759d76` + `1277522` | GORM AutoMigrate 启动时跑;**`1277522` 修了一个真实 bug**:AutoMigrate 漏 `User` / `AuditLog`,首次部署 anon auth SQLSTATE 42P01 静默失败 |
+| 6   | **postgres 默认密码 `decisioncourt:decisioncourt`** | [docker-compose.yml:8-9](file:///d:/源码/FullStack/DecisionCourt/docker-compose.yml#L8-L9)     | 🟡 上线后任何人能连库               | ✅ 已修(早于本批) | 强制从 `.env` 读,默认空则 fail,`POSTGRES_PASSWORD` 走 `${VAR:?...}`     |
+
+> ✅ 此外,v0.8.3 还修了原本没列在 CHECKLIST.md §4.1 的 **第 7 项 P0**(容器以 root 跑,见 §3.4):`5938bbf feat(security): P0-3 容器硬化`。
 
 ### 4.2 配置层(P1:环境与密钥)
 
-- [ ] **`.env` 红线**(per AGENTS.md §8):任何时候**不写入** .env 文件,启动时用 PowerShell/env 注入
-- [ ] **密钥管理**:LLM_API_KEY / BOCHA_API_KEY / JWT_SECRET 都走环境变量,**不**写进 git
-- [ ] **`.env.example` 同步更新**:每加一个新配置项,必须同时改 .env.example(已存在,需 review)
-- [ ] **数据库连接池**:生产环境调大 MaxOpenConns / MaxIdleConns(默认 10/5 太小)
+- [x] ✅ **`.env` 红线**(per AGENTS.md §8):任何时候**不写入** .env 文件,启动时用 PowerShell/env 注入(v0.8.3 起)
+- [x] ✅ **密钥管理**:LLM_API_KEY / BOCHA_API_KEY / JWT_SECRET 都走环境变量,**不**写进 git(`b759d76` 后用 `${VAR:?...}` 兜底)
+- [x] ✅ **`.env.example` 同步更新**:每加一个新配置项,必须同时改 .env.example(v0.8.3 SearXNG/DuckDuckGo 已清理,Bocha 字段已补)
+- [ ] ⏳ **数据库连接池**:生产环境调大 MaxOpenConns / MaxIdleConns(默认 10/5 太小)— **仍未修**,部署前手动设
 
 ### 4.3 运维层(P1:基础设施)
 
@@ -331,6 +353,52 @@ WebSocket 推回前端(streaming 推 token)
 - [ ] **每月**:升级 `go.mod` 依赖
 - [ ] **每季度**:轮换 JWT_SECRET
 - [ ] **异常登录**:检查 `/var/log/auth.log`
+
+### 6.5 v0.8.3 本地冒烟测试结果(2026-07-04)
+
+> **意义**: 这一步是"写完代码 + 静态审计 → 真实跑起来 → 暴露 bug"的循环产物。  
+> 比静态审计更珍贵,因为它揭示了真实部署级故障。
+
+#### 测试环境
+
+- Windows 11 Pro + Docker Desktop(WSL2 / Hyper-V)
+- Docker Compose v2.x + BuildKit 启用
+- 4 容器:`dc_backend` / `dc_frontend` / `dc_postgres` / `dc_redis`
+
+#### 暴露并修复的 4 个 P0/P1 真实部署 bug(`1277522`)
+
+| Bug | 文件 | 影响 | 修复方法 |
+|---|---|---|---|
+| **`db.AutoMigrate` 漏 `User{}` / `AuditLog{}`** | [`backend/internal/model/db.go`](file:///d:/源码/FullStack/DecisionCourt/backend/internal/model/db.go) | 首次部署任何 anon 鉴权 SQLSTATE 42P01,handler 静默吞错返回 code=0(monkey 用的 mock 测试看不见错) | 加 `&User{}` 和 `&AuditLog{}` 到迁移列表 |
+| **`# syntax=docker/dockerfile:1.6` 拉不到 `auth.docker.io:443`** | 2 个 `Dockerfile` | `--no-cache` 重 build 时 BuildKit 拉 frontend parser 镜像必卡(registry-1.docker.io 通但 auth.docker.io `162.125.2.6` 被 GFW 拦) | 删该 directive,BuildKit 内置 parser 走通 |
+| **`pnpm@latest` 11.x 与 `lockfileVersion: 9.0` 不兼容** | [`frontend/Dockerfile`](file:///d:/源码/FullStack/DecisionCourt/frontend/Dockerfile) | `ERR_UNKNOWN_BUILTIN_MODULE` 编译失败 | `corepack prepare pnpm@9.15.4 --activate` |
+| **frontend 缺 `public/` 目录** | [`frontend/Dockerfile`](file:///d:/源码/FullStack/DecisionCourt/frontend/Dockerfile) | runtime stage `COPY --from=builder /app/public` 失败 | builder `RUN mkdir -p /app/public` |
+
+#### 端到端验证通过
+
+```
+POST /api/v1/auth/anon                    → 200 + JWT + cookie
+POST /api/v1/courtrooms                   → 200 + session_uuid
+GET  /api/v1/courtrooms/{id}/messages     → 200 (空)
+GET  /api/v1/courtrooms/{id}/agents       → 200 (5 个 agent)
+GET  /api/v1/courtrooms/notexist/messages → 404 庭审不存在
+POST /api/v1/courtrooms/{id}/start        → 200 phase=opening (同步)
+```
+
+完整鉴权链 → DB 落库 → 资源 ownership → auto-generated agents → 启动 trial,全部跑通。
+
+#### 新增 Ops 工具
+
+**[`tools/envcheck.ps1`](file:///d:/源码/FullStack/DecisionCourt/tools/envcheck.ps1)** — 修改 `.env` 后必跑
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\envcheck.ps1
+```
+
+检查项:
+- 重复 key(如 `PORT` / `DATABASE_URL` / `REDIS_URL` 重复会让 docker compose 默认取第一个,导致 env 覆盖失效)
+- placeholder 残留(`your-key-here`、`change-me` 等)
+- 误配 docker 主机名(host 端 `localhost` 不可达 `postgres:5432`,必须用服务名 `postgres`)
 
 ---
 

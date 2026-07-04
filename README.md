@@ -31,7 +31,8 @@
    │        └──────┬─────────┘                    │
    │               ▼                              │
    │         ┌──────────┐                         │
-   │         │ 调查员   │  ← Bocha / SearXNG      │
+   │         │ 调查员   │  ← Bocha AI Search      │
+   │         │          │   (v0.8.3 SearXNG / DDG 已弃) │
    │         └─────┬────┘                         │
    │               ▼                              │
    │         ┌──────────┐                         │
@@ -55,7 +56,7 @@
 |---|---|
 | **控方** | 强力支持选项 A |
 | **辩方** | 强力反对 / 维护选项 B |
-| **调查员** | 主动检索外部信息（Bocha / SearXNG） |
+| **调查员** | 主动检索外部信息（**Bocha AI Search**,v0.8.3 起 SearXNG / DuckDuckGo 已弃用） |
 | **书记员** | 整理庭审 + 生成判决书 |
 | **法官** | **你自己** —— 实时插证据、做最终裁决 |
 
@@ -99,7 +100,7 @@ docker compose up -d
 # 访问
 # 前端:    http://localhost:3000
 # 后端:    http://localhost:8080/health
-# SearXNG: http://localhost:8081
+# (v0.8.3 起 SearXNG / DuckDuckGo 已弃用,统一调用 Bocha AI Search API)
 ```
 
 ### 方式二：本地开发
@@ -164,7 +165,8 @@ pnpm dev
                │
 ┌──────────────▼──────────────────────────────┐
 │  LLM Client · Search Providers · PostgreSQL │
-│  DeepSeek / Kimi · Bocha / SearXNG / Mock   │
+│  DeepSeek / Kimi · Bocha API / Mock         │
+│  (v0.8.3 SearXNG / DuckDuckGo 已弃)         │
 └─────────────────────────────────────────────┘
 ```
 
@@ -251,7 +253,7 @@ DecisionCourt/
 │   ├── store/                     # Zustand store
 │   └── types/
 │
-├── docker-compose.yml             # PG + Redis + SearXNG + 前后端
+├── docker-compose.yml             # PG + Redis + 前后端 (v0.8.3 起 SearXNG 已移除)
 ├── .env.example                   # 环境变量模板
 └── README.md                      # 本文件
 ```
@@ -269,8 +271,8 @@ DecisionCourt/
 | `LLM_BASE_URL` | 否 | DeepSeek 官方 | LLM API 基础地址 |
 | `LLM_MODEL_V3` | 否 | `deepseek-chat` | 常规轮次模型 |
 | `LLM_MODEL_R1` | 否 | `deepseek-reasoner` | 关键轮次推理模型 |
-| `SEARCH_PROVIDER` | 否 | `searxng` | `mock` / `searxng` / `bocha` / `tavily` (v0.8.3 起) |
-| `BOCHA_API_KEY` | 视 provider | - | Bocha 搜索 key（国内友好） |
+| `SEARCH_PROVIDER` | 否 | `bocha` | `mock` / `bocha` / `tavily(占位)` (v0.8.3 起,**SearXNG / DuckDuckGo 已弃用**) |
+| `BOCHA_API_KEY` | **生产必填** | - | Bocha AI Search 密钥,详见 [bochaai.com](https://bochaai.com/) |
 | `DATABASE_URL` | 是 | - | PostgreSQL 连接字符串 |
 | `REDIS_URL` | 否 | - | Redis 连接字符串（高可用时使用） |
 | `PORT` | 否 | `8080` | 后端端口 |
@@ -328,6 +330,61 @@ go test ./internal/... -v
 - `internal/agent_gateway`：63 项（Token Budget v2 / Smart Compression v2 / Gateway reject + 三策略压缩对比 baseline）
 
 端到端样本位于 `backend/test-output/`（每个集成测试场景对应一份 JSON 状态）。
+
+---
+
+## 🛡️ v0.8.3 安全状态（最近 1 周的修复）
+
+> **状态**:✅ **20 项 P0/P1/P2/P3 全部修完并 push**  
+> **审计报告**: [`docs/security-audit-v0.8.3.md`](./docs/security-audit-v0.8.3.md) · OWASP Top 10 (2021) 100% 覆盖
+
+| 类别 | 数量 | 代表性 commit | 修了什么 |
+|---|---|---|---|
+| **P0 Critical** | 6 | `b759d76` 后端鉴权链 · `5938bbf` 容器硬化 | anon JWT + cookie · httpOnly/SameSite · 非 root / read_only / cap_drop / no-new-privileges |
+| **P1 High** | 7 | `af53b22` · `4d3f371` | 前端 `crypto.randomUUID` · WS subprotocol token · IP / user 限流 · `===_BEGIN===` prompt injection 防御 · 5 处错误脱敏 · 安全头 |
+| **P2 Medium** | 5 | `2572b7e` | CORS 白名单 · Gin release mode · 前端 `crypto.randomUUID` · ESLint `no-eval/no-new-func` · LLM JSON 提取三层防御 + 64KB cap |
+| **P3 Low** | 2 | `6049cc5` + `c002cda` + `b15953f` | 弃用 SearXNG / DuckDuckGo · search query sanitize (max 200 rune + 过滤 ASCII 控制字符) |
+
+**10 个 commit 历史**:
+```
+1277522 chore(smoke): 本地冒烟发现并修复 4 个 P0/P1 隐患
+b15953f refactor(search): 弃用 DuckDuckGo
+c002cda feat(security): P3-2 search query sanitize
+6049cc5 refactor(search): 弃用 SearXNG,统一使用 Bocha API
+2572b7e feat(security): P2-1/2/3/4/5 加固
+4d3f371 feat(security): P1-2/3/6 限流 + prompt injection + 错误脱敏
+af53b22 feat(security): P1-1/5/7 前端 auth + WS token
+5938bbf feat(security): P0-3 容器硬化
+b759d76 feat(security): P0-1/2/4/5/6 后端鉴权链
+914ca79 docs(security): v0.8.3 OWASP Top 10 安全审计报告
+```
+
+### 本地冒烟测试发现并修复的 4 个 P0/P1 隐患
+
+`1277522` 这次 commit 修了 `docker compose up` 真实跑时暴露的 bug:
+
+| Bug | 位置 | 影响 | 修复 |
+|---|---|---|---|
+| `db.AutoMigrate` 漏 `User{}` / `AuditLog{}` | `backend/internal/model/db.go` | 首次部署后任何 anon 鉴权请求 SQLSTATE 42P01,handler 静默吞错返回 code=0 | 加两行 |
+| `# syntax=docker/dockerfile:1.6` 国内拉不到 `auth.docker.io:443` (162.125.2.6) | 2 个 `Dockerfile` | `--no-cache` 重 build 时必卡 | 删该 directive,BuildKit 内置 parser |
+| `pnpm@latest` 11.x 与 `lockfileVersion: 9.0` 不兼容 | `frontend/Dockerfile` | `ERR_UNKNOWN_BUILTIN_MODULE` | 锁 `pnpm@9.15.4` |
+| frontend 缺 `public/` 目录 | `frontend/Dockerfile` runtime stage | `COPY --from=builder /app/public` 失败 | builder stage `RUN mkdir -p /app/public` |
+
+### 本地冒烟验证通过
+
+```
+POST /api/v1/auth/anon                    → 200 + JWT + cookie
+POST /api/v1/courtrooms                   → 200 + session_uuid
+GET  /api/v1/courtrooms/{id}/messages     → 200 (空)
+GET  /api/v1/courtrooms/{id}/agents       → 200 (5 个 agent)
+GET  /api/v1/courtrooms/notexist/messages → 404 庭审不存在
+POST /api/v1/courtrooms/{id}/start        → 200 phase=opening (同步)
+```
+
+### 新增工具
+
+- **`tools/envcheck.ps1`** — 修改 `.env` 后必跑,提前发现重复 key / placeholder / 错的主机名  
+  `powershell -ExecutionPolicy Bypass -File tools\envcheck.ps1`
 
 ---
 
