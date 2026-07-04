@@ -1,5 +1,7 @@
-# syntax=docker/dockerfile:1.6
-# v0.8.3 安全(P0-3 + P1-7)：
+# BuildKit 内置 parser(无需 # syntax=docker/dockerfile:1.6,删了因为
+# 国内环境 auth.docker.io 不通拉不到 frontend parser 镜像)
+#
+# v0.8.3 安全(P0-3 + P1-7):
 #   1. 用 next start(prod)而非 pnpm dev(dev 会暴露 source maps + HMR)
 #   2. 加 USER 指令,容器以非 root 运行
 #   3. output: standalone 让镜像只含必需文件
@@ -9,17 +11,23 @@
 
 # ============= deps stage =============
 FROM node:20-alpine AS deps
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# pnpm-lock.yaml 是 lockfileVersion: 9.0,只支持 pnpm 9.x
+# corepack pnpm@latest 装到 11.x 会撞 ERR_UNKNOWN_BUILTIN_MODULE
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # ============= builder stage =============
 FROM node:20-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# v0.8.3 安全:Next.js 标准 public/ 目录(放 favicon 等静态资源)。
+# 即使这个项目目前没有静态资源,也 mkdir 保证 runtime stage 的
+# COPY --from=builder /app/public 能命中空目录而不会崩。
+RUN mkdir -p /app/public
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 RUN pnpm build

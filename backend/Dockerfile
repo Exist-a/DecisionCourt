@@ -1,5 +1,7 @@
-# syntax=docker/dockerfile:1.6
-# v0.8.3 安全(P0-3)：加 USER 指令,容器以非 root 运行。
+# BuildKit 内置 parser(无需 # syntax=docker/dockerfile:1.6,删了因为
+# 国内环境 auth.docker.io 不通拉不到 frontend parser 镜像)
+#
+# v0.8.3 安全(P0-3):加 USER 指令,容器以非 root 运行。
 #
 # 多阶段构建:
 #   builder  → 编译 Go binary(临时镜像)

@@ -301,6 +301,8 @@ func Connect() error {
 	DB = db
 
 	return db.AutoMigrate(
+		&User{}, // P0-1 鉴权:anon_auth upsert 必需,前几版遗漏导致首次启动后 /auth/anon 一调就 SQLSTATE 42P01
+		&AuditLog{}, // P0-1 鉴权:writeAudit 必需,否则 audit_log INSERT 也炸
 		&CourtSession{},
 		&Agent{},
 		&Evidence{},
