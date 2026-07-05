@@ -8,7 +8,9 @@ frontend/out/
 .env
 .env.local
 .env.*.local
+.env.production
 !.env.example
+!.env.example.production
 
 # Build outputs
 backend/bin/
@@ -50,6 +52,7 @@ backend/test-output/
 
 # Docker
 .dockerignore
+docker-compose.override.yml
 
 # Local secrets backups
 *.env.bak
