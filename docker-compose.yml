@@ -88,6 +88,17 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
       LLM_MODEL_V3: ${LLM_MODEL_V3:-deepseek-chat}
       LLM_MODEL_R1: ${LLM_MODEL_R1:-deepseek-reasoner}
+      # v0.9 (ADR 0013): LLM Gateway 三件套(默认关闭,线上开)
+      AGENT_GATEWAY_LLM_TIMEOUT_SEC: ${AGENT_GATEWAY_LLM_TIMEOUT_SEC:-90}
+      AGENT_GATEWAY_CACHE_ENABLED: ${AGENT_GATEWAY_CACHE_ENABLED:-false}
+      AGENT_GATEWAY_CACHE_TTL_SEC: ${AGENT_GATEWAY_CACHE_TTL_SEC:-300}
+      AGENT_GATEWAY_CACHE_MAX_ENTRIES: ${AGENT_GATEWAY_CACHE_MAX_ENTRIES:-10000}
+      AGENT_GATEWAY_BREAKER_ENABLED: ${AGENT_GATEWAY_BREAKER_ENABLED:-false}
+      AGENT_GATEWAY_BREAKER_FAILURE_RATIO: ${AGENT_GATEWAY_BREAKER_FAILURE_RATIO:-0.5}
+      AGENT_GATEWAY_BREAKER_MIN_REQUESTS: ${AGENT_GATEWAY_BREAKER_MIN_REQUESTS:-10}
+      AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC: ${AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC:-30}
+      # v0.9 (ADR 0014): 用户级 trial 限流(0 禁用)
+      USER_TRIAL_LIMIT: ${USER_TRIAL_LIMIT:-5}
       # v0.8.3 决定：默认 Bocha(必填 BOCHA_API_KEY)
       SEARCH_PROVIDER: ${SEARCH_PROVIDER:-bocha}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
@@ -120,6 +131,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # v0.9 修复:NEXT_PUBLIC_* 是 build-time 变量,必须通过 build args 注入到
+      # frontend Dockerfile 的 builder stage,否则编译时 inline 成空字符串。
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8080}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://backend:8080}
+        NEXT_PUBLIC_USE_MOCK: ${NEXT_PUBLIC_USE_MOCK:-false}
     container_name: dc_frontend
     user: "1001:1001"
     environment:

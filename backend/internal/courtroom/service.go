@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"math"
 	"strings"
+	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/decisioncourt/backend/internal/a2a"
@@ -69,6 +71,11 @@ type Service struct {
 	// 自动归集指标 + 落库到 decision_events。nil 时静默跳过（向后兼容）。
 	metrics observability.Metrics
 	recorder observability.EventRecorder
+
+	// v0.9 (ADR 0012 §决策 5): 启动恢复统计计数器。
+	recoveryAttemptedTotal atomic.Uint64
+	recoverySucceededTotal atomic.Uint64
+	recoveryFailedTotal    atomic.Uint64
 }
 
 // WithObservability 注入 metrics + event recorder。装配阶段（main.go）调用一次。
@@ -382,6 +389,13 @@ func (s *Service) SubmitEvidence(
 	source string,
 	submittedBy string,
 ) (model.Evidence, error) {
+	// v0.9 (ADR 0012 决策 1):同一 session 的并发 SubmitEvidence 必须串行化。
+	// 否则:并发请求 → 重复 belief_diff 写入 + 重复 evidence.added 广播 + 重复
+	// belief update。锁粒度按 session 切分,不影响其他 session。
+	lock := s.getSessionLock(sessionUUID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	var session model.CourtSession
 	if err := s.db.Where("session_uuid = ?", sessionUUID).First(&session).Error; err != nil {
 		return model.Evidence{}, err
@@ -449,37 +463,70 @@ func (s *Service) ProcessUserAction(
 		defer lock.Unlock()
 		return s.finishTrial(ctx, session)
 	case "continue_cross_exam":
+		// v0.9 (ADR 0012 决策 1):同 session 双击"下一轮"会导致 transitionPhase
+		// 竞争(round 自增 +1 两次)以及 runCrossExamRound 起 2 个 goroutine。
+		// 锁范围: 只锁 transitionPhase 之前的临界区(round 自增判断 + 写 DB)。
+		// 锁必须在调 runCrossExamRound 之前释放 —— runCrossExamRound 内部
+		// 会再获取同一把锁,如果外层未释放则死锁。
+		lock := s.getSessionLock(session.SessionUUID)
+		lock.Lock()
 		// User confirms to proceed to the next round.
 		nextRound := session.CurrentRound + 1
 		if nextRound > session.MaxRounds {
+			lock.Unlock()
 			return s.finishTrial(ctx, session)
 		}
 		if err := s.transitionPhase(&session, model.PhaseCrossExam, nextRound); err != nil {
+			lock.Unlock()
 			return err
 		}
+		lock.Unlock()
 		return s.runCrossExamRound(ctx, session)
 	case "start_cross_exam":
+		// v0.9 (ADR 0012 决策 1):与 continue_cross_exam 同理 —— transitionPhase
+		// 之前的临界区需要持锁,避免双击导致 round=1 被写入两次。
+		// 锁范围同样缩到 transitionPhase,runCrossExamRound 自己重新加锁。
+		lock := s.getSessionLock(session.SessionUUID)
+		lock.Lock()
 		// User confirms to start cross_exam after opening.
 		if err := s.transitionPhase(&session, model.PhaseCrossExam, 1); err != nil {
+			lock.Unlock()
 			return err
 		}
+		lock.Unlock()
 		return s.runCrossExamRound(ctx, session)
 	case "skip_agent":
 		// Skip proceeds to next round as well.
+		// v0.9 (ADR 0012 决策 1):skip_agent 与 continue_cross_exam 一样需要在
+		// transitionPhase 之前持锁(runCrossExamRound 内部也加锁,但 transitionPhase
+		// 之外的部分仍有 race)。
+		lock := s.getSessionLock(session.SessionUUID)
+		lock.Lock()
 		nextRound := session.CurrentRound + 1
 		if nextRound > session.MaxRounds {
+			lock.Unlock()
 			return s.finishTrial(ctx, session)
 		}
 		if err := s.transitionPhase(&session, model.PhaseCrossExam, nextRound); err != nil {
+			lock.Unlock()
 			return err
 		}
+		// 启动 goroutine 后立即释放锁 —— runCrossExamRound 自己会重新获取同一把锁
+		// (见 runCrossExamRound 顶部)。如果不开新 goroutine,直接 return s.runCrossExamRound
+		// 即可让 defer 在函数退出时解锁,但当前实现走 goroutine,所以必须手动解锁。
 		go func(sess model.CourtSession) {
 			if err := s.runCrossExamRound(context.Background(), sess); err != nil {
 				log.Printf("runCrossExamRound after skip failed: %v", err)
 			}
 		}(session)
+		lock.Unlock()
 		return nil
 	case "dispatch_investigator":
+		// v0.9 (ADR 0012 决策 1):同 session 并发 dispatch → 重复触发搜索 → 烧
+		// 调查员配额。锁粒度按 session,不影响其他 session 调查。
+		lock := s.getSessionLock(session.SessionUUID)
+		lock.Lock()
+		defer lock.Unlock()
 		dispatcher, _ := payload["dispatcher"].(string)
 		query, _ := payload["query"].(string)
 		_, _, err := s.DispatchInvestigator(ctx, session, dispatcher, query)
@@ -917,10 +964,39 @@ func findAgentByID(agents []model.Agent, agentID *uuid.UUID) *model.Agent {
 	return nil
 }
 
-func (s *Service) runCrossExamRound(ctx context.Context, session model.CourtSession) error {
+func (s *Service) runCrossExamRound(ctx context.Context, session model.CourtSession) (err error) {
 	lock := s.getSessionLock(session.SessionUUID)
 	lock.Lock()
 	defer lock.Unlock()
+
+	// v0.9 (ADR 0012 §决策 4): panic recovery 兜底。
+	// runCrossExamRound 内部多步 LLM 调用 + 状态更新,任一 panic 都会让
+	// trial 卡死(锁不解 + phase 不进 + 后续请求竞争同一把锁)。
+	// defer recover → 写 audit + broadcast trial.error → 返回 wrapped error。
+	//
+	// 关键:**不调 finishTrial**(它内部会再请求 sessionLock → 死锁)。
+	// phase 不变,用户看到 trial.error 后可手动 retry。
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("runCrossExamRound: panic recovered",
+				"session_uuid", session.SessionUUID,
+				"phase", session.CurrentPhase,
+				"round", session.CurrentRound,
+				"panic", fmt.Sprintf("%v", r),
+				"stack", string(debug.Stack()),
+			)
+			s.broadcastEvent(session.SessionUUID, Event{
+				Type: "trial.error",
+				Payload: map[string]interface{}{
+					"phase":      string(session.CurrentPhase),
+					"round":      session.CurrentRound,
+					"panic":      fmt.Sprintf("%v", r),
+					"recoverable": true,
+				},
+			})
+			err = fmt.Errorf("runCrossExamRound panicked (recovered): %v", r)
+		}
+	}()
 
 	// Run one round of cross-exam (prosecutor + defender speak)
 	roundCtx, cancel := s.withCancel(ctx, session.SessionUUID)

@@ -39,6 +39,30 @@ type GatewayConfig struct {
 	SummaryInsertThreshold int
 	// ScoreThreshold 低于该分不进入保留集。
 	ScoreThreshold float64
+
+	// === v0.9 LLM Gateway 工程化 (ADR 0013 §决策 1) ===
+	// LLMTimeoutSec 每次 LLM 调用的硬超时（秒）。
+	//   - 默认 90：阿里云 ECS → DeepSeek 跨网实测 P95 ≈ 25s + R1 余量
+	//   - 流式（StreamComplete）也受同一超时约束，整次流式生成不超过此值
+	//   - ≤ 0 → 视为关闭（不推荐；线上 LLM hang 会卡 trial 到天荒地老）
+	LLMTimeoutSec int
+
+	// === v0.9 LLM Gateway 工程化 (ADR 0013 §决策 2) ===
+	// CacheEnabled 启用 Response Cache（in-memory LRU + TTL）。
+	// CacheTTLSec cache entry 过期时间（秒）。≤ 0 → 默认 300。
+	// CacheMaxEntries LRU 上限 entry 数。≤ 0 → 默认 10000。
+	CacheEnabled    bool
+	CacheTTLSec     int
+	CacheMaxEntries int
+
+	// === v0.9 LLM Gateway 工程化 (ADR 0013 §决策 3) ===
+	// Breaker 配置 Circuit Breaker。详见 breaker.go + ADR 0013。
+	//   - Enabled 启用熔断(默认 false,跟其他子开关一样需要显式开)
+	//   - FailureRatio 失败率阈值 (0-1),默认 0.5
+	//   - MinRequests 触发评估的最小请求数,默认 10
+	//   - OpenTimeoutSec 熔断持续时长(秒),默认 30
+	//   - HalfOpenMaxRequests half-open 探测请求数,默认 1
+	Breaker BreakerConfig
 }
 
 // IsPromptCompressionEnabled 返回压缩是否生效。
@@ -136,6 +160,9 @@ func (c GatewayConfig) Normalize() GatewayConfig {
 	}
 	if out.ScoreThreshold <= 0 {
 		out.ScoreThreshold = 0.3
+	}
+	if out.LLMTimeoutSec <= 0 {
+		out.LLMTimeoutSec = 90
 	}
 	return out
 }

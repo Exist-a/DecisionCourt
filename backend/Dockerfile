@@ -8,10 +8,20 @@
 #   runtime  → alpine + binary + 非 root user
 #
 # 为什么不用 distroless:alpine 体积稍大但 apk add 灵活,适合加 ca-certificates / tzdata。
+#
+# 国内构建优化:GOPROXY=goproxy.cn + alpine 镜像源(避免 VPN 穿透到 Docker container)
+# 生产部署时(阿里云内网)也适用。
 FROM golang:1.26-alpine AS builder
 
+# 国内镜像源(可被 --build-arg 覆盖):goproxy.cn + tuna alpine
+ARG GOPROXY=https://goproxy.cn,direct
+ARG ALPINE_REPO=https://mirrors.tuna.tsinghua.edu.cn/alpine
+
+ENV GOPROXY=${GOPROXY}
+
 WORKDIR /app
-RUN apk add --no-cache git ca-certificates tzdata
+RUN sed -i "s|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g" /etc/apk/repositories && \
+    apk add --no-cache git ca-certificates tzdata
 
 COPY go.mod go.sum ./
 RUN go mod download

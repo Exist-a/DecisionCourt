@@ -31,12 +31,14 @@ export const api = {
           `/api/v1/courtrooms/${sessionUUID}`
         ),
 
-  startTrial: (sessionUUID: string) =>
+  startTrial: (sessionUUID: string, idempotencyKey?: string) =>
     useMock
       ? mockApi.startTrial(sessionUUID)
       : fetchJson<Record<string, never>, { code: number; data: { session_uuid: string; message: string } }>(
           `/api/v1/courtrooms/${sessionUUID}/start`,
-          {}
+          {},
+          undefined,
+          idempotencyKey
         ),
 
   getAgents: (sessionUUID: string) =>
@@ -197,7 +199,10 @@ export const api = {
 async function fetchJson<Req, Res>(
   path: string,
   body?: Req,
-  method?: string
+  method?: string,
+  // v0.9 (ADR 0012 §决策 2): Idempotency-Key header。非空时附加,
+  // 服务端 24h 内去重,防弱网重发导致的重复 trial。
+  idempotencyKey?: string
 ): Promise<Res> {
   // v0.8.3 安全(P0-1)：先确保 token 有效,失败则请求会 401。
   await ensureAuthToken();
@@ -209,6 +214,9 @@ async function fetchJson<Req, Res>(
   if (token) {
     // 同时带 cookie(同源自动) + Authorization 头(给非浏览器 client 用)
     headers["Authorization"] = `Bearer ${token}`;
+  }
+  if (idempotencyKey) {
+    headers["Idempotency-Key"] = idempotencyKey;
   }
   const res = await fetch(`${baseUrl}${path}`, {
     method: method || (body ? "POST" : "GET"),

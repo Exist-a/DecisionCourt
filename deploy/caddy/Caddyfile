@@ -1,0 +1,38 @@
+# Caddyfile — 反代 backend (8080) + frontend (3000)
+#
+# 用法:
+#   1. .env 里设 DOMAIN=yourdomain.com (必填,否则 Caddy 启动失败)
+#   2. docker compose up -d (caddy 自动申请 Let's Encrypt 证书)
+#   3. 公网访问 https://yourdomain.com → frontend;https://yourdomain.com/api/* → backend
+#
+# 设计决策:
+#   - 只暴露 80/443,backend/frontend 不直接对外
+#   - 自动 HTTPS(Caddy 内置 ACME 客户端)
+#   - WS 反代到 /ws/*(WebSocket 握手 + Upgrade header)
+#   - 后端 /health 反代到 /health(给外部监控用)
+#   - /api/* 反代到 backend(保留原始 Host 头给 JWT cookie 用)
+
+{$DOMAIN} {
+    encode zstd gzip
+
+    # WebSocket 端点 → backend (gin)
+    @websocket {
+        path /ws/*
+    }
+    reverse_proxy @websocket backend:8080
+
+    # /api/* 走 backend
+    @api {
+        path /api/*
+    }
+    reverse_proxy @api backend:8080
+
+    # /health + /metrics → backend (供外部监控)
+    @ops {
+        path /health /metrics
+    }
+    reverse_proxy @ops backend:8080
+
+    # 其他全部 → frontend (Next.js)
+    reverse_proxy frontend:3000
+}

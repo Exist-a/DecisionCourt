@@ -18,6 +18,8 @@ import (
 	"github.com/decisioncourt/backend/internal/belief"
 	"github.com/decisioncourt/backend/internal/config"
 	"github.com/decisioncourt/backend/internal/courtroom"
+	"github.com/decisioncourt/backend/internal/idempotency"
+	"github.com/decisioncourt/backend/internal/ratelimit"
 	"github.com/decisioncourt/backend/internal/evidence"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/middleware"
@@ -120,6 +122,23 @@ func main() {
 	handler := api.NewHandler(courtroomSvc, courtroomSvc.InvestigationService())
 	// v0.8 白盒化：Handler 暴露 metrics 实例，让 /metrics 端点能查询 snapshot。
 	handler.WithMetrics(metrics)
+
+	// v0.9 (ADR 0014): 每用户每天 N 次 StartTrial 限流(防弱网/脚本刷 trial 烧 LLM 配额)。
+	// 默认 5 次/24h,可通过 USER_TRIAL_LIMIT 环境变量调整;置 0 禁用。
+	if config.AppConfig.UserTrialLimit > 0 {
+		handler.TrialRateLimiter = ratelimit.NewMemoryRateLimiter(
+			config.AppConfig.UserTrialLimit,
+			24*time.Hour,
+		)
+		slog.Info("user trial rate limit enabled",
+			"limit_per_24h", config.AppConfig.UserTrialLimit)
+	}
+
+	// v0.9 (ADR 0012 §决策 2): 客户端发 Idempotency-Key header,服务端 24h 去重。
+	// 防止弱网/网络重传导致的重复 trial(start_trial 重复创建 session)。
+	handler.Idempotency = idempotency.NewIdempotency(24 * time.Hour)
+	slog.Info("idempotency enabled", "ttl", "24h")
+
 	wsServer := api.NewWebSocketServer(hub, courtroomSvc)
 
 	r := gin.New()
@@ -142,7 +161,7 @@ func main() {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID", "Idempotency-Key"},
 		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: true,
 	}))
@@ -178,6 +197,18 @@ func main() {
 		"version", "v0.8.0",
 		"whitebox", "enabled",
 	)
+	// v0.9 (ADR 0012 §决策 5): 启动恢复 active session 工作流。
+	// 阿里云 OOM / 运维重启 / 镜像升级 → 进程挂掉 → 当前 active 的 trial
+	// 卡在 opening/cross_exam/closing → 用户刷新看不到 agent 说话。启动时
+	// 自动扫描并恢复,限并发 ≤5 防 startup hang。同步执行,完成后启动 HTTP。
+	go func() {
+		recoveryCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if err := courtroomSvc.RecoverActiveSessions(recoveryCtx, 5); err != nil {
+			slog.Error("recovery: failed", "error", err)
+		}
+	}()
+
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCourtroomStore, applyCourtEvent } from "@/store/courtroomStore";
 import { api } from "@/lib/api";
@@ -86,6 +86,9 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   const [inputValue, setInputValue] = useState("");
   const [answer, setAnswer] = useState("");
   const [startingTrial, setStartingTrial] = useState(false);
+  // v0.9 (ADR 0012 §决策 2): 持有"本 trial start 操作"的 Idempotency-Key。
+  // 失败保留 → 用户点 retry 用同一 key → 后端命中缓存 → 不重复创建 trial。
+  const startTrialIdempKeyRef = useRef<string | null>(null);
   const [verdictReady, setVerdictReady] = useState(false);
   const [waitingForNextRound, setWaitingForNextRound] = useState(false);
   const [nextRound, setNextRound] = useState(2);
@@ -410,16 +413,28 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
                 size="sm"
                 disabled={startingTrial}
                 onClick={async () => {
+                  // v0.9 (ADR 0012 §决策 2): 用 ref 持有"本 trial start 操作"
+                  // 的 Idempotency-Key。失败保留(用户点 retry 用同 key),
+                  // 成功清掉(下次启动 trial 用新 key)。防弱网重发。
+                  if (!startTrialIdempKeyRef.current) {
+                    startTrialIdempKeyRef.current = crypto.randomUUID();
+                  }
+                  const idempKey = startTrialIdempKeyRef.current;
+
                   setStartingTrial(true);
                   try {
-                    const res = await api.startTrial(sessionId);
+                    const res = await api.startTrial(sessionId, idempKey);
                     if (res.code === 0) {
+                      startTrialIdempKeyRef.current = null; // 成功清掉
                       const updated = await api.getSession(sessionId);
                       if (updated.code === 0) setSession(updated.data);
+                    } else {
+                      alert("启动庭审失败：" + (res as unknown as { message?: string }).message);
                     }
                   } catch (err) {
                     console.error("[Courtroom] failed to start trial:", err);
                     alert("启动庭审失败，请检查网络或后端日志");
+                    // 保留 idempKey,用户点 retry 用同 key
                   } finally {
                     setStartingTrial(false);
                   }

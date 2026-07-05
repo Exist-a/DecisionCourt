@@ -281,8 +281,15 @@ func withArgumentSummaryText(messages []model.Message, selfType, opponentType mo
 		return ""
 	}
 	var selfLatest, opponentLatest *model.Message
+	var userInterrupt *model.Message // v0.9.1 (ADR 0015):用户最近一次补充输入(本轮优先看到)
 	for i := len(messages) - 1; i >= 0; i-- {
 		m := messages[i]
+		// v0.9.1 (ADR 0015):用户最近 user_interrupt 也算本轮上下文,要让 LLM 看到。
+		// 取最近一次 user_interrupt(而不是只取本 round),因为用户中断可能在任何 phase。
+		if m.ActionType == "user_interrupt" && userInterrupt == nil {
+			userInterrupt = &messages[i]
+			continue
+		}
 		if m.ActionType != "speak" {
 			continue
 		}
@@ -297,6 +304,11 @@ func withArgumentSummaryText(messages []model.Message, selfType, opponentType mo
 	}
 	var sb strings.Builder
 	sb.WriteString("\n## 本轮对话摘要（你必须基于这些信息回应，禁止重复）\n")
+	// v0.9.1 (ADR 0015):用户最近补充输入放在最显眼位置,LLM 必须优先看到。
+	if userInterrupt != nil {
+		sb.WriteString(fmt.Sprintf("【用户最新补充】%s\n注意：用户正在主动补充事实/约束，请直接引用此补充作为论证依据。不要把它当作对方的论点。\n",
+			truncate(userInterrupt.Content, 200)))
+	}
 	if opponentLatest != nil {
 		sb.WriteString(fmt.Sprintf("对方刚刚说：%s\n", truncate(opponentLatest.Content, 150)))
 	}

@@ -15,7 +15,9 @@ import (
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/observability"
+		"github.com/decisioncourt/backend/internal/observability"
+	"github.com/decisioncourt/backend/internal/ratelimit"
+	"github.com/decisioncourt/backend/internal/idempotency"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -46,6 +48,13 @@ type Handler struct {
 	// 如果不为 nil,挂到 /evidences /actions(更严的限流,防烧 LLM 配额)。
 	// 注入方式:handler.LLMRateLimit = middleware.RateLimit(middleware.LLMConfig)
 	LLMRateLimit gin.HandlerFunc
+
+	// v0.9 用户限流 (ADR 0014):每用户每天 N 次 StartTrial。nil 时不限流。
+	// 注入方式:handler.TrialRateLimiter = ratelimit.NewMemoryRateLimiter(cfg.UserTrialLimit, 24*time.Hour)
+	TrialRateLimiter ratelimit.RateLimiter
+
+	// v0.9 (ADR 0012 §决策 2):客户端 Idempotency-Key header,服务端 24h 去重。
+	Idempotency *idempotency.Idempotency
 }
 
 func NewHandler(service *courtroom.Service, investigationService *investigation.Service) *Handler {
@@ -272,6 +281,41 @@ func (h *Handler) GetCourtroom(c *gin.Context) {
 
 func (h *Handler) StartTrial(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
+
+	// v0.9 (ADR 0012 §决策 2): Idempotency-Key 去重。
+	if h.Idempotency != nil {
+		key := c.GetHeader("Idempotency-Key")
+		if key != "" && len(key) <= idempotency.MaxKeyLen {
+			if cached, ok := h.Idempotency.Get(key); ok {
+				h.writeAudit(c, "session.start", sessionUUID, "idempotency_hit", "key="+key)
+				c.Data(int(cached.StatusCode), "application/json", cached.Body)
+				return
+			}
+		}
+	}
+
+	// v0.9 (ADR 0014):每用户每天 N 次 StartTrial 限流。nil 时跳过。
+	// 必须在 owner check 之前 —— 防止"先验证后限流"导致攻击者枚举 session。
+	if h.TrialRateLimiter != nil {
+		userID := auth.ViewerFromContext(c)
+		if userID != "" {
+			allowed, retryAfter, _ := h.TrialRateLimiter.Allow(c.Request.Context(), userID)
+			if !allowed {
+				h.writeAudit(c, "session.start", sessionUUID, "rate_limited",
+					fmt.Sprintf("retry_after=%v", retryAfter))
+				c.Header("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+				now := time.Now().UTC()
+				resetsAt := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":               "rate_limit_exceeded",
+					"message":             "已达今日 trial 配额上限。请等待重试。",
+					"retry_after_seconds": int(retryAfter.Seconds()),
+					"resets_at":           resetsAt.Format(time.RFC3339),
+				})
+				return
+			}
+		}
+	}
 
 	if _, ok := h.checkSessionAccess(c, sessionUUID); !ok {
 		h.writeAudit(c, "session.start", sessionUUID, "denied", "owner check failed")

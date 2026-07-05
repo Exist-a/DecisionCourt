@@ -28,6 +28,8 @@ func baseRules(toolsBlock string) string {
 10. 不要重复你自己之前已经说过的内容。如果你发现自己在重复之前的话，必须换一个角度论证。
 11. **多轮思考优先**：本发言循环最多 4 步。如果一次推理没有把握，可以先输出 action="reflect" 继续推演；当你确定论点后，再输出 action="speak" 定稿。在没有把握时直接 speak 通常效果较差。
 12. **策略笔记（v0.5 可选）**：当你 action="reflect" 时，如果这一轮有值得留给自己未来参考的洞察（下一轮计划、对方逻辑漏洞、自身论证修正、或对某条证据的内部评估），可以同时填 memory_type + memory_note —— 系统会把这条笔记存入你的私有记忆池，下一轮 prompt 会自动把它放在你眼前。两个字段都必填（memory_type 必须是 4 个合法值之一）；没有洞察时这两个字段可省略。
+13. **v0.9.1 严禁编造证据细节（ADR 0015）**：你可以引用 evidence 内容里**实际出现**的日期、数据、编号、姓名等细节，但严禁自己补充不存在的细节（如"2023年3月15日医嘱""案号(2022)京01民终1234号""主治医师姓名"）。如果 evidence 内容简短，应直接陈述"用户主张：XXX，具体细节用户未提供"或"该证据不包含足够细节"，绝不允许用 LLM 的"常识"脑补具体日期/案例号/统计数字来让论证"看起来更实"。
+14. **v0.9.1 严禁虚构对方论点（ADR 0015）**：对方最新发言就是真实的对方论点，绝不允许"预判"对方下一步会说什么或"反向论证"（"如果对方会反驳 XX 那我先反驳 XX"）。如果对方尚未发言，标 stance="neutral" 并说"等待对方陈述"，不要假装对方已经说过什么。
 
 ` + toolsBlock + `
 
@@ -316,14 +318,30 @@ func buildContext(session model.CourtSession, evidences []model.Evidence) string
 	}
 	if len(evidences) > 0 {
 		b.WriteString("## 当前证据\n")
+		b.WriteString("注意：以下证据 source=user 是用户提交的真实输入；source=investigator 是调查员搜索结果；source=system 是系统注入。可信度 0.0-1.0（用户提交默认 0.85，搜索结果按搜索质量评分）。\n")
 		for _, e := range evidences {
-			b.WriteString(fmt.Sprintf("- %s [%s]: %s (A影响%.1f, B影响%.1f)\n",
-				e.EvidenceID, e.Type, truncate(e.Content, 100), e.ImpactOnOptionA, e.ImpactOnOptionB))
+			b.WriteString(fmt.Sprintf("- %s [source=%s submitted_by=%s credibility=%.2f type=%s]: %s (A影响%.1f, B影响%.1f)\n",
+				e.EvidenceID, sourceLabel(e.Source), e.SubmittedBy, e.CredibilityScore, e.Type,
+				truncate(e.Content, 200), e.ImpactOnOptionA, e.ImpactOnOptionB))
 		}
 	} else {
 		b.WriteString("## 当前证据\n当前尚无证据。你必须基于背景信息和对方观点进行分析，evidence_refs 必须为空数组 []。\n")
 	}
 	return b.String()
+}
+
+// sourceLabel 把 source 枚举映射成中文标签,便于 LLM 一眼区分证据来源。
+func sourceLabel(source string) string {
+	switch source {
+	case "user":
+		return "用户陈述"
+	case "investigator":
+		return "搜索结果"
+	case "system":
+		return "系统注入"
+	default:
+		return source
+	}
 }
 
 func truncate(s string, max int) string {

@@ -24,6 +24,17 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# v0.9 修复:NEXT_PUBLIC_* 是 build-time 变量,必须在 builder stage 通过 ARG 注入,
+# 否则运行时浏览器 baseUrl="" → 所有 API 请求走 frontend 自身:3000 → 404。
+# docker-compose.yml 通过 build.args 传递这些值。
+ARG NEXT_PUBLIC_API_URL=http://backend:8080
+ARG NEXT_PUBLIC_WS_URL=ws://backend:8080
+ARG NEXT_PUBLIC_USE_MOCK=false
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_USE_MOCK=$NEXT_PUBLIC_USE_MOCK
+
 # v0.8.3 安全:Next.js 标准 public/ 目录(放 favicon 等静态资源)。
 # 即使这个项目目前没有静态资源,也 mkdir 保证 runtime stage 的
 # COPY --from=builder /app/public 能命中空目录而不会崩。

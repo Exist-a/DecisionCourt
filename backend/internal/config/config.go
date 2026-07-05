@@ -29,6 +29,27 @@ type AgentGatewayConfig struct {
 	KeepRecentForcedN       int     `mapstructure:"AGENT_GATEWAY_KEEP_RECENT_FORCED_N"`
 	SummaryInsertThreshold  int     `mapstructure:"AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD"`
 	ScoreThreshold          float64 `mapstructure:"AGENT_GATEWAY_SCORE_THRESHOLD"`
+
+	// === v0.9 LLM Gateway 工程化 (ADR 0013 §决策 1) ===
+	// LLMTimeoutSec: 每次 LLM 调用的硬超时（秒）。默认 90 —— 阿里云 ECS
+	// → DeepSeek 跨网调用 P95 ≈ 25s + R1 推理模型余量。本地开发可调小到 30。
+	LLMTimeoutSec           int     `mapstructure:"AGENT_GATEWAY_LLM_TIMEOUT_SEC"`
+
+	// === v0.9 LLM Gateway 工程化 (ADR 0013 §决策 2) ===
+	// CacheEnabled: 启用 LLM Response Cache（sync.Map + LRU + TTL）。
+	// CacheTTLSec: 缓存 entry 过期时间（秒），0 → 300（5min）。
+	// CacheMaxEntries: LRU 上限 entry 数,0 → 10000（约 2GB 内存）。
+	CacheEnabled            bool    `mapstructure:"AGENT_GATEWAY_CACHE_ENABLED"`
+	CacheTTLSec             int     `mapstructure:"AGENT_GATEWAY_CACHE_TTL_SEC"`
+	CacheMaxEntries         int     `mapstructure:"AGENT_GATEWAY_CACHE_MAX_ENTRIES"`
+
+	// === v0.9 LLM Gateway 工程化 (ADR 0013 §决策 3) ===
+	// Circuit Breaker 配置。详见 ADR 0013 + breaker.go。
+	BreakerEnabled             bool    `mapstructure:"AGENT_GATEWAY_BREAKER_ENABLED"`
+	BreakerFailureRatio        float64 `mapstructure:"AGENT_GATEWAY_BREAKER_FAILURE_RATIO"`
+	BreakerMinRequests         int     `mapstructure:"AGENT_GATEWAY_BREAKER_MIN_REQUESTS"`
+	BreakerOpenTimeoutSec      int     `mapstructure:"AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC"`
+	BreakerHalfOpenMaxRequests int     `mapstructure:"AGENT_GATEWAY_BREAKER_HALF_OPEN_MAX_REQUESTS"`
 }
 
 type Config struct {
@@ -55,6 +76,12 @@ type Config struct {
 	CookieSameSite  string        `mapstructure:"COOKIE_SAME_SITE"`
 	CookieDomain    string        `mapstructure:"COOKIE_DOMAIN"`
 	AllowedOrigins  []string      `mapstructure:"ALLOWED_ORIGINS"`
+
+	// === v0.9 用户限流 (ADR 0014) ===
+	// UserTrialLimit 每用户每天（UTC）最多 StartTrial 次数。
+	//   - 默认 5（测试阶段保守值;生产可调到 20）
+	//   - 0 → 禁用限流（紧急回滚用）
+	UserTrialLimit int `mapstructure:"USER_TRIAL_LIMIT"`
 
 	AgentGateway AgentGatewayConfig `mapstructure:",squash"`
 }
@@ -110,6 +137,20 @@ func Load() {
 	viper.SetDefault("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3)
 	viper.SetDefault("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 5)
 	viper.SetDefault("AGENT_GATEWAY_SCORE_THRESHOLD", 0.3)
+
+	// v0.9 LLM Gateway 工程化 (ADR 0013)
+	viper.SetDefault("AGENT_GATEWAY_LLM_TIMEOUT_SEC", 90)
+	viper.SetDefault("AGENT_GATEWAY_CACHE_ENABLED", false)
+	viper.SetDefault("AGENT_GATEWAY_CACHE_TTL_SEC", 300)
+	viper.SetDefault("AGENT_GATEWAY_CACHE_MAX_ENTRIES", 10000)
+	viper.SetDefault("AGENT_GATEWAY_BREAKER_ENABLED", false)
+	viper.SetDefault("AGENT_GATEWAY_BREAKER_FAILURE_RATIO", 0.5)
+	viper.SetDefault("AGENT_GATEWAY_BREAKER_MIN_REQUESTS", 10)
+	viper.SetDefault("AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC", 30)
+	viper.SetDefault("AGENT_GATEWAY_BREAKER_HALF_OPEN_MAX_REQUESTS", 1)
+
+	// v0.9 用户级 Trial 限流 (ADR 0014):默认 5 次/24h,0 禁用。
+	viper.SetDefault("USER_TRIAL_LIMIT", 5)
 
 	viper.SetEnvPrefix("")
 	viper.AutomaticEnv()
