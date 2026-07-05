@@ -3,8 +3,8 @@
 > **版本**：v0.8
 > **状态**：v0.5 增补 Episodic Memory via A2A 私有通道 + ContextView 投影层；v0.6 增补 v0.6 信念引擎 + Agent Gateway v2（Smart Compression + Token Budget Reject + 多维 + sliding window + OnWarning）；v0.7 整合文档结构 + ADR 提炼；**v0.8 新增白盒化（Observability）三支柱：slog 结构化日志 / Prometheus-兼容业务指标 / OpenTelemetry-兼容 Span + decision_events 业务事件审计 + 端到端 trace_id 串联**。
 > **目标**：为决策庭 MVP 提供清晰、可落地的技术栈选择与架构设计。
-> **架构决策**：[`docs/adr/0001-mvp-tech-stack.md`](./adr/0001-mvp-tech-stack.md)、[`docs/adr/0006-smart-prompt-compression.md`](./adr/0006-smart-prompt-compression.md)、[`docs/adr/0007-token-budget-rejection.md`](./adr/0007-token-budget-rejection.md)、[`docs/adr/0010-whitebox-observability.md`](./adr/0010-whitebox-observability.md)
-> **2026-07-02 整理时同步 + 2026-07-02 v0.8 白盒化升级同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
+> **架构决策**：[`docs/adr/0001-mvp-tech-stack.md`](./adr/0001-mvp-tech-stack.md)、[`docs/adr/0006-smart-prompt-compression.md`](./adr/0006-smart-prompt-compression.md)、[`docs/adr/0007-token-budget-rejection.md`](./adr/0007-token-budget-rejection.md)、[`docs/adr/0010-whitebox-observability.md`](./adr/0010-whitebox-observability.md)、[`docs/adr/0012-ha-and-concurrency.md`](./adr/0012-ha-and-concurrency.md)、[`docs/adr/0013-llm-gateway-engineering.md`](./adr/0013-llm-gateway-engineering.md)、[`docs/adr/0014-user-rate-limit.md`](./adr/0014-user-rate-limit.md)、[`docs/adr/0015-evidence-fidelity-no-hallucination.md`](./adr/0015-evidence-fidelity-no-hallucination.md)
+> **2026-07-05 整合时同步 + 2026-07-02 v0.8 白盒化升级同步 + 2026-07-04 v0.9 4 份新 ADR**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
 
 ---
 
@@ -73,7 +73,7 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**说明**：Agent Gateway 位于 Agent Orchestration 与 LLM Provider 之间。v0.5+ 已实装白盒子集（统一接入、审计、trace 关联）与高级能力（Prompt 压缩、Token 预算、限流、Fallback 退避重试、JSON 文件日志），均可通过环境变量开关。模型路由与响应缓存仍留到第二阶段。
+**说明**：Agent Gateway 位于 Agent Orchestration 与 LLM Provider 之间。v0.5+ 已实装白盒子集（统一接入、审计、trace 关联）与高级能力（Prompt 压缩、Token 预算、限流、Fallback 退避重试、JSON 文件日志），均可通过环境变量开关。v0.9 新增 3 个 LLM 工程化能力（per-call Timeout + Response Cache + Circuit Breaker），决策见 [ADR 0013](./adr/0013-llm-gateway-engineering.md)；模型路由与跨 provider fallback 仍留到第二阶段。
 
 ---
 

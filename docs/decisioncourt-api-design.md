@@ -1,11 +1,11 @@
 # 决策庭（DecisionCourt）API 接口设计文档
 
-> **版本**：v0.8.3
-> **状态**：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点；v0.6 增补 `GET /api/v1/courtrooms/:uuid/belief-diffs` + WS `belief.diff` / `belief.convergence` 事件；v0.7 整合文档结构 + ADR 提炼；v0.8 新增 `GET /metrics` 端点（白盒化）+ HTTP `X-Request-ID` 头 / `trace_id` 字段（端到端 trace 串联）；**v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭"——新增 `GET /api/v1/courtrooms/:uuid/memory` 端点 / `reopen_trial` action / `verdict → evidence` 状态机边 / WS `ping/pong` 心跳 / WebSocket 自动重连退避**。
+> **版本**：v0.9.1
+> **状态**：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点；v0.6 增补 `GET /api/v1/courtrooms/:uuid/belief-diffs` + WS `belief.diff` / `belief.convergence` 事件；v0.7 整合文档结构 + ADR 提炼；v0.8 新增 `GET /metrics` 端点（白盒化）+ HTTP `X-Request-ID` 头 / `trace_id` 字段（端到端 trace 串联）；v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭"——新增 `GET /api/v1/courtrooms/:uuid/memory` 端点 / `reopen_trial` action / `verdict → evidence` 状态机边 / WS `ping/pong` 心跳 / WebSocket 自动重连退避（详情见 [`archive/refresh-and-reopen-fix-v0.8.3.md`](./archive/refresh-and-reopen-fix-v0.8.3.md)）；**v0.9 新增 Idempotency-Key header 端到端支持（ADR 0012 PR2）+ per-call LLM timeout 90s（ADR 0013）+ 启动扫描恢复 active session（ADR 0012 PR5）+ 用户级 429 Trial 限流（ADR 0014）**。
 > **目标**：定义决策庭前后端交互的 RESTful API 和 WebSocket 事件协议。
 > **设计演进（已归档）**：[`docs/archive/memory-a2a-redesign-v1.2.md`](./archive/memory-a2a-redesign-v1.2.md)
-> **实施记录**：[`.trae/documents/refresh-and-reopen-fix.md`](./refresh-and-reopen-fix.md)（v0.8.3 5 个根因 + 修复方案 + 测试矩阵）
-> **2026-07-02 整理时同步 + 2026-07-02 v0.8 白盒化升级同步 + 2026-07-03 v0.8.3 体验修复同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
+> **实施记录**：[`archive/refresh-and-reopen-fix-v0.8.3.md`](./archive/refresh-and-reopen-fix-v0.8.3.md)（v0.8.3 5 个根因 + 修复方案 + 测试矩阵）
+> **2026-07-05 整理时同步 + 2026-07-02 v0.8 白盒化升级同步 + 2026-07-03 v0.8.3 体验修复同步 + 2026-07-04 v0.9 4 份新 ADR**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
 
 ## 1. 设计原则
 

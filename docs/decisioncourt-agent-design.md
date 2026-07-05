@@ -1,10 +1,10 @@
 # 决策庭（DecisionCourt）Agent 状态机与 Prompt 设计文档
 
-> **版本**：v0.7
-> **状态**：v0.5 增补 Episodic Memory via A2A 私有通道 + ContextView 投影（4 个新 MessageType）；v0.6 信念引擎升级（贝叶斯 log-odds + 锚定）+ 智能收敛 4 信号优先级；v0.7 整合文档结构 + ADR 提炼。
+> **版本**：v0.9.1
+> **状态**：v0.5 增补 Episodic Memory via A2A 私有通道 + ContextView 投影（4 个新 MessageType）；v0.6 信念引擎升级（贝叶斯 log-odds + 锚定）+ 智能收敛 4 信号优先级；v0.7 整合文档结构 + ADR 提炼；v0.8 白盒化；**v0.9.1 新增防幻觉 3 修复（ADR 0015）：baseRules 严禁编造证据细节 + buildContext source/submitted_by/credibility 标签 + withArgumentSummaryText 抓 user_interrupt**。
 > **目标**：定义决策庭中多 Agent 的协作流程、状态转换、Prompt 工程，以及 Agent 间通信协议。
-> **架构决策**：[`docs/adr/0002-a2a-private-channel.md`](./adr/0002-a2a-private-channel.md)、[`docs/adr/0003-contextview-projection.md`](./adr/0003-contextview-projection.md)、[`docs/adr/0004-bayesian-belief-engine.md`](./adr/0004-bayesian-belief-engine.md)
-> **2026-07-02 整理时同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
+> **架构决策**：[`docs/adr/0002-a2a-private-channel.md`](./adr/0002-a2a-private-channel.md)、[`docs/adr/0003-contextview-projection.md`](./adr/0003-contextview-projection.md)、[`docs/adr/0004-bayesian-belief-engine.md`](./adr/0004-bayesian-belief-engine.md)、[`docs/adr/0015-evidence-fidelity-no-hallucination.md`](./adr/0015-evidence-fidelity-no-hallucination.md)
+> **2026-07-05 整合时同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md`](./README.md)）。
 
 ---
 

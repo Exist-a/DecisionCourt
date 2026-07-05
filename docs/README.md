@@ -4,7 +4,7 @@
 >
 > **外部 GitHub 访客请看仓库根目录的 [`README.md`](../README.md)。**
 >
-> 最后整理：2026-07-02
+> 最后整理：2026-07-05（v0.9.1 部署就绪整合 + ADR 0015 防幻觉文档化）
 
 ---
 
@@ -58,7 +58,7 @@
 | [0008](./adr/0008-cross-exam-user-trigger.md) | 质证轮次控制（用户点击触发每轮） | `internal/courtroom/service.go` |
 | [0009](./adr/0009-courtroom-vis-simplify.md) | 庭审页面可视化简化 | `frontend/components/courtroom/ArgumentMap.tsx` |
 | [0010](./adr/0010-whitebox-observability.md) | v0.8 后端白盒化（slog + Prometheus + OTel-Span + decision_events） | ✅ | `internal/observability/` |
-| [0011](./adr/0011-a2a-external-protocol.md) | v0.8.2 Google A2A 协议外部接入层（3 个端点 + 13 项测试） | ✅ | `internal/a2a/external/` |
+| [0011](./adr/0011-llm-probability-hard-clamp.md) | v0.8.4 LLM 输出概率值后端硬编码 Clamp（DeepSeek 抽风修复） | ✅ | `internal/agent/probability.go` |
 
 ### 5.5 v0.8+ 持续可观测性完善计划
 
@@ -86,6 +86,7 @@
 - `archive/gateway-necessity-evaluation.md` — Agent Gateway 必要性评判（已落地）
 - `archive/庭审可视化简化计划.md` — 庭审页观点地图 + 立场曲线 简化方案
 - `archive/质证阶段轮次控制修改计划.md` — 质证阶段每轮用户触发的详细修改计划
+- `archive/refresh-and-reopen-fix-v0.8.3.md` — v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭" 5 个根因 + 修复方案 + 测试矩阵
 
 ---
 
@@ -119,6 +120,15 @@
 | **白盒化 — Trace / Metrics / Recovery Gin middleware** | ✅ (v0.8) | `internal/observability/middleware.go` |
 | **白盒化 — 端到端 trace_id 串联（HTTP → ctx → A2A → LLM）** | ✅ (v0.8) | `TraceMiddleware` + `websocket.go` 改造 + `X-Request-ID` header |
 | **白盒化 — `GET /metrics` 端点** | ✅ (v0.8) | `internal/api/handler.go` `MetricsHandler` |
+| **v0.9 单机部署 — session 互斥补锁**（ADR 0012 PR1） | ✅ (v0.9) | `internal/courtroom/service.go` `sessionLocks` |
+| **v0.9 单机部署 — Idempotency-Key 客户端 + 后端**（ADR 0012 PR2） | ✅ (v0.9) | `internal/idempotency/`（新）+ `frontend/lib/api.ts` |
+| **v0.9 单机部署 — `runCrossExamRound` panic 兜底**（ADR 0012 PR4） | ✅ (v0.9) | `internal/courtroom/service.go` defer recover |
+| **v0.9 单机部署 — 启动扫描恢复 active session**（ADR 0012 PR5） | ✅ (v0.9) | `internal/courtroom/recovery.go`（新） |
+| **v0.9 LLM Gateway — per-call Timeout 90s**（ADR 0013） | ✅ (v0.9) | `internal/agent_gateway/gateway.go` |
+| **v0.9 LLM Gateway — Response Cache（sync.Map + LRU + TTL）**（ADR 0013） | ✅ (v0.9) | `internal/agent_gateway/cache.go` |
+| **v0.9 LLM Gateway — Circuit Breaker（sony/gobreaker）**（ADR 0013） | ✅ (v0.9) | `internal/agent_gateway/breaker.go` |
+| **v0.9 用户级 Trial 限流**（ADR 0014） | ✅ (v0.9) | `internal/ratelimit/`（新）+ `handler.TrialRateLimiter` |
+| **v0.9.1 证据真实性与 LLM 幻觉防御**（ADR 0015） | ✅ (v0.9.1) | `internal/agent/prompts.go` + `orchestrator.go` |
 
 ### 5.2 前端核心
 
@@ -133,21 +143,21 @@
 | 观点地图 ArgumentMap（精简版） | ✅ | `frontend/components/courtroom/ArgumentMap.tsx` |
 | 判决书页 + trial_summary + JSON/PDF 导出 | ✅ | `frontend/app/verdict/[id]/page.tsx` |
 
-### 5.3 第二阶段 / v0.9+ 计划（不在 MVP）
+### 5.3 第二阶段 / v0.10+ 计划（不在 v0.9 范围）
 
 | 项 | 状态 | 备注 |
 |---|---|---|
 | Agent Gateway 模型路由 | ⏳ | 当前手工选 V3/R1 |
-| Agent Gateway 响应缓存 | ⏳ | 庭审唯一性场景，价值低 |
 | Agent Gateway 多实例 Token Budget 持久化 | ⏳ | 现仅内存 |
 | 强制立场一致性检查（LLM-as-judge 打回重生成） | ⏳ | 现靠 Prompt 自约束 |
 | 新意度检查（Jaccard 相似度 > 60% 强制换角度） | ⏳ | 现靠 Prompt 自约束 |
 | 发言长度硬截断（300 字 + 重试） | ⏳ | 现靠 Prompt 自约束 |
 | "已反驳证据"集合跟踪 | ⏳ | 未实装状态机 |
-| Redis 分布式 WebSocket 广播 | ⏳ | 现单节点 Hub |
-| 后端高可用 + 水平扩展 | ⏳ | **下一步讨论 → ADR 0011+** |
+| Redis 分布式 WebSocket 广播 | ⏳ | 现单节点 Hub（v0.9 ADR 0012 已决策不引入） |
+| 后端高可用 + 水平扩展 | ⏳ | ADR 0012 决策**单机部署**，架构层面不引入 Redis Pub/Sub |
 | OTel OTLP exporter / Prometheus text exporter | ⏳ | 当前 JSON 格式，未来可切换 |
 | 业务级 span 全量埋点（courtroom service / orchestrator） | ⏳ | 当前仅 state_transition 已埋 |
+| LLM Output 验证（防幻觉正则扫） | ⏳ | ADR 0015 决策暂不做，留待 v1.x |
 | 专家证人 / 陪审团 / 历史庭审 / PDF 导出 | ❌ | 商业化前不启动 |
 
 ### 5.4 明确不做（决策日期 2026-07-01）
@@ -159,21 +169,55 @@
 
 ---
 
-## 6. 下一步讨论（2026-07-02 起）
+## 6. v0.9.1 部署就绪总览（2026-07-04 同步）
 
-**主文档整合已完成。下一轮讨论：后端白盒化 / 高可用 / 并发防护**。
+v0.9 全部决策已落地,代码 + 测试 + 文档三向对齐,准备部署到阿里云单 ECS(2C2G + 香港免备案)。
 
-主要议题：
+### 6.1 已完成事项（2026-07-04 一日内清空）
 
-1. **白盒化** —— 让 LLM 调用、A2A 路由、状态机迁移全部可观测（trace-id 串联、决策日志、性能指标）
-2. **高可用** —— 多实例 backend + WebSocket 分布式广播 + Redis Pub/Sub + LLM 调用异步化 + 数据库主从 + 熔断降级
-3. **并发防护** —— 同一 session 的并发请求互斥、用户快速点击幂等、LLM 调用超时与重试、agent 死锁检测
+| 维度 | 决策/ADR | 关键产出 |
+|---|---|---|
+| **高可用 / 并发** | [ADR 0012](./adr/0012-ha-and-concurrency.md) | 5 子项 PR 全落地:session 互斥补锁 + Idempotency-Key + LLM Timeout(已迁 0013) + panic 兜底 + 启动恢复 |
+| **LLM Gateway** | [ADR 0013](./adr/0013-llm-gateway-engineering.md) | per-call Timeout 90s + Response Cache + Circuit Breaker(sony/gobreaker) |
+| **用户限流** | [ADR 0014](./adr/0014-user-rate-limit.md) | 每用户每天 5 次 StartTrial(sync.Map + 滑动窗口) |
+| **防幻觉** | [ADR 0015](./adr/0015-evidence-fidelity-no-hallucination.md) | baseRules 严禁编造细节 + buildContext source 标签 + user_interrupt 注入 |
 
-议题产物规划：
+### 6.2 部署就绪 checklist（2026-07-04）
 
-- 第一步：发散讨论 → 收敛到 `docs/adr/0010-*.md` 系列 ADR
-- 第二步：白盒化落地 → 在 `internal/observability/` 新增模块
-- 第三步：高可用改造 → 在 `internal/distlock/` + `internal/wsbroker/` 新增模块
+- ✅ 后端 15 包测试全过(40+ 新测试,无回归)
+- ✅ 前端 TypeScript 编译通过,Idempotency-Key 注入生效
+- ✅ Dockerfile 多阶段 + aliyun 镜像(国内稳) + 非 root
+- ✅ docker-compose 五服务齐全(postgres/redis/backend/frontend/caddy)
+- ✅ `.env.example` 完整 + v0.9 配置全暴露 + 生产 .env 模板(`deploy/.env.production.template`)
+- ✅ Caddy 反代配置 + 自动 HTTPS Let's Encrypt
+- ✅ 集成测试通过(host curl 验证 /auth/anon + /courtrooms + /metrics)
+- ✅ CORS preflight 允许 Idempotency-Key header
+- ⏸️ **真域名 + DNS 解析**(用户责任)
+- ⏸️ **真 ECS 部署 + Caddy 证书实测**(等域名)
+
+### 6.3 下一轮议题(v0.10+ / Phase A 数据驱动)
+
+按 [`roadmap/whitebox-roadmap.md`](./roadmap/whitebox-roadmap.md) 推进:
+
+- ⏳ **Phase A 数据采集**:跑 5-10 场真实庭审,统计 `decision_events` 报告
+- ⏳ **Phase B 增量埋点**:基于 Phase A 报告补业务级 span(courtroom service / orchestrator)
+- 📦 **Phase C Prometheus exporter + Grafana**(2026-Q4)
+- 📦 **数据库迁移管理**(golang-migrate,触发条件:首次 destructive schema 变更)
+
+### 6.4 第二阶段 / v1.x 待办(不在 v0.10 范围)
+
+- 多实例 backend + Redis Pub/Sub + LLM 异步化 + DB 主从
+- Agent Gateway 模型路由 / 多 provider fail-over
+- 强制立场一致性检查 / 新意度检查 / 300 字硬截断 / "已反驳证据"集合跟踪
+- LLM Output 正则扫(ADR 0015 暂缓方案)
+- 专家证人 / 陪审团 / 历史庭审 / PDF 导出 / 商业化
+
+### 6.5 议题产物规划
+
+- ✅ v0.9.1 阶段(2026-07-04 完成):4 份新 ADR(0012-0015)+ 9 个 PR 落地 + 部署就绪
+- ⏳ v0.10 阶段(2026-Q3):Phase A 数据采集 + Phase B 增量埋点
+- 📦 v0.11+ 阶段(2026-Q4):Phase C Prometheus + Grafana
+- 📦 v1.0 阶段(2027+):第二阶段商业化前置(可选)
 
 ---
 

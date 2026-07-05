@@ -5,8 +5,8 @@
 > **目标**：为复杂人生/工作决策提供一个结构化、可审计、人机协作的多 Agent 辩论法庭。
 > **架构决策**：[`docs/adr/0002-a2a-private-channel.md`](./adr/0002-a2a-private-channel.md)、[`docs/adr/0003-contextview-projection.md`](./adr/0003-contextview-projection.md)、[`docs/adr/0004-bayesian-belief-engine.md`](./adr/0004-bayesian-belief-engine.md)、[`docs/adr/0005-investigation-findings.md`](./adr/0005-investigation-findings.md)
 > **设计演进（已归档）**：[`docs/archive/memory-a2a-redesign-v1.2.md`](./archive/memory-a2a-redesign-v1.2.md)
-> **v0.8.3 实施记录**：[`.trae/documents/refresh-and-reopen-fix.md`](./refresh-and-reopen-fix.md)
-> **2026-07-02 整理时同步 + 2026-07-03 v0.8.3 修复同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md` 实装状态矩阵](./README.md#5-实装状态矩阵截至-2026-07-02)）。
+> **v0.8.3 实施记录**：[`archive/refresh-and-reopen-fix-v0.8.3.md`](./archive/refresh-and-reopen-fix-v0.8.3.md)
+> **v0.9.1 整合时同步 + 2026-07-03 v0.8.3 修复同步 + 2026-07-04 v0.9 4 份新 ADR + 2026-07-05 v0.9.1 防幻觉修复同步**：本版本号对齐后端代码实装现状（参见 [`docs/README.md` 实装状态矩阵](./README.md)）。
 
 ---
 
@@ -1068,6 +1068,9 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | WebSearch | 生产用 Bocha，dev 可用 Mock (v0.8.3 起) |
 | 可视化风格 | 极简白底法庭风格 |
 | 部署 | Docker Compose 一键启动 |
+| **运营阶段（2026-07-04 确认）** | **系统处于测试阶段，对公众开放，按用户每日限制 trial 配额（详见 [ADR 0012 §决策 6 + tech-spec §6.4](../adr/0012-ha-and-concurrency.md)）** |
+| **阿里云部署（2026-07-04 确认）** | 单 ECS 2C2G，公网域名 + SSL；架构层面不引入 Redis Pub/Sub / 多实例，详见 [ADR 0012](./adr/0012-ha-and-concurrency.md) + [ADR 0013](./adr/0013-llm-gateway-engineering.md) |
+| **用户配额（2026-07-04 确认）** | **测试阶段每用户每天最多 N=5 次 trial（UTC 日界重置），超限返回 429。生产可调到 20，DAU > 5000 触发 Redis 切换，详见 [ADR 0014](./adr/0014-user-rate-limit.md)** |
 | Agent Gateway（v0.5+） | 统一接入、审计、Prompt 压缩、Token 预算、限流、Fallback |
 
 ---

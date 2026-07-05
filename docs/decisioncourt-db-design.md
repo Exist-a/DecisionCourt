@@ -3,7 +3,7 @@
 > **版本**：v0.8
 > **状态**：v0.2 新增 `investigation_findings` 表（调查发现与证据严格分离）；v0.5+ 新增 `verdicts.trial_summary` 字段；v0.6 新增 `belief_diffs` 表（信念变化审计 trail）+ `evidence_weaken_links` 表（异构论辩图谱 weaken 边）+ A2A `Message.SessionUUID` 字段区分 DB 主键与 WS room key；**v0.8 新增 `decision_events` 表（业务级 span / 状态机迁移审计）**。
 > **目标**：定义决策庭 MVP 所需的数据表结构、字段含义和关联关系。
-> **2026-07-02 整理时同步 + 2026-07-02 v0.8 白盒化升级同步**：本版本号对齐后端 GORM model 实装现状（参见 [`docs/README.md`](./README.md)）。
+> **2026-07-05 整合时同步 + 2026-07-02 v0.8 白盒化升级同步 + 2026-07-04 v0.9 4 份新 ADR**：本版本号对齐后端 GORM model 实装现状（参见 [`docs/README.md`](./README.md)）。
 
 ---
 

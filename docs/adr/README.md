@@ -2,7 +2,7 @@
 
 > **ADR**（Architecture Decision Record）是业界标准的"决策追溯"机制 —— 每份记录一个**已确定**的关键架构决策，包含**背景 / 选项对比 / 决策 / 后果**，便于后续维护者理解"为什么是这样"。
 >
-> 本目录收录 11 份关键决策，编号递增。修改 ADR 必须保留"决策当时"的上下文；如果决策变更，应该新增一份"撤销 / 替代"的 ADR。
+> 本目录收录 15 份关键决策，编号递增。修改 ADR 必须保留"决策当时"的上下文；如果决策变更，应该新增一份"撤销 / 替代"的 ADR。
 
 ---
 
@@ -21,6 +21,10 @@
 | [0009](./0009-courtroom-vis-simplify.md) | 庭审页面可视化简化 | ✅ | `frontend/components/courtroom/ArgumentMap.tsx` |
 | [0010](./0010-whitebox-observability.md) | v0.8 后端白盒化（slog + Prometheus + OTel-Span + decision_events） | ✅ | `internal/observability/` |
 | [0011](./0011-llm-probability-hard-clamp.md) | LLM 输出概率值后端硬编码 Clamp（v0.8.4 修复 DeepSeek 抽风） | ✅ | `internal/agent/probability.go` |
+| [0012](./0012-ha-and-concurrency.md) | v0.9 单机部署（含公网）的高可用与并发防护（5 子项） | ✅ | `internal/courtroom/` · `internal/api/` · `internal/agent_gateway/` |
+| [0013](./0013-llm-gateway-engineering.md) | v0.9 LLM Gateway 工程化（per-call Timeout + Response Cache + Circuit Breaker） | ✅ | `internal/agent_gateway/` |
+| [0014](./0014-user-rate-limit.md) | v0.9 用户级 Trial 限流（每用户每天 N 次） | ✅ | `internal/ratelimit/`（新）+ `internal/api/` |
+| [0015](./0015-evidence-fidelity-no-hallucination.md) | v0.9.1 证据真实性与 LLM 幻觉防御（短证据输入触发编造细节） | ✅ | `internal/agent/prompts.go` + `orchestrator.go` |
 
 ---
 

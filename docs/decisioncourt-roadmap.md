@@ -33,8 +33,12 @@
 | 智能收敛 | ✅ v0.6 | 四信号多信号收敛：推理震荡（PROCLAIM 2026 最高优）> 双方共识 > 信念稳定 > 最大轮次兜底，广播 `belief.convergence` 事件带结构化原因 |
 | 信念审计 trail | ✅ v0.6 | `belief_diffs` 表 + `GET /belief-diffs` REST + 前端 BeliefDiffCard + 离线可重放 |
 | 真实后端联调 | ⏳ | PostgreSQL 在跑，依赖真实 LLM API key |
-| Docker 验证 | ❌ | Docker 未安装，无法一键启动 |
-| Agent Gateway | ✅ v0.5+ 已实装 | 白盒子集：统一接入 / 审计 / trace；高级能力：Prompt 压缩 / Token 预算 / 限流 / Fallback / JSON 文件日志；模型路由 / 响应缓存留第二阶段 |
+| Docker 验证 | ✅ v0.8.3 | docker compose 五服务一键启动(postgres/redis/backend/frontend/caddy) |
+| Agent Gateway | ✅ v0.9 | 白盒子集 + v0.5+ 高级能力 + v0.9 三大新能力(per-call Timeout 90s / Response Cache / Circuit Breaker) |
+| 单机部署高可用(ADR 0012) | ✅ v0.9 | session 互斥补锁 + Idempotency-Key + panic 兜底 + 启动扫描恢复 5 子项全落地 |
+| 用户级 Trial 限流(ADR 0014) | ✅ v0.9 | 每用户每天 5 次 StartTrial(sync.Map + 滑动窗口) |
+| 防幻觉(ADR 0015) | ✅ v0.9.1 | baseRules 严禁编造 + buildContext source 标签 + user_interrupt 注入 |
+| 部署就绪 | ✅ v0.9.1 | 真域名 + DNS 解析待用户完成,代码侧全部就绪 |
 
 **当前阻塞**：
 
