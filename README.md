@@ -124,6 +124,89 @@ pnpm dev
 # 访问 http://localhost:3000
 ```
 
+### 方式三：生产部署（阿里云 Container Registry + 香港 ECS）
+
+> **适用场景**: 上线到阿里云轻量应用服务器 / ECS(香港,2C2G 永久同价,免备案)
+> **完整文档**:[`docs/deployment/CHECKLIST.md`](./docs/deployment/CHECKLIST.md) §10 阿里云 Container Registry 操作手册
+
+#### 一次性初始化
+
+```bash
+# 1) 阿里云控制台开通 ACR 个人版,选香港地域,创建:
+#    命名空间: decision-court
+#    仓库:     decisioncourt-frontend / decisioncourt-backend(均私有)
+# 2) 控制台 → 访问凭证 → 设置 Registry 登录密码
+
+# 3) 本地登录
+docker login --username=<your-aliyun-username> crpi-<id>.cn-hongkong.personal.cr.aliyuncs.com
+```
+
+#### 每次发布(本地)
+
+**推荐用一键脚本**(v0.9.2 起):
+
+```powershell
+# 自动 tag (时间戳 + git 短哈希),加载 .env,build 两个镜像,push 到 ACR
+.\scripts\push-to-acr.ps1
+
+# 指定版本号
+.\scripts\push-to-acr.ps1 -Tag v0.9.2
+
+# 在 ECS 上推送(用 VPC 内网地址,不耗公网流量)
+.\scripts\push-to-acr.ps1 -UseVPC
+
+# 只构建不推送(本地验证)
+.\scripts\push-to-acr.ps1 -BuildOnly
+
+# 已 docker login 过,跳过登录
+.\scripts\push-to-acr.ps1 -NoLogin
+```
+
+脚本做了什么:
+- 加载 `.env` 里的 `NEXT_PUBLIC_*` 作为 frontend build args
+- 提示 `localhost` URL 警告(生产环境会出错)
+- 检查 Docker 在不在跑
+- 构建 backend + frontend 镜像,打 `$Tag` 和 `latest` 两个 tag
+- 推送到 `crpi-rnawo8jx69bslvbx.cn-hongkong.personal.cr.aliyuncs.com`
+- 打印 ECS 上要执行的部署命令
+
+如果不想用脚本,可以手动执行:
+
+```bash
+VERSION=v0.8.3
+SHORT_SHA=$(git rev-parse --short HEAD)
+REG=crpi-<id>.cn-hongkong.personal.cr.aliyuncs.com/decision-court
+
+# 构建
+docker build -t dc_backend:$VERSION ./backend
+docker build --build-arg NEXT_PUBLIC_API_URL=https://<your-domain> \
+             --build-arg NEXT_PUBLIC_WS_URL=wss://<your-domain> \
+             -t dc_frontend:$VERSION ./frontend
+
+# 打三种 tag(完整版本 / minor 浮动 / git SHA)
+for img in dc_backend dc_frontend; do
+  repo=${img/dc_/decisioncourt-}
+  docker tag $img:$VERSION  $REG/$repo:$VERSION
+  docker tag $img:$VERSION  $REG/$repo:${VERSION%.*}
+  docker tag $img:$VERSION  $REG/$repo:$VERSION-$SHORT_SHA
+  docker push $REG/$repo --all-tags
+done
+```
+
+#### 香港 ECS 拉取 + 启动
+
+```bash
+# 服务器(用 VPC 内网地址,速度 + 不耗公网流量)
+docker login --username=<your-aliyun-username> crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com
+
+# 用 override compose 文件从 ACR 拉镜像(不是 build)
+cd /opt/decisioncourt
+docker compose -f docker-compose.yml -f docker-compose.acr.yml pull
+docker compose -f docker-compose.yml -f docker-compose.acr.yml up -d
+```
+
+**优势**: 服务器**只装 Docker runtime**(不用 Node/Go/pnpm),部署从 5-15 分钟 → **30-60 秒**,零公网流量,版本化 + 一键回滚。
+
 ---
 
 ## 架构总览
@@ -253,8 +336,14 @@ DecisionCourt/
 │   ├── store/                     # Zustand store
 │   └── types/
 │
-├── docker-compose.yml             # PG + Redis + 前后端 (v0.8.3 起 SearXNG 已移除)
+├── docker-compose.yml             # 生产 compose（v0.9.2 加日志轮转）
+├── docker-compose.dev.yml         # v0.9.2 dev compose（bind mount + 热重载 + Dozzle）
+├── frontend/Dockerfile            # 生产镜像
+├── frontend/Dockerfile.dev        # v0.9.2 dev 镜像
+├── backend/Dockerfile             # 生产镜像
+├── backend/Dockerfile.dev         # v0.9.2 dev 镜像（带 air）
 ├── .env.example                   # 环境变量模板
+├── docs/OBSERVABILITY.md          # v0.9.2 运维速查（logs/metrics/DB 查询命令汇总）
 └── README.md                      # 本文件
 ```
 
@@ -396,6 +485,8 @@ POST /api/v1/courtrooms/{id}/start        → 200 phase=opening (同步)
 - **8 份主文档**：[`docs/decisioncourt-prd.md`](./docs/decisioncourt-prd.md) · [`decisioncourt-tech-spec.md`](./docs/decisioncourt-tech-spec.md) · [`decisioncourt-agent-design.md`](./docs/decisioncourt-agent-design.md) · [`decisioncourt-api-design.md`](./docs/decisioncourt-api-design.md) · [`decisioncourt-db-design.md`](./docs/decisioncourt-db-design.md) · [`decisioncourt-roadmap.md`](./docs/decisioncourt-roadmap.md) · [`decisioncourt-ux-refinement.md`](./docs/decisioncourt-ux-refinement.md) · [`project-ideas.md`](./docs/project-ideas.md)
 - **9 份 ADR**：[`docs/adr/`](./docs/adr/) — 每个关键决策的"为什么"
 - **6 份归档**：[`docs/archive/`](./docs/archive/) — 已完成的详细设计文档
+- **部署清单（含阿里云 Container Registry 操作手册）**：[`docs/deployment/CHECKLIST.md`](./docs/deployment/CHECKLIST.md)
+- **日常操作手册（dev + deploy + troubleshoot）**：[`docs/dev-deploy-workflow.md`](./docs/dev-deploy-workflow.md)
 
 ---
 

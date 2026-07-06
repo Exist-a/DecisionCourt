@@ -183,17 +183,247 @@ sed -i '/^  redis_data:$/a\  caddy_data:\n  caddy_config:' docker-compose.yml
 - 跨云服务的认证字段各自定义,不能互通
 - 第一次用新云服务,先看官方文档的登录示例
 
-## 行动项(下次部署必做)
+## 行动项（下次部署必做）
 
-1. ☐ **部署前确认内存 >= 4 GiB**,2 GiB 无法 build Go binary
-2. ☐ **.env.production 用真实域名**,DOMAIN / CADDY_EMAIL / NEXT_PUBLIC_* 都必填
-3. ☐ **本机 build 镜像推 ACR**(`docker build` + `docker push`),ECS 只 `docker pull`
-4. ☐ **改 docker-compose.yml 后 `grep` 验证关键字段**(`image:` / `volumes:` / `services:`)
-5. ☐ **`docker pull` + `docker-compose up` 分两步**,避免 v1 认证缓存 bug
-6. ☐ **GitHub 用 PAT**,密码已废
-7. ☐ **ACR 用户名用阿里云账号全名**,不是 GitHub / UID
-8. ☐ **WorkBench 卡死 → 控制台强重启**,不要纠结 SSH
-9. ☐ **ECS 香港地域免备案**,免备案方案比大陆快 7-20 天
+1. ☐ **部署前确认内存 >= 4 GiB**，2 GiB 无法 build Go binary
+2. ☐ **.env.production 用真实域名**，DOMAIN / CADDY_EMAIL / NEXT_PUBLIC_* 都必填
+3. ☐ **本机 build 镜像推 ACR**（`docker build` + `docker push`），ECS 只 `docker pull`
+4. ☐ **改 docker-compose.yml 后 `grep` 验证关键字段**（`image:` / `volumes:` / `services:`）
+5. ☐ **`docker pull` + `docker-compose up` 分两步**，避免 v1 认证缓存 bug
+6. ☐ **GitHub 用 PAT**，密码已废
+7. ☐ **ACR 用户名用阿里云账号全名**，不是 GitHub / UID
+8. ☐ **WorkBench 卡死 → 控制台强重启**，不要纠结 SSH
+9. ☐ **ECS 香港地域免备案**，免备案方案比大陆快 7-20 天
+
+---
+
+## 附录：v0.9.2 追加的 5 个新坑（2026-07-06 工作流脚本化时发现）
+
+> **触发**: v0.9.2 实装了一键 push 脚本 + dev compose 工作流 + 部署脚本。在自动化过程中暴露了 PowerShell / Docker 版本兼容 / 凭证机制 5 类问题。
+>
+> **配套**: 日常命令速查见 [`docs/dev-deploy-workflow.md`](../dev-deploy-workflow.md) §4
+
+### 坑 8: PowerShell 5.1 不识别 UTF-8 无 BOM 的中文脚本
+
+**症状**:
+- 跑 `.\scripts\push-to-acr.ps1` 报语法错误
+- 中文注释 / echo 出来的中文变成乱码字节
+- 脚本跑到一半神秘退出，连第一行都没执行完
+
+**根因**:
+- Windows PowerShell 5.1（不是 PowerShell 7+）默认把 UTF-8 无 BOM 文件按 ANSI（GBK）读
+- 中文 UTF-8 字节（3 字节/字符）被按 ANSI 切成 2 字节/字符，乱码
+- 乱码字节里可能撞上 PowerShell 关键字（如 `[`、`{`），tokenizer 直接抛 `ParserError`
+
+**对策**:
+- **脚本文件保存为 UTF-8 BOM**（首三字节 `EF BB BF`）
+- 用 Write 工具时手动 BOM 头：用 `[System.IO.File]::WriteAllBytes($path, [byte[]](0xEF, 0xBB, 0xBF) + [System.IO.File]::ReadAllBytes($path))`
+- 或者改用 PowerShell 7+（`pwsh` 命令），原生支持 UTF-8 无 BOM
+
+**教训**:
+- Windows 上做脚本开发必须区分 PowerShell 5.1 vs 7+
+- IDE 的 PowerShell 工具链基本都按 5.1 解析
+- 不要相信 IDE 显示的"脚本正确"，要真跑一次
+
+---
+
+### 坑 9: PowerShell 5.1 不支持 `&&` 语句分隔符
+
+**症状**:
+- `cd foo && bar` 报 `The token '&&' is not a valid statement separator in this version.`
+- 在 Bash / CMD / Zsh 里都能跑
+
+**根因**:
+- `&&` 是 Bash 语法；PowerShell **7.0 才支持**（`$env:POWERSHELL_TELEMETRY_OPTOUT=1; Get-ChildItem Env:PSVersionTable` 可查版本）
+- 5.1 必须用 `;` 分隔
+
+**对策**:
+- 脚本里**所有多命令串联用 `;`**
+- 想短路（前一条失败就不执行后一条）用 `if ($LASTEXITCODE -eq 0) { bar }`
+- 或者干脆用单条命令（多数情况 `;` 就够）
+
+**教训**:
+- 跨平台 shell 脚本是噩梦——Bash / PowerShell / CMD 语法各管各的
+- Docker / GitHub Action 之类跨平台环境，**优先 Bash**，Windows 本地才用 PowerShell
+
+---
+
+### 坑 10: PowerShell `$ErrorActionPreference = "Stop"` + Docker stderr = 假报错
+
+**症状**:
+- 脚本里 `$ErrorActionPreference = "Stop"` 时，`docker build` 一启动就抛异常退出
+- 抛的是 `NativeCommandError`，但实际 docker 还在跑，进度也照常输出
+- exit code 1，误以为 docker build 失败了
+
+**根因**:
+- PowerShell 把 native command 写 stderr 的内容当 ErrorRecord
+- `Stop` preference 一遇到 ErrorRecord 就 throw，把控制权从 docker 抢走
+- Docker BuildKit 大量进度信息都写 stderr（`#1 [internal] load build definition` 之类），所以一定会触发
+
+**对策**:
+```powershell
+# 不要用 Stop
+$ErrorActionPreference = "Continue"   # ← 改这个
+
+# 真正判断 docker 成不成功看 $LASTEXITCODE
+docker build ...; if ($LASTEXITCODE -ne 0) { Write-Err "..."; exit 1 }
+```
+
+**教训**:
+- `Set-StrictMode` + `$ErrorActionPreference = "Stop"` 是好习惯，但对**调 native commands 的脚本**反而是坑
+- CI/CD 脚本默认 Continue + $LASTEXITCODE，是更稳的模式
+
+---
+
+### 坑 11: `docker login` 在 IDE 内 PowerShell / SSH 脚本里硬报错
+
+**症状**:
+- `docker login --username=... registry` 报 `cannot perform an interactive login from a non-TTY device`
+- 但同台机器上 `docker pull` / `docker push` 都正常用同一个 registry
+- 凭证确实存在（cmdkey /list 能查到）
+
+**根因**:
+- `docker login` 这个特定命令会**强制要求 TTY**（输密码用）
+- IDE 内的 PowerShell / VS Code 的 terminal / SSH 跑的脚本，都不是 TTY
+- `docker pull/push` 不需要 login 命令本身，靠 credential helper 静默用凭证
+
+**对策**:
+- **脚本里不要调 `docker login`**！让 push/pull 自己用凭证
+- 如果凭证真的缺（cmdkey 查不到），在真 PowerShell 终端（Win + X → PowerShell）跑一次 login
+- 确认凭证 OK 再跑 push 脚本
+
+**教训**:
+- "凭证能 pull" 不等于 "login 命令能跑"
+- 自动化脚本能少调一个命令就少调一个，副作用最小
+
+---
+
+### 坑 12: docker-compose v1 + Docker v25+ = KeyError: 'ContainerConfig'
+
+**症状**:
+- ECS 上 `docker compose`（空格）报 `unknown command`
+- 退到 `docker-compose`（连字符，v1）跑 `up -d`，崩在：
+```
+File "/usr/lib/python3/dist-packages/compose/service.py", line 1579
+container.image_config['ContainerConfig'].get('Volumes') or {}
+KeyError: 'ContainerConfig'
+```
+
+**根因**:
+- `docker-compose` v1 是 Python 写的，**2021 年停更**，不维护了
+- Docker Engine v25+ 的 API 不再返回 `ContainerConfig` 字段（认为调用方不需要）
+- v1 还在硬访问，崩
+
+**对策**:
+- **必须装 docker-compose v2 plugin**（Go 写的，还在维护）
+- 装法优先级：
+  1. `sudo apt-get install -y docker-compose-plugin`（如果系统有 Docker CE apt 源）
+  2. **直接下二进制**（apt 找不到时最稳，**已验证**）：
+     ```bash
+     sudo mkdir -p /usr/local/lib/docker/cli-plugins
+     sudo curl -SL "https://gh-proxy.com/https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64" \
+         -o /usr/local/lib/docker/cli-plugins/docker-compose
+     sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+     ```
+  3. 用 `gh-proxy.com` 走 GitHub 加速，国内 ECS 也能拉
+
+- 装完用 `docker compose version`（**空格**）验证，不再用 `docker-compose`（连字符）
+
+**教训**:
+- v1 docker-compose 已经死了，别再用了
+- ECS 默认装的"轻量" Ubuntu 镜像往往没有 Docker CE apt 源，直接下二进制最稳
+- `gh-proxy.com` 是国内 ECS 拉 GitHub 镜像的救命稻草
+
+### 坑 13: backend `read_only: true` + file_logger 默认路径 `/app/logs` = 日志写不进去（沉默 bug，潜伏 1 个月）
+
+**症状**:
+- 后端跑了 37 分钟 stable，stdout 日志全正常
+- LLM Gateway 的 file_logger 设计写 JSON Lines 到 `/app/logs/agent_gateway_YYYY-MM-DD.log`，带 35 个字段（token / cost / compression / throttle / budget）
+- 实际上**文件根本没生成**，`/app/logs/` 目录都不存在
+- 用户调 LLM 看日志只能用 stdout（信息少 90%）
+
+**根因链**:
+
+```
+v0.6: 实现 FileLogger
+   写入路径 = "logs" (相对 WORKDIR /app/)
+        ↓
+v0.8.3: 安全加固，backend 容器加 `read_only: true`
+        /app/ 整个文件系统只读
+        只允许 /tmp 写(tmpfs)
+        ↓
+v0.8.3: 没改 FileLogger 写入路径
+        ↓
+FileLogger.Write() 报 EACCES（只读文件系统）
+        ↓
+backend/internal/agent_gateway/gateway.go:408-410
+   if err := g.fileLogger.Write(entry); err != nil {
+       // 仅吞掉错误;避免日志失败拖死主流程
+       // ← 注释说吞掉,代码也吞掉了,连 error log 都没记
+   }
+        ↓
+没人发现（LLM 调用照常工作，主流程不报错）
+        ↓
+2026-07-06: v0.9.2 上线后用户查"日志怎么看"，才发现
+```
+
+**修复**（v0.9.2 方案 B）:
+
+```yaml
+# docker-compose.yml backend 段
+volumes:
+  - ./logs/backend:/app/logs    # 宿主机 /opt/DecisionCourt/logs/backend/ 挂载到容器 /app/logs/
+read_only: true                  # 保留,安全等级不变
+tmpfs:
+  - /tmp                         # 保留
+```
+
+- 容器能写（挂载点覆盖 read_only）
+- 持久化（容器重启日志不丢）
+- 安全等级不变（其他路径还是只读）
+- 宿主机直接 `tail -f logs/backend/agent_gateway_*.log` 即可
+
+**为什么不简单点——关掉 read_only**：
+- 关掉 read_only 安全等级从 A 降 B（v0.8.3 20 项加固之一）
+- 挂载 volume 是精准放行，只对 logs/ 目录可写
+
+**为什么不改 gateway.go 错误吞掉逻辑**：
+- 那是设计选择（避免日志失败拖死 LLM 主流程）
+- 但**应该至少在 stdout 打个 warning**，让运维发现
+
+**教训（给未来自己）**:
+- **架构变更要跨层验证**：v0.8.3 加 read_only 是架构变更，应该触发"全代码搜索需要写文件的路径"检查
+- **静默失败是危险的**：`if err != nil { /* 吞掉 */ }` 比 panic 还可怕，应该至少打 WARN 日志
+- **写文件的代码必须有 e2e 测试**：写日志 → 看文件存在 → 内容正确
+
+**部署后验证命令**:
+
+```bash
+# 1) 在 ECS 创建宿主机目录(权限 755,uid 1001 = backend 容器用户)
+sudo mkdir -p /opt/DecisionCourt/logs/backend
+sudo chown -R 1001:1001 /opt/DecisionCourt/logs/backend
+sudo chmod 755 /opt/DecisionCourt/logs/backend
+
+# 2) 触发一次 LLM 调用(浏览器开庭一个 trial)
+# 3) 看日志生成了
+ls -la /opt/DecisionCourt/logs/backend/
+# 应该看到:agent_gateway_2026-07-06.log
+
+# 4) 看内容(JSON Lines,每行一条 LLM 调用)
+cat /opt/DecisionCourt/logs/backend/agent_gateway_2026-07-06.log | head -5
+```
+
+---
+
+## v0.9.2 追加的行动项
+
+10. ☐ **Windows 写 PowerShell 脚本必须 UTF-8 BOM**，否则 5.1 跑中文乱码
+11. ☐ **脚本里多命令串联用 `;`**（不要 `&&`，5.1 不支持）
+12. ☐ **`$ErrorActionPreference = "Continue"`**，靠 `$LASTEXITCODE` 判断成功
+13. ☐ **自动化脚本不要调 `docker login`**，让 push/pull 自动用凭证
+14. ☐ **ECS 上必须装 docker-compose v2 plugin**，v1 已死
+15. ☐ **架构变更触发"全代码搜索需要写文件的路径"检查**（v0.9.2 坑 13 教训）
+16. ☐ **`if err != nil { /* 吞掉 */ }` 至少打 WARN**，不能让错误完全沉默
 
 ## 关联资料
 

@@ -676,9 +676,10 @@ docker-compose up -d
 启动服务：
 - 前端：http://localhost:3000
 - 后端 API：http://localhost:8080
-- SearXNG：http://localhost:8081
 - PostgreSQL：localhost:5432
 - Redis：localhost:6379
+
+> **生产部署(v0.8.3+)**:本地开发用 `docker-compose.yml` 走 `build:`;生产部署走**阿里云 Container Registry(ACR)工作流**——本地 build → 推送 ACR → 服务器用 VPC 内网拉取。详见 [`docs/deployment/CHECKLIST.md` §10](./deployment/CHECKLIST.md#10-阿里云-container-registry-操作手册2026-07-xx-增补)。**核心收益**: 服务器零工具链(只装 Docker)、部署 30-60 秒、零公网流量、镜像版本化可一键回滚。
 
 ### 9.2 云服务器部署
 

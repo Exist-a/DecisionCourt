@@ -160,15 +160,31 @@
 │   └── /metrics  → dc_backend:8080(限 127.0.0.1)
 │
 ├── Docker(v0.8.3 容器硬化后)
-│   ├── dc_frontend  (Next.js,3000,非 root read_only)
-│   ├── dc_backend   (Go,8080,非 root read_only cap_drop)
-│   ├── dc_postgres  (5432,非 root)
-│   └── dc_redis     (6379,非 root)
+│   ├── dc_frontend  (Next.js,3000,非 root read_only,镜像从 ACR 拉)
+│   ├── dc_backend   (Go,8080,非 root read_only cap_drop,镜像从 ACR 拉)
+│   ├── dc_postgres  (5432,非 root,官方 postgres:15-alpine)
+│   └── dc_redis     (6379,非 root,官方 redis:7-alpine)
 │   # ⚠️ v0.8.3 起 SearXNG 已弃用,改用 Bocha AI Search API
 │
 ├── systemd: docker compose 自动启动
 └── cron: 每日 pg_dump → OSS/本地
+
+部署链路(本地 → 阿里云):
+┌──────────────────────┐                    ┌──────────────────────────┐
+│  本地开发者机器       │ docker tag + push  │  阿里云 ACR(香港)         │
+│  - docker build      │ ─────────────────► │  - decisioncourt-frontend │
+│  - pnpm/go 工具链    │  (公网 / VPN 推送) │  - decisioncourt-backend  │
+└──────────────────────┘                    └────────────┬─────────────┘
+                                                          │ docker pull(VPC 内网)
+                                                          ▼
+                                              ┌──────────────────────────┐
+                                              │  香港 ECS(2C2G)          │
+                                              │  - 仅需 docker runtime   │
+                                              │  - 0 公网流量消耗         │
+                                              └──────────────────────────┘
 ```
+
+> 详细 ACR 工作流见 §10 阿里云 Container Registry 操作手册。
 
 ### 3.2 数据流(用户视角)
 
@@ -218,6 +234,78 @@ WebSocket 推回前端(streaming 推 token)
 | **Compose 内网 alias** | `postgres:5432` / `redis:6379` 等 | 容器间走 docker 内网 DNS,而不是 IP |
 
 > 详见 [`../security-audit-v0.8.3.md`](../security-audit-v0.8.3.md) §2.1 P0-3
+
+### 3.5 镜像仓库架构(阿里云 Container Registry,2026-07-XX 增补)
+
+> **触发**: v0.8.3 安全 commit 跑通后,部署从"服务器本地 `git clone + docker compose up`"升级为 **本地构建 → 推送到阿里云 ACR → 服务器从 ACR 拉取 → docker compose up** 的标准生产链路。详见 §10 ACR 操作手册。
+
+#### 3.5.1 为什么不用"服务器本地构建"
+
+| 维度 | 服务器本地 build | **ACR 拉镜像(当前选择)** |
+|---|---|---|
+| 服务器依赖 | Node 20 + pnpm + Go 1.26 + Docker | **只要 Docker**(攻击面 ↓) |
+| 单次部署耗时 | 5-15 分钟(冷构建) | **30-60 秒(VPC 内网拉镜像)** |
+| 公网流量 | 构建期要拉 pnpm/go module | **0**(VPC 内网全免) |
+| 镜像版本管理 | 无 | **tag 化**(语义化版本,可回滚) |
+| CI/CD 友好 | 否 | ✅ GitHub Action 直接 push |
+| 缓存复用 | 每次冷启动 | ACR 自动分层缓存 |
+| 部署原子性 | 容易半构建半跑 | 整镜像替换,失败立刻回滚 |
+
+**结论**: 服务器**只跑 Docker runtime**,构建在本地(或未来 GitHub Action)做。
+
+#### 3.5.2 仓库结构约定(命名空间 + 仓库名)
+
+```
+阿里云 ACR 个人版(香港地域,选 v0.8.3 香港策略)
+└── <your-aliyun-username>          ← 阿里云账号全名(RAM 子账号也行)
+    └── decision-court/             ← 命名空间(namespace)
+        ├── decisioncourt-frontend  ← 仓库 1(Next.js 镜像)
+        ├── decisioncourt-backend   ← 仓库 2(Go 镜像)
+        ├── postgres                ← 可选:自托管 PG(本项目用官方 postgres:15-alpine,不入 ACR)
+        └── redis                   ← 可选:同上
+```
+
+**Registry URL 模板**:
+
+| 网络 | URL | 用途 |
+|---|---|---|
+| 公网 | `crpi-<id>.cn-hongkong.personal.cr.aliyuncs.com` | 本地构建推送 / 公网拉取 |
+| **VPC 内网** | `crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com` | **香港 ECS 拉镜像专用**(速度 ↑,流量免费) |
+
+> ⚠️ **`<id>` 是阿里云分配的个人实例 ID**,登录后控制台可见。本文档示例 URL 用 `<id>` 占位,**请勿把真实 ID 写进 git**。
+
+#### 3.5.3 镜像 tag 策略(语义化版本 + git SHA)
+
+```bash
+# 三种 tag 都打,互不冲突:
+docker tag dc_backend   crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decisioncourt-backend:v0.8.3
+docker tag dc_backend   crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decisioncourt-backend:v0.8
+docker tag dc_backend   crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decisioncourt-backend:v0.8.3-abc1234
+                        # ↑ git short SHA,精准回滚
+```
+
+- `v0.8.3` 完整版本号 → 稳定 / 主用
+- `v0.8` 浮动 minor → 自动跟 minor 内最新 patch
+- `v0.8.3-abc1234` git SHA → 出问题立刻定位 commit
+
+#### 3.5.4 docker-compose.yml 适配(从 `build:` 切到 `image:`)
+
+**生产 `docker-compose.yml`**(服务器用)的 backend / frontend 段从 `build:` 改为 `image:`:
+
+```yaml
+services:
+  backend:
+    # 生产:从阿里云 ACR 拉,不构建
+    image: crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decisioncourt-backend:v0.8.3
+    # 移除 build: 段
+    # build:
+    #   context: ./backend
+    #   dockerfile: Dockerfile
+    pull_policy: always   # 强制每次 compose up 拉最新
+    ...
+```
+
+> **开发环境**继续用 `build:` 段本地构建。生产部署前用环境变量切换:`COMPOSE_FILE=docker-compose.yml:docker-compose.acr.yml`,后者覆盖 `image:` 字段。
 
 ---
 
@@ -286,17 +374,90 @@ WebSocket 推回前端(streaming 推 token)
 - [ ] 配置时区(Asia/Shanghai)+ NTP
 - [ ] 装基础工具:git / curl / vim / htop
 
-### 阶段 4:应用部署(预计 1-2 小时)
+### 阶段 4:应用部署(预计 1-2 小时,**v0.8.3+ 走 ACR 工作流**)
 
-- [ ] `git clone` 仓库
-- [ ] 配 `.env`(用 `cp .env.example .env` 后填值,**不写入 git**)
-- [ ] `docker compose up -d` 启动
-- [ ] 验证 `curl http://127.0.0.1:8080/health` 返回 200
-- [ ] 验证 `curl http://127.0.0.1:3000` 返回 HTML
-- [ ] 装 nginx + Certbot
-- [ ] 配反向代理(参考 §3.1)
+> **两种模式**:
+> - **A. 快速验证模式**(临时):服务器本地 `git clone + docker compose up`,等同 §3.5.1 "服务器本地构建" 表格左列
+> - **B. 生产推荐模式**(当前选定):本地 build → push 到 ACR → 服务器 pull → compose up
+>
+> 本节只列 **B 模式** 步骤,A 模式用于冒烟测试或断网应急。
+
+#### 阶段 4-A(本地):构建并推送镜像到 ACR(预计 5-15 分钟)
+
+> **执行人**:本地开发机(Windows + Docker Desktop 或 WSL2)
+
+- [ ] 拉取最新代码 `git pull origin main`
+- [ ] 确认 `.env` 已填好真实 key(LLM_API_KEY / BOCHA_API_KEY / JWT_SECRET / POSTGRES_PASSWORD)
+- [ ] **本地构建镜像**:
+  ```bash
+  # backend
+  cd backend && docker build -t dc_backend:v0.8.3 .
+  # frontend(需要 build args:API URL 等)
+  cd ../frontend
+  docker build \
+    --build-arg NEXT_PUBLIC_API_URL=https://<your-domain> \
+    --build-arg NEXT_PUBLIC_WS_URL=wss://<your-domain> \
+    --build-arg NEXT_PUBLIC_USE_MOCK=false \
+    -t dc_frontend:v0.8.3 .
+  ```
+- [ ] **登录阿里云 ACR**(一次性,有效期 12 小时):
+  ```bash
+  docker login --username=<your-aliyun-username> crpi-<id>.cn-hongkong.personal.cr.aliyuncs.com
+  # 输入密码(开通服务时设置,可在「访问凭证」页面修改)
+  ```
+- [ ] **打 tag 并 push**(详见 §10.2):
+  ```bash
+  # 建议三种 tag 都打(语义版本 / minor 浮动 / git SHA)
+  SHORT_SHA=$(git rev-parse --short HEAD)
+  REG=crpi-<id>.cn-hongkong.personal.cr.aliyuncs.com/decision-court
+  
+  docker tag dc_backend:v0.8.3  $REG/decisioncourt-backend:v0.8.3
+  docker tag dc_backend:v0.8.3  $REG/decisioncourt-backend:v0.8
+  docker tag dc_backend:v0.8.3  $REG/decisioncourt-backend:v0.8.3-$SHORT_SHA
+  docker push $REG/decisioncourt-backend --all-tags
+  
+  docker tag dc_frontend:v0.8.3 $REG/decisioncourt-frontend:v0.8.3
+  docker tag dc_frontend:v0.8.3 $REG/decisioncourt-frontend:v0.8
+  docker tag dc_frontend:v0.8.3 $REG/decisioncourt-frontend:v0.8.3-$SHORT_SHA
+  docker push $REG/decisioncourt-frontend --all-tags
+  ```
+
+#### 阶段 4-B(服务器):拉取镜像并启动(预计 5-10 分钟)
+
+> **执行人**:香港 ECS(SSH 登录)
+
+- [ ] 配 `.env`(**只放密钥,不放镜像 tag**;tag 在 compose 文件里):
+  ```bash
+  scp .env.example root@<server-ip>:/opt/decisioncourt/.env
+  ssh root@<server-ip> 'cd /opt/decisioncourt && nano .env'  # 填真实 key
+  ```
+- [ ] 把生产版 `docker-compose.yml`(用 `image:` 替代 `build:`)上传到服务器:
+  ```bash
+  scp docker-compose.acr.yml root@<server-ip>:/opt/decisioncourt/
+  ```
+- [ ] **登录 ACR**(用 **VPC 内网地址**,香港 ECS 走内网拉镜像):
+  ```bash
+  ssh root@<server-ip>
+  docker login --username=<your-aliyun-username> crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com
+  ```
+- [ ] **拉取镜像 + 启动**:
+  ```bash
+  cd /opt/decisioncourt
+  docker compose -f docker-compose.yml -f docker-compose.acr.yml pull   # 拉 backend + frontend
+  docker compose -f docker-compose.yml -f docker-compose.acr.yml up -d # 启动 4 服务
+  ```
+- [ ] **健康检查**:
+  ```bash
+  curl http://127.0.0.1:8080/health   # 期望 200 OK
+  curl -I http://127.0.0.1:3000      # 期望 200,Content-Type: text/html
+  docker compose ps                    # 4 个容器都是 healthy / running
+  ```
+- [ ] **配 nginx + Certbot**(参考 §3.1 反代配置)
 - [ ] **配 SSL 证书**(Let's Encrypt,需先有域名)
 - [ ] 测试 HTTPS 访问
+- [ ] **首次部署后立刻观察**:`docker compose logs -f --tail=200 backend`,确认 GORM AutoMigrate 跑通(见 §6.5)
+
+> 💡 **回滚**: `docker compose up -d --force-recreate` 配合 git SHA tag 立刻回到指定版本,无需重新构建。
 
 ### 阶段 5:上线验证(预计 1 小时)
 
@@ -541,3 +702,295 @@ powershell -ExecutionPolicy Bypass -File tools\envcheck.ps1
 - [ ] (c) 修 §4.1 的 6 个 P0 代码 bug(技术准备)
 - [ ] (d) 写**部署脚本**(shell 脚本一键装 Docker + 配 nginx + 拉代码 + 启动)
 - [ ] (e) 写**操作手册**(上线后运维步骤)
+- [x] ✅ **(f) 引入阿里云 Container Registry**(2026-07-XX 增补,见 §10)
+
+---
+
+## 10. 阿里云 Container Registry 操作手册(2026-07-XX 增补)
+
+> **本章配套**:`docs/deployment/CHECKLIST.md` §3.5 镜像仓库架构 + §5 阶段 4
+> **官方参考**:[阿里云容器镜像服务 ACR · 个人版文档](https://help.aliyun.com/document_detail/60717.html)
+> **触发**:v0.8.3 安全 commit 跑通后,为支持「服务器零工具链 + 版本化 + CI/CD 友好」而引入
+
+### 10.1 一次性初始化(注册 → 创建命名空间 → 创建仓库)
+
+#### 10.1.1 开通服务
+
+1. 登录阿里云控制台 → **容器镜像服务 ACR**(搜「容器镜像」)
+2. 首次进入提示"开通服务",选**个人版**(免费,够本项目用)
+3. 地域选 **香港**(`cn-hongkong`),与 ECS 地域对齐 → 走 VPC 内网拉取
+
+#### 10.1.2 设置访问凭证
+
+1. 控制台 → 左侧 **访问凭证**
+2. 设置/重置 Registry 登录密码(**与阿里云账号密码不同**)
+3. 用户名 = 阿里云账号全名(或 RAM 子账号全名;子账号支持英文半角句号)
+
+> ⚠️ **不要把密码写进 git / 文档 / .env 文件**。本地缓存用 `docker login`(12 小时有效)。
+
+#### 10.1.3 创建命名空间 + 仓库
+
+```
+命名空间: decision-court       ← 项目级隔离(类似 GitHub org)
+仓库名:
+  decisioncourt-frontend       ← 类型:私有
+  decisioncourt-backend        ← 类型:私有
+仓库地域: 香港(cn-hongkong)    ← 与 ECS 对齐
+```
+
+**控制台操作**:
+1. ACR 控制台 → 左侧 **个人版** → **命名空间** → 创建 `decision-court`
+2. **镜像仓库** → 创建镜像仓库 → 选命名空间 `decision-court` → 仓库名 `decisioncourt-frontend` → 地域香港 → 仓库类型**私有**
+3. 同样方式创建 `decisioncourt-backend`
+
+#### 10.1.4 拿到 Registry URL
+
+创建完后,每个仓库详情页会显示形如:
+
+```
+公网:  crpi-<id>.cn-hongkong.personal.cr.aliyuncs.com
+VPC:   crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com
+```
+
+> **`<id>` 是阿里云分配的实例 ID**(随机串)。**写进文档 / commit message 时必须用 `<id>` 占位代替**。
+
+### 10.2 本地构建 + 推送(开发者机器)
+
+#### 10.2.1 登录(每次有效期 12 小时)
+
+```bash
+# 公网登录(从本地推送)
+docker login --username=<your-aliyun-username> crpi-<id>.cn-hongkong.personal.cr.aliyuncs.com
+# 提示输入密码:粘贴访问凭证密码(不回显)
+# 登录成功显示 "Login Succeeded"
+```
+
+> **RAM 子账号登录**:`--username` 用子账号全名,**不支持企业别名带英文半角句号(.)**。详情见官方文档 §"RAM 用户登录"。
+
+#### 10.2.2 构建镜像(注意 build args)
+
+```bash
+# 1) backend — 无 build args
+cd backend
+docker build -t dc_backend:v0.8.3 .
+cd ..
+
+# 2) frontend — 必须传 NEXT_PUBLIC_* build args(v0.9 修复)
+cd frontend
+docker build \
+  --build-arg NEXT_PUBLIC_API_URL=https://<your-domain> \
+  --build-arg NEXT_PUBLIC_WS_URL=wss://<your-domain> \
+  --build-arg NEXT_PUBLIC_USE_MOCK=false \
+  -t dc_frontend:v0.8.3 .
+cd ..
+```
+
+> ⚠️ **NEXT_PUBLIC_\* 是 build-time 变量**,编译时被 inline 到 bundle.js。如果忘了传,前端所有 API 调用会走 `http://localhost:3000/...` 直接失败。
+
+#### 10.2.3 打 tag(三种 tag 都打)
+
+```bash
+# 准备变量
+REG=crpi-<id>.cn-hongkong.personal.cr.aliyuncs.com/decision-court
+VERSION=v0.8.3
+SHORT_SHA=$(git rev-parse --short HEAD)
+
+# ===== backend =====
+docker tag dc_backend:$VERSION  $REG/decisioncourt-backend:$VERSION
+docker tag dc_backend:$VERSION  $REG/decisioncourt-backend:${VERSION%.*}   # v0.8 浮动
+docker tag dc_backend:$VERSION  $REG/decisioncourt-backend:$VERSION-$SHORT_SHA
+
+# ===== frontend =====
+docker tag dc_frontend:$VERSION $REG/decisioncourt-frontend:$VERSION
+docker tag dc_frontend:$VERSION $REG/decisioncourt-frontend:${VERSION%.*}  # v0.8 浮动
+docker tag dc_frontend:$VERSION $REG/decisioncourt-frontend:$VERSION-$SHORT_SHA
+```
+
+**三种 tag 各有用途**:
+
+| Tag 模式 | 指向 | 用法 |
+|---|---|---|
+| `v0.8.3` | 完整语义版本 | 生产 `docker-compose.yml` 锁这个(稳定) |
+| `v0.8` | minor 浮动 | 手动升级到最新 patch 用 |
+| `v0.8.3-abc1234` | git short SHA | **精准回滚**("回到 7 天前的版本") |
+
+#### 10.2.4 推送
+
+```bash
+# 推一个仓库的全部 tag(等价于 push 3 次)
+docker push $REG/decisioncourt-backend --all-tags
+docker push $REG/decisioncourt-frontend --all-tags
+
+# 验证(去阿里云控制台 → ACR → 镜像仓库 → 版本列表,应该看到 3 个 tag)
+```
+
+### 10.3 服务器拉取 + 部署(香港 ECS)
+
+#### 10.3.1 准备生产版 compose 文件
+
+**不直接改原 `docker-compose.yml`**(本地开发还要 `build:`),而是新建 `docker-compose.acr.yml` 做 override:
+
+```yaml
+# docker-compose.acr.yml
+# 用途:生产环境,从阿里云 ACR 拉镜像,不走本地 build
+# 用法:docker compose -f docker-compose.yml -f docker-compose.acr.yml <command>
+
+services:
+  backend:
+    # 覆盖 build:,改用 image: 从 ACR 拉
+    image: crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decisioncourt-backend:v0.8.3
+    pull_policy: always   # 强制每次 up 前 pull 最新
+
+  frontend:
+    image: crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decisioncourt-frontend:v0.8.3
+    pull_policy: always
+```
+
+> **VPC 内网 URL**(`-vpc-`):香港 ECS 走阿里云内网拉镜像,速度 10-100x,且**不消耗公网流量**。公网 URL 留给本地开发者推送。
+
+#### 10.3.2 服务器登录 + 拉取 + 启动
+
+```bash
+# 1) SSH 登录 ECS
+ssh root@<server-ip>
+
+# 2) 登录阿里云 ACR(用 VPC 内网地址)
+docker login --username=<your-aliyun-username> crpi-<id>-vpc.cn-hongkong.personal.cr.aliyuncs.com
+
+# 3) 上传生产 compose 文件(本地执行)
+scp docker-compose.acr.yml root@<server-ip>:/opt/decisioncourt/
+
+# 4) 服务器上拉镜像
+cd /opt/decisioncourt
+docker compose -f docker-compose.yml -f docker-compose.acr.yml pull
+
+# 5) 启动(后台)
+docker compose -f docker-compose.yml -f docker-compose.acr.yml up -d
+
+# 6) 验证
+docker compose ps                                 # 4 容器 healthy
+curl http://127.0.0.1:8080/health                # 200
+curl -I http://127.0.0.1:3000                    # 200 HTML
+docker compose logs -f --tail=100 backend         # 看 GORM AutoMigrate 跑通
+```
+
+#### 10.3.3 升级(发新版本)
+
+```bash
+# 本地(开发者机器)
+# 1) 改代码 + commit
+git commit -m "feat: xxx"
+# 2) 重建 + 推新 tag(假设版本升到 v0.8.4)
+VERSION=v0.8.4
+SHORT_SHA=$(git rev-parse --short HEAD)
+REG=crpi-<id>.cn-hongkong.personal.cr.aliyuncs.com/decision-court
+
+docker build ... -t dc_backend:$VERSION .
+docker tag dc_backend:$VERSION $REG/decisioncourt-backend:$VERSION
+docker push $REG/decisioncourt-backend --all-tags
+# 同样处理 frontend
+
+# 服务器(SSH)
+# 1) 改 docker-compose.acr.yml 里的 tag
+sed -i 's/:v0.8.3/:v0.8.4/g' /opt/decisioncourt/docker-compose.acr.yml
+
+# 2) 滚动升级(零停机)
+cd /opt/decisioncourt
+docker compose -f docker-compose.yml -f docker-compose.acr.yml pull
+docker compose -f docker-compose.yml -f docker-compose.acr.yml up -d
+```
+
+#### 10.3.4 回滚(出错立刻回上一版本)
+
+```bash
+# 服务器
+cd /opt/decisioncourt
+# 方式 A:用 git SHA tag 回到指定 commit
+sed -i 's/:v0.8.4/:v0.8.3-abc1234/g' /opt/decisioncourt/docker-compose.acr.yml
+docker compose -f docker-compose.yml -f docker-compose.acr.yml up -d --force-recreate
+
+# 方式 B:回上一稳定版
+sed -i 's/:v0.8.4-xyz/:v0.8.3/g' /opt/decisioncourt/docker-compose.acr.yml
+docker compose -f docker-compose.yml -f docker-compose.acr.yml up -d --force-recreate
+```
+
+> 回滚的本质:**只用 ACR 已存在的镜像**,不需要重新构建,30 秒内回到任意历史版本。
+
+### 10.4 网络选择:公网 vs VPC 内网
+
+| 场景 | 用哪个 URL | 原因 |
+|---|---|---|
+| 本地开发者推送 | **公网** `crpi-<id>.cn-hongkong...` | ECS 才在 VPC,本地不在 |
+| 本地开发者拉(测试镜像) | 公网 | 同上 |
+| **ECS 拉镜像(生产)** | **VPC** `crpi-<id>-vpc.cn-hongkong...` | 内网 0 流量费 + 速度快 |
+| CI/CD runner(在阿里云上) | VPC | 同上 |
+| CI/CD runner(GitHub Action 等海外) | 公网 | 不在阿里云 VPC |
+
+> ⚠️ **VPC 地址只能从同一地域的阿里云 VPC 内访问**。从公网或异地 VPC 拉取会失败。
+
+### 10.5 安全最佳实践
+
+| 措施 | 说明 | 状态 |
+|---|---|---|
+| **仓库类型 = 私有** | 不开公开访问(任何人可 pull = 攻击面↑) | ✅ 强制 |
+| **AccessKey 用 RAM 子账号** | 主账号 AK 泄露 = 整个阿里云沦陷;RAM 子账号可限定 ACR 权限 | ⏳ 待办 |
+| **登录密码定期轮换** | 控制台 → 访问凭证 → 重置 | ⏳ 每季度 |
+| **`.dockerignore` 拦截敏感文件** | 见 `.dockerignore` 当前规则 | ✅ |
+| **image 不带 `:latest` tag** | 防止基础镜像被供应链攻击偷偷塞进 base | ✅ 已实装(锁版本) |
+| **镜像签名(可选)** | ACR EE 版支持 cosign 签名,个人版暂不支持 | ⏳ 未来 |
+| **拉取日志审计** | ACR 控制台 → 访问日志 → 看谁拉过镜像 | ✅ 自带 |
+
+### 10.6 `.dockerignore` 当前规则(2026-07-XX 验证)
+
+确认 `backend/.dockerignore` 和 `frontend/.dockerignore` 已排除:
+
+```
+.git
+.env
+.env.*
+backend/test-output/
+frontend/node_modules/
+frontend/.next/
+**/*.log
+**/coverage/
+```
+
+> ⚠️ **如果 `.env` 被错误 COPY 进镜像 → 立刻轮换 LLM_API_KEY / BOCHA_API_KEY / JWT_SECRET / POSTGRES_PASSWORD**(这些 key 一旦进镜像 = 公开了)。
+
+### 10.7 故障排查
+
+| 症状 | 可能原因 | 排查 / 修法 |
+|---|---|---|
+| `docker push` 报 `denied: requested access to the resource is denied` | (1) 仓库名拼错 (2) 命名空间不存在 (3) RAM 子账号无 `cr:Push` 权限 | (1) 检查拼写 (2) 控制台确认 namespace + repo (3) RAM 控制台授权 |
+| `docker pull` 报 `unauthorized: authentication required` | (1) `docker login` 过期 (2) 用了错网络地址(ECS 用公网拉失败) | (1) 重新 login (2) ECS 用 `-vpc-` 地址 |
+| `docker pull` 报 `pull access denied` 或 `repository does not exist` | (1) 仓库是私有的但当前账号无权限 (2) tag 不存在 | (1) 让 owner 加 RAM 权限 (2) `curl -u user:pass https://crpi-<id>.../v2/_catalog` 验证 |
+| `image not found` 在 `docker compose up` | `docker-compose.acr.yml` 里 image 拼错或 tag 不存在 | `docker images \| grep decisioncourt` 验证本地有 / 阿里云控制台验证 tag 已 push |
+| `docker compose up` 后 backend 启动失败 | GORM AutoMigrate 报错(§6.5 smoke 修过类似) | `docker compose logs backend` 看具体错误;常见是 .env 缺 POSTGRES_PASSWORD |
+| **VPC 内网拉镜像慢/失败** | ECS 不在 ACR 同地域,或没开通 VPC 内网访问 | 控制台 → ACR → 仓库 → 设置 → 勾选"允许 VPC 内网访问" |
+
+### 10.8 与项目其他文档的交叉引用
+
+- **架构图**:§3.1(本文件)
+- **v0.8.3 容器硬化**:§3.4(本文件)+ `security-audit-v0.8.3.md` §2.1 P0-3
+- **服务器 docker-compose 改造**:生产部署前需要把 `docker-compose.yml` 拆成 base + override,见 §10.3.1
+- **CI/CD 升级(未来)**:GitHub Action → `docker build + push to ACR` → ECS `docker compose pull + up`,无需 SSH
+- **成本对比**:ACR 个人版免费额度 300 个仓库 / 命名空间无限,**本项目 0 额外成本**
+
+### 10.9 决策记录
+
+| 日期 | 决策 | 原因 |
+|---|---|---|
+| 2026-07-XX | 引入阿里云 ACR 个人版(香港) | 服务器零工具链 + 版本化 + CI/CD 友好 + 0 额外成本 |
+| 2026-07-XX | 用 VPC 内网地址拉镜像 | 速度 + 不消耗公网流量 |
+| 2026-07-XX | 三种 tag 策略(语义版/minor/SHA) | 稳定 / 自动跟新 / 精准回滚 三场景覆盖 |
+| 2026-07-XX | 用 `docker-compose.acr.yml` override,不直接改原 compose | 保留本地开发 `build:` 能力 |
+
+---
+
+## 附录:文档变更日志
+
+| 日期 | 章节 | 变更 | 作者 |
+|---|---|---|---|
+| 2026-07-03 | 全文 | 初始化:第九次讨论决定(香港 2C2G / 免备案 / 任意域名) | 项目 owner |
+| 2026-07-04 | §6.5 | 新增 v0.8.3 本地冒烟测试结果 + 4 个真实 bug 修复 | Agent |
+| 2026-07-XX | §3.5 / §5 / §10 | **新增阿里云 Container Registry 工作流**(本文档更新) | Agent |
