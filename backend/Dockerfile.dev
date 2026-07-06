@@ -1,0 +1,33 @@
+# DecisionCourt v0.9.2 dev backend image
+#
+# 与 prod Dockerfile (Dockerfile) 区别:
+#   - 单一 stage,Go toolchain 留着 (dev 需要重新编译)
+#   - 用 air 做 Go 热重载 (改 .go 文件 → air 自动重启)
+#   - 配合 docker-compose.dev.yml 的 bind mount 使用:
+#       ./backend:/app (源码实时同步)
+#       dc_dev_backend_cache:/app/.cache (Go build cache,避免重编译)
+#
+# air 项目: https://github.com/air-verse/air
+# 不传 -c 参数时 air 用内置默认(监听 .go / .mod / .sum,忽略 _test.go 等)
+
+FROM golang:1.26-alpine
+
+# 与 prod Dockerfile 一致的国内镜像源
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
+
+RUN sed -i "s|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g" /etc/apk/repositories && \
+    apk add --no-cache git ca-certificates tzdata curl && \
+    go install github.com/air-verse/air@latest
+
+WORKDIR /app
+
+# 单独 COPY manifest 让镜像分层缓存生效:依赖没变就不重新 go mod download
+COPY go.mod go.sum ./
+RUN go mod download
+
+EXPOSE 8080
+
+# 源码通过 bind mount 进 /app(由 docker-compose.dev.yml 挂载)
+# air 会监听 .go 文件变化,自动 build + restart server
+CMD ["air"]

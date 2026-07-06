@@ -1,0 +1,165 @@
+# DecisionCourt v0.9.2 dev compose file
+#
+# 与 docker-compose.yml (prod) 的关键区别:
+#   1. bind mount 源码到容器 (./frontend:/app, ./backend:/app)
+#   2. 前端用 pnpm dev (Next.js HMR), 后端用 air (Go 热重载)
+#   3. 端口暴露到 host (3000 前端 / 8080 后端 / 5432 postgres / 6379 redis)
+#   4. postgres/redis 密码给默认 devpassword (生产环境 :? 必填)
+#   5. 加 Dozzle (端口 9999) 实时看容器日志
+#   6. 不切非 root (dev 方便调试; 生产加固由 prod compose 负责)
+#   7. 不挂载 prod 用 volumes,避免污染 prod 数据
+#
+# 用法:
+#   # 完整 dev 栈 (postgres + redis + backend + frontend + dozzle)
+#   docker compose -f docker-compose.dev.yml up -d --build
+#
+#   # 查看日志
+#   docker compose -f docker-compose.dev.yml logs -f backend
+#
+#   # 只看某个服务
+#   docker compose -f docker-compose.dev.yml up -d postgres redis
+#
+#   # 浏览器看实时日志面板
+#   open http://localhost:9999
+#
+#   # 浏览器访问应用
+#   open http://localhost:3000
+#
+#   # 关闭
+#   docker compose -f docker-compose.dev.yml down
+#
+# 注意:
+#   - .env 文件被自动读取,可放 LLM_API_KEY / BOCHA_API_KEY 等
+#   - 不需要 LLM/BOCHA 也能跑: viper.SetDefault 会用 mock,UI 会显示警告
+#   - 与 prod 栈可同时跑 (容器名前缀 dc_dev_*,端口不冲突)
+
+name: decisioncourt-dev
+
+services:
+  postgres:
+    image: postgres:15.13-alpine
+    container_name: dc_dev_postgres
+    # dev: 暴露端口,方便外部工具 (psql / TablePlus) 连
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-decisioncourt}
+      # dev: 给默认值 (生产 :? 必填)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-decisioncourt}
+    volumes:
+      - dc_dev_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-decisioncourt} -d ${POSTGRES_DB:-decisioncourt}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4.1-alpine
+    container_name: dc_dev_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - dc_dev_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: dc_dev_backend
+    # dev: 暴露到 host (debug 端口如有需要再加)
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      # 容器内走 docker network 直接连 postgres
+      DATABASE_URL: postgres://${POSTGRES_USER:-decisioncourt}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-decisioncourt}?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
+      LLM_MODEL_V3: ${LLM_MODEL_V3:-deepseek-chat}
+      LLM_MODEL_R1: ${LLM_MODEL_R1:-deepseek-reasoner}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-mock}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      BOCHA_API_KEY: ${BOCHA_API_KEY:-}
+      # dev: 给不安全的默认值 (32 字符以上,免得 viper 启动报长度警告)
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-prod-please-use-32chars}
+      JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-168}
+      # dev: 允许 localhost:3000 跨域
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
+      AGENT_GATEWAY_LLM_TIMEOUT_SEC: 90
+      # dev: 不限 trial 次数
+      USER_TRIAL_LIMIT: 0
+    volumes:
+      # 核心: 源码 bind mount,改完即生效
+      - ./backend:/app
+      # Go build cache 走命名卷,避免每次都重新下载模块
+      - dc_dev_backend_cache:/root/.cache/go-build
+      - dc_dev_go_mod:/go/pkg/mod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: dc_dev_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # 浏览器从 host 访问,所以用 localhost(不是 docker 网络名 backend)
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_WS_URL: ws://localhost:8080
+      NEXT_PUBLIC_USE_MOCK: ${NEXT_PUBLIC_USE_MOCK:-false}
+      # v0.9.2: 让 Next.js 在 Docker bind mount 跨平台时可靠监听文件变化
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      NODE_ENV: development
+    volumes:
+      # 核心: 源码 bind mount
+      - ./frontend:/app
+      # 匿名卷保护 node_modules 和 .next(防止宿主机空目录覆盖容器内)
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+
+  # Dozzle: 轻量级 Docker 日志面板 (7MB)
+  # 浏览器打开 http://localhost:9999 就能实时看所有 dc_dev_* 容器的日志
+  # 不用 docker logs + grep 翻来翻去
+  # 安全: 只读挂载 Docker socket (无法控制容器)
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dc_dev_dozzle
+    ports:
+      - "9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOZZLE_LEVEL: info
+      DOZZLE_TAILSIZE: 500
+      # 只显示 dev 相关容器,避免看到宿主机其他容器
+      DOZZLE_FILTER: "container=dc_dev_"
+    restart: unless-stopped
+
+volumes:
+  dc_dev_postgres_data:
+  dc_dev_redis_data:
+  dc_dev_backend_cache:
+  dc_dev_go_mod:

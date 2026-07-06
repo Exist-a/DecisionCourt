@@ -1,0 +1,33 @@
+# DecisionCourt v0.9.2 dev frontend image
+#
+# 与 prod Dockerfile (Dockerfile) 区别:
+#   - 单一 stage,不切非 root (dev 不需要)
+#   - 不做 standalone build (dev 跑 pnpm dev)
+#   - 含完整工具链 (devDependencies)
+#   - 配合 docker-compose.dev.yml 的 bind mount 使用:
+#       ./frontend:/app   (源码实时同步)
+#       /app/node_modules (匿名卷保护,不被宿主机覆盖)
+#       /app/.next        (保护 Next.js 构建缓存)
+#   - CHOKIDAR_USEPOLLING=true 让 Next.js 在 Docker 内可靠监听文件变化
+
+FROM node:20-alpine
+
+# pnpm 9.x 与 lockfileVersion 9.0 兼容(11.x 会撞 ERR_UNKNOWN_BUILTIN_MODULE)
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+# 单独 COPY manifest 让镜像分层缓存生效:依赖没变就不重装
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# 源码通过 bind mount 进 /app(由 docker-compose.dev.yml 挂载)
+# CMD 用 pnpm dev(Next.js dev server + HMR)
+CMD ["pnpm", "dev"]

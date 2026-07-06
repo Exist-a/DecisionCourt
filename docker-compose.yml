@@ -25,6 +25,13 @@ services:
     # v0.8.3 安全：去掉 host 端口映射(只允许内部网络访问)
     expose:
       - "5432"
+    # v0.9.2: 日志轮转。每个容器 stdout 最多 30MB (10MB × 3 个文件),
+    # 防止 json-file 驱动无限增长撑爆 ECS 磁盘。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-decisioncourt}
       # P0-3：DB 密码从 env 读(无默认值)。docker-compose fail-fast。
@@ -117,6 +124,9 @@ services:
     # v0.8.3 安全：去掉 host 端口(只通过 nginx/ALB 反代访问)
     expose:
       - "8080"
+    # v0.9.2: 挂载 /app/logs 到宿主机(持久化 LLM Gateway 文件日志)
+    volumes:
+      - ./logs/backend:/app/logs
     read_only: true
     tmpfs:
       - /tmp
