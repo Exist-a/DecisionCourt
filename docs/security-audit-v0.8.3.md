@@ -117,6 +117,17 @@ b15953f refactor: 弃用 DuckDuckGo
 | **`pnpm@latest` 11.x 与 `lockfileVersion: 9.0` 不兼容** | `frontend/Dockerfile` | `ERR_UNKNOWN_BUILTIN_MODULE` 编译失败 | `corepack prepare pnpm@9.15.4 --activate` 锁版本 |
 | **frontend 缺 `public/` 目录** | `frontend/Dockerfile` | runtime stage `COPY --from=builder /app/public` 失败 | builder stage `RUN mkdir -p /app/public` |
 
+### 3.1 v0.9.1 部署后浏览器真测新发现并修复(2026-07-06)
+
+> **意义**: Smoke test 只验过 curl + 服务端日志,前端 React hydration 和 CSP 行为只有
+> 真实浏览器 + 公网域名才能暴露。这一轮是"部署上线 → 浏览器开 DevTools → 看见 React
+> 报 #425 / CSP block"的产物。
+
+| Bug | 文件 | 影响 | 修复 |
+|---|---|---|---|
+| **Hydration #425/#418/#423：案件编号水印跨时区不一致** | `frontend/app/page.tsx` L105-L107 | SSR 用 UTC,客户端 (Asia/Shanghai UTC+8) 在跨日 UTC 时刻相差 1 天 → React #425 → 级联 #418/#423 → 整页 client-rerender fallback,Loss of streaming + LCP 抖动 | 给该 `<p>` 加 `suppressHydrationWarning`(React 官方推荐的"时间/时区不一致"场景),客户端值覆盖服务端值,不再抛错 |
+| **CSP `connect-src` 硬编码 `localhost:8080` 拒掉线上 WebSocket** | `frontend/next.config.mjs` L47 | 公网域名 `wss://yourdomain.com` 不在白名单,浏览器 console: `Connecting to 'wss://yourdomain.com/ws/...' violates the following Content Security Policy directive: "connect-src 'self' ws://localhost:8080 ..."`,WS 连接被静默 block,庭审无法实时同步 | `connect-src` 改为从 `process.env.NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_WS_URL` 动态派生 + localhost/backend 兜底。Next.js `headers()` 是 request-time 执行,改 `.env` 重启容器即生效,无需重建镜像(运行时 env 与构建时 NEXT_PUBLIC_* 必须保持一致) |
+
 ---
 
 ## 4. 端到端验证(2026-07-04 本地冒烟)

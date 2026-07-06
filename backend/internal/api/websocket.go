@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
 // upgrader 是 gorilla/websocket 的 Upgrade 配置。
@@ -84,18 +87,29 @@ func NewWebSocketServer(hub *Hub, service *courtroom.Service) *WebSocketServer {
 
 // Handler 处理 WebSocket 升级 + 消息循环。
 //
-// v0.8.3 安全(P0-1 + P0-5)：
+// v0.9.2 安全放宽(P0-WS-OVER-OWNER)：
 //   1. 升级前从 ?token=xxx / Cookie dc_session 提取 viewer_id
-//   2. 验证失败 → 401(不升级)
-//   3. 同时检查 session 存在(用 viewer_id 限制;其他人的 session 不升级)
+//      → 失败 401(必须有有效 JWT)
+//   2. session 必须存在 → 否则 404
+//   3. owner_id 鉴权改为"软校验":
+//      - 空 owner(legacy / 测试数据)→ 允许
+//      - owner == viewer → 允许
+//      - owner != viewer → WARN + audit,但仍允许
+//
+//      理由:session UUID 本身已是 122-bit 不可枚举凭证(URL 即权限)。
+//      强 owner 校验在生产中造成"用户清掉 localStorage 后无法重连"的
+//      痛点(2026-07-06 上线实测,403 = not the owner of this session),
+//      改用 UUID-as-credential。HTTP API 仍保留 owner 校验。
+//
 //   4. 连接级 viewer_id 写入 conn 上下文;user.action 派发时带上,
-//      service 用它做 audit + submittedBy
+//      service 用它做 audit + submittedBy。
 func (s *WebSocketServer) Handler(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
-	// 1. 提取 viewer_id
+	// 1. 提取 viewer_id(必须有有效 JWT)
 	viewer, err := extractWSViewer(c, s.secret)
 	if err != nil {
+		slog.Debug("websocket: missing/invalid token", "session_uuid", sessionUUID, "error", err)
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 			"code":    1401,
 			"message": "unauthorized: " + err.Error(),
@@ -103,7 +117,7 @@ func (s *WebSocketServer) Handler(c *gin.Context) {
 		return
 	}
 
-	// 2. 验证 session 存在 + 必须是 owner
+	// 2. 验证 session 存在
 	if model.DB == nil {
 		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
 			"code":    1500,
@@ -111,22 +125,39 @@ func (s *WebSocketServer) Handler(c *gin.Context) {
 		})
 		return
 	}
-	var n int64
-	if err := model.DB.Table("court_sessions").
-		Where("session_uuid = ? AND owner_id = ?", sessionUUID, viewer).
-		Count(&n).Error; err != nil {
+	var session model.CourtSession
+	if err := model.DB.Where("session_uuid = ?", sessionUUID).First(&session).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.Info("websocket: session not found", "session_uuid", sessionUUID, "viewer", viewer)
+			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+				"code":    1002,
+				"message": "庭审不存在",
+			})
+			return
+		}
+		slog.Error("websocket: session lookup failed", "session_uuid", sessionUUID, "error", err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 			"code":    1500,
 			"message": "session lookup failed",
 		})
 		return
 	}
-	if n == 0 {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-			"code":    1403,
-			"message": "forbidden: not the owner of this session",
-		})
-		return
+
+	// 3. Owner 鉴权(软校验,UUID 才是凭证)
+	if session.OwnerID != "" && session.OwnerID != viewer {
+		slog.Warn("websocket: viewer != session owner, allowing (UUID-as-credential policy v0.9.2)",
+			"session_uuid", sessionUUID,
+			"viewer", viewer,
+			"owner_id", session.OwnerID,
+		)
+		// 审计留痕(失败不阻塞主流程)
+		_ = model.DB.Create(&model.AuditLog{
+			UserID: viewer,
+			Action: "ws.connect.foreign_owner",
+			Target: sessionUUID,
+			Result: "allow",
+			Reason: "v0.9.2 uuid-as-credential",
+		}).Error
 	}
 
 	// 3. 升级

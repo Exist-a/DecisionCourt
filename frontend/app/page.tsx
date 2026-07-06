@@ -101,7 +101,14 @@ export default function Home() {
       <section className="container mx-auto max-w-5xl px-6 pt-16 pb-10">
         <div className="text-center">
           {/* 案件编号水印 */}
-          <p className="text-[10px] uppercase tracking-[0.3em] text-inkFaint font-data mb-5">
+          {/* v0.9.1 修复：日期在 render 期间由 new Date() 生成,服务端用 UTC、
+              客户端(Asia/Shanghai UTC+8)在跨日 UTC 时刻可能差一天 → #425。
+              suppressHydrationWarning 是 React 推荐的"时区/时间不一致"场景,
+              让客户端值覆盖服务端值,不抛 hydration error。 */}
+          <p
+            className="text-[10px] uppercase tracking-[0.3em] text-inkFaint font-data mb-5"
+            suppressHydrationWarning
+          >
             Case No. DC-{new Date().getFullYear()}
             {(new Date().getMonth() + 1).toString().padStart(2, "0")}
             {new Date().getDate().toString().padStart(2, "0")} · 立 案 申 请
