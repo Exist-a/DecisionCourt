@@ -77,9 +77,8 @@ services:
     restart: unless-stopped
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    # v0.9.1: ECS 2C2G build OOM,改用预构建镜像(本机 build → ACR push)
+    image: crpi-rnawo8jx69bslvbx.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decision-court-backend:latest
     container_name: dc_backend
     user: "1001:1001" # 与 Dockerfile adduser uid:gid 对齐
     environment:
