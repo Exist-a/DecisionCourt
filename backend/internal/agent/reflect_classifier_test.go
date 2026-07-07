@@ -262,6 +262,34 @@ func TestBuildPrivateMemoryMessage_NilEvidences_LegacyPath(t *testing.T) {
 		"legacy nil-Evidences path must pass through display_id unchanged")
 }
 
+// TestBuildPrivateMemoryMessage_SetsSessionUUID 是 v0.9.3 回归测试:
+// buildPrivateMemoryMessage 必须把 meta.SessionUUID 写到 a2a.Message,
+// Bus.Send 才能用对的房间 key 广播(WebSocket hub.Join 用的是
+// session_uuid 字符串列,与 SessionID uuid 主键不同)。
+//
+// 之前 Meta 没暴露 SessionUUID 字段,reflect 步骤永远走
+// SessionID.String() fallback,a2a.message 进错房间,前端收不到 strategy_note。
+func TestBuildPrivateMemoryMessage_SetsSessionUUID(t *testing.T) {
+	out := AgentOutput{
+		Action:     "reflect",
+		MemoryType: MemoryKindStrategyNote,
+		MemoryNote: "x",
+	}
+	sessionUUID := "ws-room-key-v0.9.3"
+	meta := MemoryMeta{
+		SessionID:   uuid.New(),
+		SessionUUID: sessionUUID, // v0.9.3 关键:必须填
+		AgentType:   "prosecutor",
+		Round:       1,
+	}
+	msg := buildPrivateMemoryMessage(meta, out)
+
+	require.Equal(t, sessionUUID, msg.SessionUUID,
+		"buildPrivateMemoryMessage MUST propagate meta.SessionUUID to msg.SessionUUID")
+	require.NotEqual(t, msg.SessionID.String(), msg.SessionUUID,
+		"SessionID (uuid) and SessionUUID (string) must differ for the same row")
+}
+
 // --- Runner integration -------------------------------------------------
 
 func TestRunner_ReflectWithMemory_FiresHook(t *testing.T) {

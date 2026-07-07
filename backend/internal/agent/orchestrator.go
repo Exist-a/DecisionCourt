@@ -195,9 +195,13 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		MemoryHook: o.makeMemoryHook(),
 		MemoryMeta: MemoryMeta{
 			SessionID: session.ID,
-			AgentType: string(self),
-			Round:     session.CurrentRound,
-			Phase:     string(session.CurrentPhase),
+			// v0.9.3 修复:把 session.SessionUUID 注入 hook,reflect
+			// 步骤 EmitMemoryFromOutput → buildPrivateMemoryMessage
+			// 才能用对的房间 key 广播。
+			SessionUUID: session.SessionUUID,
+			AgentType:   string(self),
+			Round:       session.CurrentRound,
+			Phase:       string(session.CurrentPhase),
 			// v0.6: 把当前 session 的证据列表注入 hook，reflect
 			// 步骤触发 EmitMemoryFromOutput 时用 NormalizeEvidenceRefs
 			// 把 LLM 返回的 UUID 映射回 display_id。

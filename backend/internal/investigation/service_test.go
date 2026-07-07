@@ -151,6 +151,45 @@ func TestRecordFinding_NoResultsReturnsFindingWithCountZero(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestRecordFinding_BroadcastRoomKey_UsesSessionUUID 是 v0.9.3 回归测试:
+// RecordFinding 发的 dispatch / report 两条 A2A 消息必须用 session.SessionUUID
+// 当广播房间 key —— 不能让 Bus.Send fallback 到 session.ID.String()。
+//
+// 之前 v0.5 修复只在 orchestrator.go (recordSideEffects) 生效,
+// investigation/service.go 漏改,导致 dispatcher 投出去的搜索请求和
+// investigator 的 report 都进错房间,前端收不到 a2a.message。
+func TestRecordFinding_BroadcastRoomKey_UsesSessionUUID(t *testing.T) {
+	results := []search.Result{{Title: "A", URL: "u", Content: "a"}}
+
+	// 抓所有 broadcast 的 room key
+	var capturedSessionKeys []string
+	repo := NewInMemoryRepository(nil)
+	a2aRepo := a2a.NewInMemoryRepository(nil)
+	bus := a2a.NewBus(a2aRepo, func(sessionUUID, eventType string, payload map[string]interface{}) {
+		capturedSessionKeys = append(capturedSessionKeys, sessionUUID)
+	})
+	searcher := &stubSearcher{results: results}
+	svc := NewService(repo, bus, searcher)
+
+	session := model.CourtSession{
+		ID:          uuid.New(),
+		SessionUUID: "ws-room-key-investigation",
+		CurrentPhase: model.PhaseCrossExam,
+		CurrentRound: 0,
+	}
+
+	_, err := svc.RecordFinding(context.Background(), session, string(model.AgentProsecutor), "q")
+	require.NoError(t, err)
+
+	require.Len(t, capturedSessionKeys, 2, "dispatch + report must each broadcast once")
+	for i, k := range capturedSessionKeys {
+		require.Equal(t, session.SessionUUID, k,
+			"broadcast[%d] room key MUST be SessionUUID (NOT SessionID.String())", i)
+		require.NotEqual(t, session.ID.String(), k,
+			"v0.9.3 regression: dispatch/report broadcast was using SessionID.String() before")
+	}
+}
+
 func TestRecordFinding_RejectsInvalidDispatcher(t *testing.T) {
 	svc, _, _, _ := buildService(t, nil)
 	session := model.CourtSession{ID: uuid.New()}

@@ -92,6 +92,10 @@ func (s *Service) RecordFinding(
 	//    so any listener that watches the bus sees the request first.
 	if _, err := s.a2aBus.Send(ctx, a2a.Message{
 		SessionID:   session.ID,
+		// v0.9.3 修复:必须填 SessionUUID (court_sessions.session_uuid 字符串列),
+		// 不能让 Bus.Send fallback 到 SessionID.String() — 两把钥匙不同,
+		// fallback 会让 hub.Broadcast 进错房间,a2a.message 被静默丢弃。
+		SessionUUID: session.SessionUUID,
 		Round:       session.CurrentRound,
 		Phase:       string(session.CurrentPhase),
 		From:        dispatcher,
@@ -116,6 +120,8 @@ func (s *Service) RecordFinding(
 	//    bus alone (without DB access) can still show what came back.
 	if _, err := s.a2aBus.Send(ctx, a2a.Message{
 		SessionID:   session.ID,
+		// v0.9.3 修复:同上,显式填 SessionUUID 让 hub 找对房间。
+		SessionUUID: session.SessionUUID,
 		Round:       session.CurrentRound,
 		Phase:       string(session.CurrentPhase),
 		From:        string(model.AgentInvestigator),

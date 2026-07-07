@@ -33,9 +33,13 @@ type MemoryHook func(ctx context.Context, out AgentOutput, meta MemoryMeta) erro
 // 时归一化退化为原 refs 过滤空串，不影响既有行为。
 type MemoryMeta struct {
 	SessionID uuid.UUID
-	AgentType string // e.g. "prosecutor"
-	Round     int
-	Phase     string // e.g. "cross_exam"
+	// SessionUUID 是 court_sessions.session_uuid 字符串列(WebSocket hub
+	// 房间 key)。v0.9.3 修复:必须填,否则 Bus.Send fallback 到
+	// SessionID.String() 会让 hub.Broadcast 进错房间。
+	SessionUUID string
+	AgentType   string // e.g. "prosecutor"
+	Round       int
+	Phase       string // e.g. "cross_exam"
 	// Evidences 是当前 session 的证据列表，用于归一化 EvidenceRefs。
 	// 该字段可选；为 nil 时 buildPrivateMemoryMessage 跳过归一化，
 	// 等价于旧行为。
@@ -123,6 +127,8 @@ func buildPrivateMemoryMessage(meta MemoryMeta, out AgentOutput) a2a.Message {
 
 	return a2a.Message{
 		SessionID:   meta.SessionID,
+		// v0.9.3 修复:显式填 SessionUUID,Bus.Send 才能用对房间 key 广播。
+		SessionUUID: meta.SessionUUID,
 		Round:       meta.Round,
 		Phase:       meta.Phase,
 		From:        meta.AgentType,

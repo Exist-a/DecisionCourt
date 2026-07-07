@@ -177,18 +177,92 @@ cd /opt/DecisionCourt && ./deploy.sh
 
 ---
 
-## 3. ECS 上的日常命令（WorkBench 里用）
+## 3. ECS 上的日常命令（不用 WorkBench，本地 PowerShell 直接 ssh）
 
-### 3.1 看状态
+> **核心能力**：本机 PowerShell 通过 ssh 走 ECS docker daemon，所有 docker 命令本地跑结果来自 ECS。
+> 配好后你 90% 的 ECS 操作不需要再开 WorkBench。
+>
+> **前提**：已经按 [§0 一图流](#0-一图流) 配了 SSH key 和 `ecs` context。
+
+### 3.1 通用操作
+
+```powershell
+.\scripts\ecs.ps1              # 看当前 context + ECS 容器状态
+.\scripts\ecs.ps1 ecs          # 切到 ECS context
+.\scripts\ecs.ps1 local        # 切回本地 context
+.\scripts\ecs.ps1 status       # 看 ECS 容器 + 健康
+.\scripts\ecs.ps1 shell backend # 进 ECS 上 backend 容器内
+.\scripts\ecs.ps1 deploy       # 拉新镜像 + 重启所有变化容器
+```
+
+### 3.2 两种日志：stdout vs 文件日志（v0.9.2 关键区分）
+
+| 维度 | `ecs.ps1 logs backend` | `ecs.ps1 logs-file` |
+|---|---|---|
+| **来源** | 容器 stdout（slog） | 宿主机 `/opt/DecisionCourt/logs/backend/agent_gateway_YYYY-MM-DD.log`（file_logger） |
+| **字段数** | ~10 个（时间/level/msg） | 35+ 个（provider/model/latency/tokens/cost/compression/throttle 等） |
+| **持久化** | ❌ 容器重启丢失 | ✅ 容器重启保留（volume 挂载） |
+| **适用** | 实时跟踪调试 | 深度分析、Token 计费、性能优化 |
+| **写入触发** | 每次 slog.Info() | 每次 LLM Gateway 调用 |
+
+**用法**：
+
+```powershell
+# stdout 日志（实时跟踪）
+.\scripts\ecs.ps1 logs backend          # 实时
+.\scripts\ecs.ps1 logs caddy           # 实时跟踪 caddy（看请求转发/502）
+
+# 文件日志（v0.9.2 新增）
+.\scripts\ecs.ps1 logs-file            # 实时跟踪今天的 LLM 日志
+.\scripts\ecs.ps1 logs-file -Lines 100  # 看最近 100 行（不实时）
+.\scripts\ecs.ps1 logs-file -Date 2026-07-05  # 看某天历史
+.\scripts\ecs.ps1 logs-file -Follow     # 强制实时跟踪
+```
+
+**常用过滤**（配合 `Select-String`）：
+
+```powershell
+# 只看 LLM 调用
+.\scripts\ecs.ps1 logs-file | Select-String provider
+
+# 只看 token 用量
+.\scripts\ecs.ps1 logs-file | Select-String tokens
+
+# 看某次 trial 的日志
+.\scripts\ecs.ps1 logs-file -Date 2026-07-05 -Lines 500 | Select-String "5bfc9b05-b9f6"
+
+# 看压缩效果（v0.5+ Prompt 压缩）
+.\scripts\ecs.ps1 logs-file | Select-String compression_ratio
+
+# 看限流/熔断（v0.9+ Gateway）
+.\scripts\ecs.ps1 logs-file | Select-String "throttle|circuit"
+```
+
+**故障排查速查**：
+
+| 现象 | 查这个命令 |
+|---|---|
+| 看不到日志文件 | `ssh admin@47.239.152.177 'sudo mkdir -p /opt/DecisionCourt/logs/backend && sudo chown -R 1001:1001 /opt/DecisionCourt/logs/backend'`（第一次部署后跑） |
+| 文件存在但内容空 | 用户还没触发过 trial，开一个 trial 试 |
+| 想知道今天用了多少 token | `ecs.ps1 logs-file -Lines 9999 \| Select-String tokens \| %{ ($_ -split '"tokens":')[1] -split ','[0] \| Measure-Object -Sum }` |
+
+---
+
+## 4. ECS 上的日常命令（WorkBench 应急用）
+
+> **WorkBench 只用于特殊场景**：docker daemon 没响应 / ssh 连不上 / 磁盘爆了等。
+> 日常 90% 操作走本地 ecs.ps1（见 [§3](#3-ecs-上的日常命令不用-workbench本地-powershell-直接-ssh)）。
+
+### 4.1 看状态
 
 ```bash
 cd /opt/DecisionCourt
-docker compose ps                    # 所有容器状态
-docker compose logs --tail=100 backend   # backend 最近 100 行
-docker compose logs -f backend       # 实时跟踪
+docker compose ps                          # 所有容器状态
+docker compose logs --tail=100 backend     # backend 最近 100 行
+docker compose logs -f backend             # 实时跟踪
 ```
 
-### 3.2 重启 / 重 build 某服务
+### 4.2 重启 / 重 build 某服务
 
 ```bash
 # 重启单个服务（不拉新镜像，用本地缓存）
@@ -198,7 +272,7 @@ docker compose restart backend
 docker compose up -d backend --force-recreate
 ```
 
-### 3.3 应急清理
+### 4.3 应急清理
 
 ```bash
 # 容器启动卡住 / 状态异常时

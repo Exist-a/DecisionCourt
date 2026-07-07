@@ -194,7 +194,7 @@ func main() {
 
 	slog.Info("DecisionCourt backend listening",
 		"port", port,
-		"version", "v0.8.0",
+		"version", "v0.9.2",
 		"whitebox", "enabled",
 	)
 	// v0.9 (ADR 0012 §决策 5): 启动恢复 active session 工作流。

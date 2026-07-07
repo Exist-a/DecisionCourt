@@ -57,6 +57,18 @@ function Write-OK($msg)   { Write-Host "    OK $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "    WARN $msg" -ForegroundColor Yellow }
 function Write-Err($msg)  { Write-Host "    ERROR $msg" -ForegroundColor Red }
 
+# ============== 0. 强制切到本地 context(关键!) ==============
+# 背景: docker context 和 docker buildx 是两套独立系统
+#   - `docker context use ecs` 后,docker build 也走 ECS,ECS 拉不到 alpine:3.20
+#   - 这里强制切回 default context,确保 build 在本地跑
+#   - 必须在第 1 步之前做,否则 docker build 失败
+$curCtx = (docker context ls --format "{{.Name}}|{{.Current}}" | Where-Object { $_ -match "true$" }) -replace "\|true$", ""
+if ($curCtx -ne "default") {
+    Write-Step "检测到当前 context = $curCtx,切回 default(避免 build 走 ECS 拉不到 alpine)"
+    docker context use default 2>&1 | Out-Null
+    docker --context default buildx use default 2>&1 | Out-Null
+}
+
 # ============== 1. VPC 替换 ==============
 if ($UseVPC) {
     $Registry = $Registry -replace "crpi-rnawo8jx69bslvbx", "crpi-rnawo8jx69bslvbx-vpc"
@@ -164,7 +176,9 @@ if ($NoLogin -or $BuildOnly) {
 
 # ============== 6. 构建 backend ==============
 Write-Step "构建 backend 镜像"
-docker build -t "${BackendImage}:${Tag}" ./backend
+# 显式 --builder default:避开 docker buildx 默认 builder 可能是 ECS 的坑
+# (docker context 和 docker buildx 是两套独立系统,context 切回 default 不影响 buildx)
+docker build --builder default -t "${BackendImage}:${Tag}" ./backend
 if ($LASTEXITCODE -ne 0) { Write-Err "backend build 失败"; exit 1 }
 Write-OK "backend 镜像已构建"
 
@@ -181,7 +195,7 @@ if ($env:NEXT_PUBLIC_USE_MOCK) {
     $buildArgs += "--build-arg"; $buildArgs += "NEXT_PUBLIC_USE_MOCK=$env:NEXT_PUBLIC_USE_MOCK"
 }
 
-docker build `
+docker build --builder default `
     $buildArgs `
     -t "${FrontendImage}:${Tag}" `
     ./frontend

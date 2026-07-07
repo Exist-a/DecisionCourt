@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -157,6 +158,27 @@ func Load() {
 
 	if err := viper.Unmarshal(&AppConfig); err != nil {
 		log.Fatalf("failed to load config: %v", err)
+	}
+
+	// v0.9.3 修复：viper.Unmarshal 对 []string 字段 + 单值 env var
+	// (e.g. ALLOWED_ORIGINS=https://decisioncourt.cn,无逗号)不会自动
+	// split,导致 AppConfig.AllowedOrigins 是 nil —— 进而触发
+	// websocket.go / main.go 的 localhost:3000 fallback,生产环境 Origin
+	// 不在白名单,gorilla/websocket 返回 403,所有 WS 握手失败。
+	//
+	// 手动 split 一次:逗号分隔 + 去空格 + 去空元素。兼容单值 / 多值 /
+	// 带尾逗号三种写法(.env.example 是逗号分隔,生产 .env 是单值,都能解析)。
+	if raw := viper.GetString("ALLOWED_ORIGINS"); raw != "" {
+		parts := strings.Split(raw, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+		if len(out) > 0 {
+			AppConfig.AllowedOrigins = out
+		}
 	}
 
 	// P0-2 / P0-4 安全：关键密钥 / 连接串必须存在,缺失则 fail-fast。

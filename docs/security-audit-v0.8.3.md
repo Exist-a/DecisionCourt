@@ -187,3 +187,56 @@ redis      Up (healthy)              6379/tcp
 - 修复 commit 历史:见 §0 commit 列表
 - 详细 PRD / Tech spec / DB design / Agent design / API design / UX refinement:见 [`docs/decisioncourt-*.md`](./README.md)
 - 历史归档(2026-07-03 初版报告): [`.trae/documents/security-audit-2026-07-03.md`](../.trae/documents/security-audit-2026-07-03.md)
+
+---
+
+## 8. v0.9.3 修复跟进(2026-07-06 上线真域名后发现)
+
+### 8.1 WS 握手 403 — `viper.Unmarshal` 不自动 split 单值 env var
+
+**症状**:
+```
+[Frontend] WebSocket connection to 'wss://decisioncourt.cn/ws/courtrooms/d7bac039-...?token=...' failed:
+  Error during WebSocket handshake: Unexpected response code: 403
+```
+
+**根因**:
+- `.env` 里写 `ALLOWED_ORIGINS=https://decisioncourt.cn`(单值,无逗号)
+- viper.Unmarshal 对 `[]string` 字段 + 单值 env var **不会自动 split**
+- `AppConfig.AllowedOrigins` 运行时是 nil
+- [websocket.go:42-44](../backend/internal/api/websocket.go#L42-L44) 的 localhost fallback 触发,生产白名单变成 `["http://localhost:3000"]`
+- 真实浏览器带 `Origin: https://decisioncourt.cn` 不在白名单 → `gorilla/websocket` 返 403
+
+**修复**: [config.go:164-180](../backend/internal/config/config.go#L164-L180) 在 viper.Unmarshal 后手动 split + trim + 去空元素。兼容单值 / 多值 / 带尾逗号三种写法。
+
+### 8.2 A2A 消息 fallback 进错房间("鬼屋")
+
+**症状**(stderr):
+```
+[a2a] WARN: a2a.message broadcast using SessionID.String() fallback —
+        caller should set Message.SessionUUID to match hub room key
+        (got sessionID=906ebde1-...)
+```
+
+**根因**:
+- v0.5 PR 在 `orchestrator.go:recordSideEffects` 已经修过(填 `SessionUUID: session.SessionUUID`),但 `investigation/service.go` 的两处 `a2aBus.Send` 没改 → dispatch / report 进错房间
+- `MemoryMeta` struct 也缺 `SessionUUID` 字段,reflect 步骤的 `buildPrivateMemoryMessage` 同样走 fallback
+- 静默丢失所有 dispatcher 调查请求 + report,前端 InvestigatorPanel 永远不更新
+
+**修复**:
+- [investigation/service.go:96,124](../backend/internal/investigation/service.go#L96) 两处 Send 都显式填 `SessionUUID: session.SessionUUID`
+- [reflect_classifier.go:39-46](../backend/internal/agent/reflect_classifier.go#L39-L46) `MemoryMeta` 加 `SessionUUID string` 字段
+- [orchestrator.go:200](../backend/internal/agent/orchestrator.go#L200) MemoryMeta 注入 `SessionUUID: session.SessionUUID`
+
+**回归测试**:
+- `backend/internal/agent/reflect_classifier_test.go` 新增 `TestBuildPrivateMemoryMessage_SetsSessionUUID`
+- `backend/internal/investigation/service_test.go` 新增 `TestRecordFinding_BroadcastRoomKey_UsesSessionUUID`
+- `backend/internal/config/config_test.go` 新增 `TestParseAllowedOrigins_SingleValue`(单值 / 逗号 / 尾逗号 / 空格 / 空串 6 个 case)
+
+**部署验证**(ECS 47.239.152.177 容器内实测):
+| Origin | 修复前 | 修复后 |
+|---|---|---|
+| `https://decisioncourt.cn` | 403 ❌ | 401 ✅(进入 JWT 校验) |
+| `http://localhost:3000` | 401 | 403(正确,生产不应允许 dev origin) |
+| (no Origin) | 401 | 401 ✅ |
+| `https://evil.com` | 403 | 403 ✅ |

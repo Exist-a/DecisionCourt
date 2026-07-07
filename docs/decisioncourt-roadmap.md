@@ -39,6 +39,7 @@
 | 用户级 Trial 限流(ADR 0014) | ✅ v0.9 | 每用户每天 5 次 StartTrial(sync.Map + 滑动窗口) |
 | 防幻觉(ADR 0015) | ✅ v0.9.1 | baseRules 严禁编造 + buildContext source 标签 + user_interrupt 注入 |
 | 部署就绪 | ✅ v0.9.1 | 真域名 + DNS 解析待用户完成,代码侧全部就绪 |
+| WS 握手 403 修复 | ✅ v0.9.3 | viper.Unmarshal 对单值 env var 不自动 split `[]string`,生产 `ALLOWED_ORIGINS=https://decisioncourt.cn` 没逗号导致 AllowedOrigins=nil,fallback 到 localhost:3000 白名单,所有公网 WS 握手 403。手动 split 修复。同时修复 investigation/service.go 没填 Message.SessionUUID 的 a2a fallback 鬼屋 bug(906ebde1 → d7bac039 错投房间)。 |
 
 **当前阻塞**：
 
