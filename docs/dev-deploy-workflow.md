@@ -1,7 +1,7 @@
-# DecisionCourt 日常开发与部署工作流（v0.9.2）
+# DecisionCourt 日常开发与部署工作流（v0.9.3）
 
-> **状态**: 落地（2026-07-06）
-> **配套**: [CHECKLIST.md](./deployment/CHECKLIST.md)（规划）· [ADR 0016](./adr/0016-deployment-lessons-learned.md)（教训库）· [OBSERVABILITY.md](./OBSERVABILITY.md)（运维速查）
+> **状态**: 落地（2026-07-06,2026-07-07 增补 §4 坑 9/10）
+> **配套**: [CHECKLIST.md](./deployment/CHECKLIST.md)（规划）· [ADR 0016](./adr/0016-deployment-lessons-learned.md)（教训库）· [OBSERVABILITY.md](./OBSERVABILITY.md)（运维速查）· [case-study-2026-07-07.md](./observability/case-study-2026-07-07.md)（真域名回归复盘）
 > **目标读者**: 项目 owner（自己），未来要维护 / 上线的人
 
 ---
@@ -455,6 +455,90 @@ sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
 ---
 
+### 坑 9：push-to-acr.ps1 的 context 切换有漏(2026-07-07 真域名回归发现)
+
+**症状**:`.\scripts\push-to-acr.ps1` 报
+```
+ERROR: use `docker --context=default buildx` to switch to context "default"
+```
+
+**根因**:脚本的自动切换逻辑只判断 `context == "default"`,不判断 `"desktop-linux"`(Docker Desktop 默认 context)。本地电脑用 Docker Desktop 时,context 是 `desktop-linux`,脚本以为已经在 default,跳过切换,buildx 还在 ecs context → build 失败。
+
+**修法(临时绕开)**:
+```powershell
+docker context use default
+docker buildx use default
+.\scripts\push-to-acr.ps1
+```
+
+**建议改进**(用户没要求改脚本,留 TODO):
+```powershell
+# push-to-acr.ps1 改成
+$curCtx = (docker context ls --format "{{.Name}}|{{.Current}}" | Where-Object { $_ -match "true$" }) -replace "\|true$", ""
+if ($curCtx -ne "default") {  # 这里 desktop-linux 也会进来
+    Write-Step "检测到 context=$curCtx,切回 default"
+    docker context use default
+    docker --context default buildx use default
+}
+```
+
+**参考**:[case-study-2026-07-07 §3.3](../observability/case-study-2026-07-07.md) · [ADR 0016](../adr/0016-deployment-lessons-learned.md)
+
+---
+
+### 坑 10：backend 必须 `--no-cache`,否则 push 是 no-op(2026-07-07 真域名回归发现)
+
+**症状**:`push-to-acr.ps1` 报告"backend 推送成功",但 ACR 的 `decision-court-backend:latest` **digest 没变**。后续 ECS pull 拿到的还是旧 image,新代码没生效。
+
+**根因**:Docker build 缓存。后端 `Dockerfile` 是
+```dockerfile
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
+```
+
+如果 `go.mod / go.sum` 没变,前面 3 层缓存命中,`COPY . .` 这一层 cache key 是源文件 + size + mtime,如果源文件变动它会失效。但**`go build` 这一层是 `RUN`**,如果它的 cache key(源文件 hash 列表)显示输入没变,就直接复用上一轮的 binary。
+
+更隐蔽的情况:Go 编译器在源文件改动时,**重新生成的 binary 可能 byte-identical**(比如只改注释 / 改 whitespace)。这种情况 ACR 看到 digest 没变,`docker push` no-op。
+
+**修法(强制 invalidate)**:
+```powershell
+# 每次 backend 改动后,无缓存重建
+docker buildx use default
+docker build --no-cache -t "crpi-rnawo8jx69bslvbx.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decision-court-backend:latest" ./backend
+docker push "crpi-...decision-court-backend:latest"
+```
+
+**更稳的 Dockerfile 修法**(推荐):在 build 阶段加 cache-bust ARG
+```dockerfile
+ARG CACHEBUST=1
+# ... 中间是 go mod download ...
+COPY . .
+RUN CACHEBUST=$CACHEBUST go build -o /app/server ./cmd/server
+```
+build 时:
+```bash
+docker build --build-arg CACHEBUST=$(date +%s) -t ... ./backend
+```
+
+**前端不需要**(Next.js build args 经常变 + 输出大,缓存命中率低)。
+
+**验证 push 真的生效**:
+```powershell
+# 1) 看 ACR 镜像 digest 跟本地 image digest 一致
+docker --context ecs inspect dc_backend --format "{{.Image}}"
+docker image inspect <本地镜像ID> --format "{{.Id}}"
+# 两次 sha256: 应该是同一个
+
+# 2) 看二进制 mtime 跟 git push 时间差 < 5 min
+docker --context ecs exec dc_backend sh -c "ls -la --full-time /app/server"
+```
+
+**参考**:[case-study-2026-07-07 §4.4](../observability/case-study-2026-07-07.md) · [ADR 0016](../adr/0016-deployment-lessons-learned.md) §"二进制 mtime + digest 是判断部署生效的银弹"
+
+---
+
 ## 5. 速查表（最常用的 10 条命令）
 
 | 场景 | 命令 |
@@ -464,6 +548,7 @@ sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 | **看 dev backend 日志** | `docker logs dc_dev_backend --tail 200 -f` |
 | **打开日志面板** | 浏览器 `http://localhost:9999` |
 | **本地推 ACR** | `.\scripts\push-to-acr.ps1` |
+| **backend 改动强制无缓存重建** | `docker buildx use default; docker build --no-cache -t "crpi-...decision-court-backend:latest" ./backend; docker push ...` (见 §4 坑 10) |
 | **只 build 不 push** | `.\scripts\push-to-acr.ps1 -BuildOnly` |
 | **ECS 部署（一行）** | `cd /opt/DecisionCourt && docker compose pull && docker compose up -d` |
 | **ECS 部署（带确认+健康检查）** | `cd /opt/DecisionCourt && ./deploy.sh` |

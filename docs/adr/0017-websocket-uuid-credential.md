@@ -113,3 +113,28 @@ sudo docker exec dc_postgres psql -U decisioncourt -d decisioncourt \
 - ADR 0002-a2a-private-channel(private message 不走 hub,故放宽不影响 private)
 - [backend/internal/api/handler.go](../internal/api/handler.go) 中 `checkSessionAccess`
   仍走硬校验,WS 与 HTTP 的鉴权差异需要写进技术规范。
+
+---
+
+## 8. 2026-07-07 复盘:本 ADR 解决了一半问题
+
+**实际生产复现**(2026-07-07 16:00 +0800):即使 v0.9.2 修了 owner 软校验,WS 握手 403 **依然存在**,只是换了一个来源。
+
+| 修复 | 解决 | 未解决 |
+|---|---|---|
+| 本 ADR(§2 软校验) | owner_id 不匹配的 403 | upgrader 阶段的 CheckOrigin 拒掉的 403 |
+| [ADR 0018](./0018-websocket-origincheck-init-timing.md) | upgrader.CheckOrigin 在 init 阶段锁死 `allowedSet` 的 403 | — |
+
+### 8.1 教训
+
+1. **本 ADR 的"决策对比表"(§2)只覆盖 owner_id 这一层,没列 upgrader.CheckOrigin 这一层**。下次写类似鉴权 ADR 时,要把"前置中间件链"也列出来,逐层验证。
+2. **dev 环境用 localhost 永远测不出 CheckOrigin 的问题**。CI 必须跑真域名冒烟测试。
+3. **真域名回归是这次 fix 的真正触发条件**,跟 ADR 0016 §"白盒 SSH 运维"形成完整闭环:用白盒 SSH 登 ECS,在 caddy 容器内用 `wget --header="Origin: https://decisioncourt.cn" ...` 复现 403,才能确认是 upgrader 阶段而不是 owner 阶段。
+
+### 8.2 完整修复路径
+
+- **2026-07-06**:v0.9.2(本 ADR)owner 软校验 commit `056f508` 上线 → 旧 403 消失,新 403 出现
+- **2026-07-07**:v0.9.3 第一部分 config split fix `2c876f0` 上线 → 仍然 403
+- **2026-07-07**:**v0.9.3 第二部分 init-timing fix `e097d7c`(ADR 0018)上线 → 101 Switching Protocols ✅**
+
+详见 [docs/observability/case-study-2026-07-07.md](../observability/case-study-2026-07-07.md)。

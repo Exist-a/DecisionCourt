@@ -25,6 +25,8 @@
 | [0013](./0013-llm-gateway-engineering.md) | v0.9 LLM Gateway 工程化（per-call Timeout + Response Cache + Circuit Breaker） | ✅ | `internal/agent_gateway/` |
 | [0014](./0014-user-rate-limit.md) | v0.9 用户级 Trial 限流（每用户每天 N 次） | ✅ | `internal/ratelimit/`（新）+ `internal/api/` |
 | [0015](./0015-evidence-fidelity-no-hallucination.md) | v0.9.1 证据真实性与 LLM 幻觉防御（短证据输入触发编造细节） | ✅ | `internal/agent/prompts.go` + `orchestrator.go` |
+| [0017](./0017-websocket-uuid-credential.md) | WebSocket 鉴权改为"UUID 即凭证"（owner 软校验） | ✅ | `internal/api/websocket.go` |
+| [0018](./0018-websocket-origincheck-init-timing.md) | WebSocket CheckOrigin 改为运行时重读 config（Go init-timing 修复） | ✅ | `internal/api/websocket.go` |
 
 ---
 

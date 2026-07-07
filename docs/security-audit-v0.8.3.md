@@ -192,9 +192,9 @@ redis      Up (healthy)              6379/tcp
 
 ## 8. v0.9.3 修复跟进(2026-07-06 上线真域名后发现)
 
-### 8.1 WS 握手 403 — `viper.Unmarshal` 不自动 split 单值 env var
+### 8.1 WS 握手 403 (第一段) — `viper.Unmarshal` 不自动 split 单值 env var
 
-**症状**:
+**症状**(2026-07-06 16:00 +0800):
 ```
 [Frontend] WebSocket connection to 'wss://decisioncourt.cn/ws/courtrooms/d7bac039-...?token=...' failed:
   Error during WebSocket handshake: Unexpected response code: 403
@@ -233,10 +233,41 @@ redis      Up (healthy)              6379/tcp
 - `backend/internal/investigation/service_test.go` 新增 `TestRecordFinding_BroadcastRoomKey_UsesSessionUUID`
 - `backend/internal/config/config_test.go` 新增 `TestParseAllowedOrigins_SingleValue`(单值 / 逗号 / 尾逗号 / 空格 / 空串 6 个 case)
 
-**部署验证**(ECS 47.239.152.177 容器内实测):
-| Origin | 修复前 | 修复后 |
+### 8.3 WS upgrader.CheckOrigin init-timing 坑 — 闭包锁死白名单
+
+**症状**(2026-07-07 复现,继 §8.1 修复后 403 仍然存在):
+```
+[Frontend] WebSocket connection to 'wss://decisioncourt.cn/ws/courtrooms/c54eee66-...' failed:
+  Error during WebSocket handshake: Unexpected response code: 403
+```
+- 后端日志无任何 `ws.connect.foreign_owner` 或 `websocket: ...` 日志 → 不是 owner 校验阻断
+- caddy 容器内 `wget --header="Origin: https://decisioncourt.cn" ... backend:8080/ws/...` 直接复现 403
+- 即便 §8.1 已修(viper split),AllowedOrigins 运行时 = `["https://decisioncourt.cn"]`,403 仍存在
+
+**根因**:
+- [websocket.go:33-35](../backend/internal/api/websocket.go#L33-L35) `var upgrader = websocket.Upgrader{CheckOrigin: buildCheckOrigin()}` —— upgrader 在 **package init** 阶段构造
+- buildCheckOrigin 旧实现把 `allowedSet` 在 init 阶段就构造好(config.Load() 还没跑)
+- 闭包把 `{localhost:3000, 127.0.0.1:3000}` 这张 fallback 表锁死
+- 之后 main() 跑 `config.Load()` 让 AllowedOrigins 填好,但 upgrader.CheckOrigin 已经定型,看不到新值
+- 生产 `Origin: https://decisioncourt.cn` 不在锁死的 localhost 表里 → gorilla/websocket 返 403,handler 根本不调用,自然没日志
+
+**修复**: buildCheckOrigin 改为**每次调用重新读** `config.AppConfig.AllowedOrigins`,放弃 init 时刻的闭包捕获。详细分析见 [ADR 0018](./adr/0018-websocket-origincheck-init-timing.md)。
+
+**回归测试**(新增 4 个):
+- `TestBuildCheckOrigin_ReReadsConfigPerCall` —— **核心**:同一闭包在 AllowedOrigins=nil 时拒、设置后必须接受(防 init-timing 退化)
+- `TestBuildCheckOrigin_EmptyOriginAlwaysAllowed`
+- `TestBuildCheckOrigin_TrimsTrailingSlash`
+- `TestBuildCheckOrigin_RejectsUnknownOrigin`
+
+**部署验证**(ECS 47.239.152.177 容器内实测,2026-07-07 17:35 +0800):
+| Origin | 修复前(§8.1 后) | §8.3 修复后 |
 |---|---|---|
-| `https://decisioncourt.cn` | 403 ❌ | 401 ✅(进入 JWT 校验) |
-| `http://localhost:3000` | 401 | 403(正确,生产不应允许 dev origin) |
-| (no Origin) | 401 | 401 ✅ |
-| `https://evil.com` | 403 | 403 ✅ |
+| `https://decisioncourt.cn` + 有效 cookie | 403 ❌ | **101 Switching Protocols** ✅ |
+| `https://decisioncourt.cn` 无 cookie | 401 ✅ | 401 ✅ |
+| `https://evil.example.com` | 403 ✅ | 403 ✅(白名单仍生效) |
+| 无 Origin(curl/wget) | 401 | 401 ✅ |
+
+**教训**:
+1. **§8.1 + §8.3 必须同时存在**。只看 §8.1 会被误导为"已经修了",实际少了 §8.3 仍然 403
+2. **dev 用 localhost 测试永远无法发现 CheckOrigin 锁死问题**。CI 必须跑真域名冒烟
+3. **"日志里看不到 = 不是 handler 阶段"** 是这次定位的关键 —— owner 校验会写 audit,upgrader 阶段不会写日志,这样区分能省一半时间
