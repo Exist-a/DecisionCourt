@@ -58,3 +58,18 @@ docker-compose.override.yml
 *.env.bak
 *.env.backup
 secrets/
+
+# Agent 内部 spec / 工作区（不属于项目代码）
+.trae/
+
+# docs 内部材料（不暴露给外部贡献者）
+# —— 保留:adr / architecture / deployment/CHECKLIST / roadmap / decisioncourt-*.md(架构设计 + README 指向)
+# —— 忽略:interview(面试)/ archive(已归档旧计划)/ observability(白盒化案例含生产流程)
+# —— 忽略:dev-deploy-workflow(部署流程)/ security-audit(内部审计)/ OBSERVABILITY(可观测内部)/ project-ideas(灵感池)
+docs/interview/
+docs/archive/
+docs/observability/
+docs/dev-deploy-workflow.md
+docs/security-audit-v0.8.3.md
+docs/OBSERVABILITY.md
+docs/project-ideas.md

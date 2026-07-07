@@ -89,7 +89,7 @@ v0.5+ 实装"白盒子集"（统一接入 + 审计落库 + trace 关联），v0.
 ### 方式一：Docker Compose（推荐）
 
 ```bash
-git clone https://github.com/<your-username>/DecisionCourt.git
+git clone https://github.com/Exist-a/DecisionCourt.git
 cd DecisionCourt
 
 cp .env.example .env
