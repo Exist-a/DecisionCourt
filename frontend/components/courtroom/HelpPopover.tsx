@@ -18,22 +18,52 @@ export function HelpPopover() {
         className="w-80 bg-white border-slate-200 text-slate-700 text-sm"
       >
         <div className="space-y-3">
-          <h4 className="font-semibold text-slate-900">庭审流程</h4>
-          <ol className="space-y-1.5 list-decimal list-inside text-slate-600">
-            <li>立案：输入决策问题、两个选项和背景。</li>
-            <li>开庭：控辩双方分别做开场陈述。</li>
-            <li>举证/质证：多轮攻防，你可随时提交证据。</li>
-            <li>调查：让调查员搜索外部信息作为证据。</li>
-            <li>结案：双方总结后书记员生成判决书。</li>
-          </ol>
+          {/* 段 1:顶部右侧按钮 */}
+          <div>
+            <h5 className="font-medium text-slate-900">右上角的按钮</h5>
+            <ul className="mt-1 space-y-1 text-slate-600">
+              <li>
+                <span className="font-medium text-slate-800">「开 庭」</span>
+                :开始一场庭审。
+              </li>
+              <li>
+                <span className="font-medium text-slate-800">「直接判决」</span>
+                :跳过剩余轮次,直接看判决。
+              </li>
+              <li>
+                <span className="font-medium text-slate-800">「查看判决書」</span>
+                :庭审已结束,查看结果。
+              </li>
+            </ul>
+          </div>
+
+          {/* 段 2:底部操作 */}
           <div className="border-t border-slate-100 pt-2">
-            <h5 className="font-medium text-slate-900 mb-1">你的操作</h5>
-            <ul className="space-y-1 text-slate-600">
-              <li>「+ 证据」：提交事实、数据、偏好或约束。</li>
-              <li>「调查」：让调查员按关键词搜索。</li>
-              <li>「打断」：停止当前 Agent，输入内容让其重新考虑。</li>
-              <li>「跳过」：跳过当前 Agent 发言。</li>
-              <li>「直接判决」：立即结束庭审生成判决书。</li>
+            <h5 className="font-medium text-slate-900">底部的操作</h5>
+            <ul className="mt-1 space-y-1 text-slate-600">
+              <li>
+                <span className="font-medium text-slate-800">「归 档 证 据」</span>
+                :提交一条结构化证据(事实 / 数据 / 偏好 / 约束)。
+              </li>
+              <li>
+                <span className="font-medium text-slate-800">输入框 + 发送按钮</span>
+                :随时补充证据或追加观点,回车即可发送。
+              </li>
+              <li>
+                <span className="font-medium text-slate-800">红印章按钮</span>
+                :质证阶段切换时出现,点击进入下一轮。
+              </li>
+            </ul>
+          </div>
+
+          {/* 段 3:右侧面板 */}
+          <div className="border-t border-slate-100 pt-2">
+            <h5 className="font-medium text-slate-900">右侧四个面板</h5>
+            <ul className="mt-1 space-y-1 text-slate-600">
+              <li>庭审记录:完整对话流。</li>
+              <li>调查活动:调查员搜到的资料。</li>
+              <li>策略笔记:每位律师的内心想法。</li>
+              <li>信念轨迹:各方观点如何变化。</li>
             </ul>
           </div>
         </div>

@@ -24,6 +24,21 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+// lucide-react v1.21.0 (本项目安装版本) 不导出品牌图标 Github,
+// 用 GitHub 官方 Mark 的内联 SVG 顶上,避免拉新依赖
+function GithubMark(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+    </svg>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
   const reset = useCourtroomStore((s) => s.reset);
@@ -90,10 +105,24 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <span className="hidden md:flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-inkFaint font-data">
-            <BookOpen className="w-3 h-3" />
-            立 案 · 庭 审 · 判 决
-          </span>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://github.com/Exist-a/DecisionCourt"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="在 GitHub 上查看 DecisionCourt"
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-sm border border-rule bg-white text-ink hover:bg-paper hover:border-inkSoft text-xs font-data tracking-wider transition-colors"
+            >
+              <GithubMark className="w-3.5 h-3.5" fill="currentColor" />
+              <span className="hidden sm:inline">GitHub</span>
+            </a>
+            <span className="hidden lg:inline text-[10px] text-inkFaint font-data">
+              如果你觉得有用,请帮我点个 ⭐
+            </span>
+            <span className="hidden md:flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-inkFaint font-data">
+              <BookOpen className="w-3 h-3" />立 案 · 庭 审 · 判 决
+            </span>
+          </div>
         </div>
       </header>
 
@@ -149,9 +178,7 @@ export default function Home() {
           className="bg-white border border-rule shadow-paper-lg relative"
         >
           {/* 卷宗签条 */}
-          <div className="absolute -top-3 left-8 phase-ribbon">
-            立案申请书
-          </div>
+          <div className="absolute -top-3 left-8 phase-ribbon">立案申请书</div>
 
           <div className="p-8 md:p-10 space-y-7">
             {/* 决策问题 */}
@@ -173,8 +200,8 @@ export default function Home() {
             {/* 当事人两栏 */}
             <div className="space-y-2">
               <Label className="text-[10px] uppercase tracking-[0.2em] text-inkSoft font-data flex items-center gap-2">
-                <span className="inline-block w-3 h-px bg-defense" />
-                当 事 人 意 见
+                <span className="inline-block w-3 h-px bg-defense" />当 事 人 意
+                见
                 <span className="text-[9px] text-inkFaint normal-case tracking-normal">
                   (选填 · 不填将由 Agent 协助生成)
                 </span>
@@ -231,8 +258,7 @@ export default function Home() {
             {/* 背景信息 */}
             <div className="space-y-2">
               <Label className="text-[10px] uppercase tracking-[0.2em] text-inkSoft font-data flex items-center gap-2">
-                <span className="inline-block w-3 h-px bg-judge" />
-                案 情 背 景
+                <span className="inline-block w-3 h-px bg-judge" />案 情 背 景
               </Label>
               <Textarea
                 placeholder="补充你的背景、约束、偏好，帮助 Agent 更精准地辩论……"
@@ -246,8 +272,7 @@ export default function Home() {
             <div className="grid md:grid-cols-[1fr_auto] gap-5 items-end pt-2 border-t border-rule">
               <div className="space-y-2">
                 <Label className="text-[10px] uppercase tracking-[0.2em] text-inkSoft font-data flex items-center gap-2">
-                  <span className="inline-block w-3 h-px bg-ink" />
-                  庭 审 模 式
+                  <span className="inline-block w-3 h-px bg-ink" />庭 审 模 式
                 </Label>
                 <Select
                   value={mode}
@@ -261,7 +286,9 @@ export default function Home() {
                   <SelectContent className="bg-white border-rule">
                     <SelectItem value="quick">
                       <div className="flex flex-col">
-                        <span className="text-display">快速模式 · 二轮庭审</span>
+                        <span className="text-display">
+                          快速模式 · 二轮庭审
+                        </span>
                         <span className="text-[10px] text-inkFaint">
                           {modeDesc.quick}
                         </span>
@@ -269,7 +296,9 @@ export default function Home() {
                     </SelectItem>
                     <SelectItem value="standard">
                       <div className="flex flex-col">
-                        <span className="text-display">标准模式 · 三轮庭审</span>
+                        <span className="text-display">
+                          标准模式 · 三轮庭审
+                        </span>
                         <span className="text-[10px] text-inkFaint">
                           {modeDesc.standard}
                         </span>
@@ -277,7 +306,9 @@ export default function Home() {
                     </SelectItem>
                     <SelectItem value="deep">
                       <div className="flex flex-col">
-                        <span className="text-display">深度模式 · 五轮庭审</span>
+                        <span className="text-display">
+                          深度模式 · 五轮庭审
+                        </span>
                         <span className="text-[10px] text-inkFaint">
                           {modeDesc.deep}
                         </span>
