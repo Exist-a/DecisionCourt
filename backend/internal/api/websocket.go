@@ -37,22 +37,31 @@ var upgrader = websocket.Upgrader{
 // buildCheckOrigin 返回一个 Origin 白名单检查函数。
 // 行为:Origin 为空(非浏览器 client / 服务端调用)→ 通过;
 // Origin 在白名单 → 通过;否则拒绝。
+//
+// ⚠ v0.9.3 修复时序坑:这个闭包会在 package init 阶段被 upgrader
+// 捕获,但此时 config.Load() 还没跑(Load() 在 main() 里)。
+// 旧实现把 allowedSet 在 init 阶段就构造好,导致 AllowedOrigins 永远
+// 锁在 localhost:3000 fallback 上,生产 ALLOWED_ORIGINS 配了也无效。
+// 现在每次调用都重新读 config.AppConfig.AllowedOrigins,确保 main()
+// Load() 之后白名单生效。
 func buildCheckOrigin() func(r *http.Request) bool {
-	allowed := config.AppConfig.AllowedOrigins
-	if len(allowed) == 0 {
-		allowed = []string{"http://localhost:3000", "http://127.0.0.1:3000"}
-	}
-	allowedSet := make(map[string]bool, len(allowed))
-	for _, o := range allowed {
-		allowedSet[strings.TrimRight(o, "/")] = true
-	}
 	return func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
 			// 非浏览器调用(curl / native / 测试),不检查
 			return true
 		}
-		return allowedSet[strings.TrimRight(origin, "/")]
+		allowed := config.AppConfig.AllowedOrigins
+		if len(allowed) == 0 {
+			allowed = []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+		}
+		origin = strings.TrimRight(origin, "/")
+		for _, o := range allowed {
+			if strings.TrimRight(o, "/") == origin {
+				return true
+			}
+		}
+		return false
 	}
 }
 
