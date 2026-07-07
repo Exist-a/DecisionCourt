@@ -1753,12 +1753,46 @@ func (s *Service) applySpeakToBelief(sessionID uuid.UUID, ag model.Agent, speake
 	newA = math.Round(newA*1000) / 1000
 	newB = math.Round(newB*1000) / 1000
 
+	// v0.9.3 修复:在 Updates 之前抓 priorA。GORM Updates(map) 完成后会回填
+	// 字段到 Model 指向的 struct(SQLite driver 行为);Updates 之后 ag.BeliefA
+	// 已是 newA,priorA 抓不到原值。
+	priorA := ag.BeliefA
+	dirLabel := model.BeliefDirSupportsB
+	if speaker.Stance == "pro_a" {
+		dirLabel = model.BeliefDirSupportsA
+	}
 	if err := s.db.Model(&ag).Updates(map[string]interface{}{
 		"belief_a": newA,
 		"belief_b": newB,
 	}).Error; err != nil {
 		log.Printf("[applySpeakToBelief] update agent %s belief failed: %v", ag.AgentType, err)
 		return
+	}
+
+	// v0.9.3 修复:把 stance 触发的微调也写 belief_diffs 表,补全审计 trail。
+	// 否则前端 BeliefTrajectoryTab 看到的 prior/posterior 会出现"证据间跳跃",
+	// 用户误以为 belief_diffs 写重了(实际是中间过程没记录)。
+	if s.db != nil {
+		var sess model.CourtSession
+		if err := s.db.Select("current_round, current_phase").Where("id = ?", sessionID).First(&sess).Error; err == nil {
+			_ = s.db.Create(&model.BeliefDiff{
+				SessionID:        sessionID,
+				Round:            sess.CurrentRound,
+				Phase:            string(sess.CurrentPhase),
+				AgentType:        ag.AgentType,
+				Source:           model.BeliefSrcStance,
+				Direction:        dirLabel,
+				PriorBeliefA:     belief.Round4(priorA),
+				PosteriorBeliefA: newA,
+				DeltaBeliefA:     belief.Round4(newA - priorA),
+				PriorLogit:       belief.Logit(priorA),
+				PosteriorLogit:   belief.Logit(newA),
+				EvidenceWeight:   0,
+				WeakenFactor:     1.0,
+				Reason: fmt.Sprintf("stance=%s confidence=%.2f",
+					speaker.Stance, speaker.Confidence),
+			}).Error
+		}
 	}
 
 	// 同步给前端的 store；不写 BeliefSnapshot，runCrossExamRound 后续

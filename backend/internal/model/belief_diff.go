@@ -25,7 +25,7 @@ type BeliefDiff struct {
 	Phase            string    `gorm:"type:varchar(32);not null"`
 	AgentType        AgentType `gorm:"type:varchar(32);not null"`
 	EvidenceID       *uuid.UUID `gorm:"type:uuid;index"`
-	Source           string    `gorm:"type:varchar(32);not null"`     // "evidence" | "weaken" | "anchor_pull"
+	Source           string    `gorm:"type:varchar(32);not null"`     // "evidence" | "weaken" | "anchor_pull" | "stance"
 	Direction        string    `gorm:"type:varchar(16);not null"`     // "supports_a" | "supports_b" | "neutral"
 	PriorBeliefA     float64   `gorm:"type:decimal(5,4);not null"`
 	PosteriorBeliefA float64   `gorm:"type:decimal(5,4);not null"`
@@ -49,6 +49,11 @@ const (
 	BeliefSrcEvidence    = "evidence"
 	BeliefSrcWeaken      = "weaken"
 	BeliefSrcAnchorPull  = "anchor_pull"
+	// BeliefSrcStance records the per-speak belief micro-adjustment applied
+	// by Service.applySpeakToBelief (v0.5+ design, see service.go). Without
+	// this row the audit trail has a gap between consecutive evidence diffs,
+	// making it look like belief_a "jumped" with no recorded cause.
+	BeliefSrcStance = "stance"
 )
 
 // BeliefDirection enumerates the possible Direction field values.
