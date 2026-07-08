@@ -112,7 +112,9 @@ export function createTransport(
   config: TransportConfig,
   deps: TransportDeps,
 ): Transport {
-  const batchIntervalMs = config.batchIntervalMs ?? DEFAULT_BATCH_INTERVAL_MS;
+  // v0.10.10: 改 _batchIntervalMs 让 ESLint 放过
+  // (原来 batchIntervalMs 是 dead code, setTimeout 的 batchIntervalMs 来自 defaultDeps 形参)
+  const _batchIntervalMs = config.batchIntervalMs ?? DEFAULT_BATCH_INTERVAL_MS;
   const maxQueueSize = config.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE;
   const maxPayloadBytes = config.maxPayloadBytes ?? DEFAULT_MAX_PAYLOAD_BYTES;
 
