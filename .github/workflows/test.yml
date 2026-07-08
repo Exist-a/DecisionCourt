@@ -1,4 +1,4 @@
-name: Test
+﻿name: Test
 on:
   push:
     branches: [main]
@@ -7,6 +7,12 @@ on:
 
 permissions:
   contents: read
+
+# 2026-09-19 GitHub 弃用 Node 20,Runner 强制 Node 24。
+# 用 FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true 强制所有 action 跑 Node 24。
+# 来源: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ============== Backend ==============
@@ -17,7 +23,7 @@ jobs:
       run:
         working-directory: ./backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -51,7 +57,7 @@ jobs:
       run:
         working-directory: ./frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -84,7 +90,7 @@ jobs:
     name: Doc cross-links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
