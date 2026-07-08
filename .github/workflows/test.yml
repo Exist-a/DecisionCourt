@@ -8,9 +8,17 @@ on:
 permissions:
   contents: read
 
-# 2026-09-19 GitHub 弃用 Node 20,Runner 强制 Node 24。
+# 2025-09-19 GitHub 弃用 Node 20,2026-06-16 Runner 默认 Node 24。
 # 用 FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true 强制所有 action 跑 Node 24。
+# 同步把 action 升到 v6 (node24) — v5 仍为 node20,治标不治本。
 # 来源: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+#
+# Action 版本对照 (node runtime):
+#   actions/checkout    v5=node20 → v6=node24
+#   actions/setup-go    v5=node20 → v6=node24 (v6 支持 go-version-file: 'go.mod' 自动读 go 1.26)
+#   actions/setup-node  v4=node20 → v5=node24
+#   pnpm/action-setup   v4=node24 (无需升)
+#   actions/setup-python v5=node24 (无需升)
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -23,13 +31,15 @@ jobs:
       run:
         working-directory: ./backend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.23'
+          # go.mod 写的是 go 1.26.1,setup-go v6 支持 go-version-file 自动读 toolchain
+          go-version-file: 'go.mod'
           cache: true
+          cache-dependency-path: 'go.sum'
 
       - name: Resolve modules
         run: go mod download
@@ -57,10 +67,10 @@ jobs:
       run:
         working-directory: ./frontend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -90,7 +100,7 @@ jobs:
     name: Doc cross-links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python
         uses: actions/setup-python@v5
