@@ -120,17 +120,24 @@ jobs:
                        "$REGISTRY/decision-court/decision-court-frontend:latest"
 
             # 重启容器
-            echo "==> 重启容器"
-            docker compose up -d
+            # v0.10.15: --force-recreate backend frontend 保证新 :latest 强制重建
+            # (普通 up -d 在某些 compose 版本下会复用旧容器, image tag 变了但没检测到)
+            echo "==> 重启容器 (force-recreate backend/frontend)"
+            docker compose up -d --force-recreate backend frontend
 
             # 显示状态
             echo "==> 部署结果"
             docker compose ps
 
             # 看 backend 健康
-            echo "==> Backend health check"
+            # v0.10.15: 容器内 wget,不用 host 上 curl
+            # 真因: docker-compose.yml L125-126 用 expose 不是 ports (P0-3 安全加固)
+            #       host 上 localhost:8080 连不上 backend
+            # 修法: 用 docker compose exec 在 backend 容器内 wget
+            #       (alpine busybox 自带 wget, Dockerfile 已确认)
+            echo "==> Backend health check (容器内 wget)"
             sleep 8
-            curl -fsS http://localhost:8080/health || (echo "health 失败" && docker compose logs --tail=30 backend && exit 1)
+            docker compose exec -T backend wget -qO- http://127.0.0.1:8080/health || (echo "health 失败" && docker compose logs --tail=30 backend && exit 1)
 
             echo ""
             echo "============================================================"
