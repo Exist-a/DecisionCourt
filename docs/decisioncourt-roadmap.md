@@ -202,3 +202,33 @@ WebSearch + 判决书生成
 10. ⏳ **Docker Compose 一键启动**：完善 `docker-compose.yml` 让新环境能跑（待 Docker 环境验证）
 11. ❌ **LLM 调用审计可视化**（决策 2026-07-01 不做）：后端 `llm_calls` 表 + `backend/logs/agent_gateway_*.log` 已足够；产品级 dashboard 不增加。开发者排查用 `tail -f` / `jq` / SQL 查询即可。
 12. ⏳ **v0.7+ 计划**：强制立场一致性检查 / 新意度检查 / 300 字发言截断 / "已反驳证据"集合跟踪（详见 PRD §4.3.2 §4.3.3 §10.1）
+
+### v0.10.1（2026-07-08）LLM 输出反幻觉加固
+
+> v0.9.1 ADR 0015 已做 prompt 层防御（baseRules 4/5/13/14），但实测仍 **60% 幻觉率**。v0.10.1 加 post-validation 层做"双保险"。
+
+- ✅ **output_validator.go**（核心）：4 类正则扫描器（证据引用 / 百分比 / 案号 / 金额），6 类 mode，证据+证据号两层防御
+- ✅ **react_runner.go 流式路径接入**（关键）：v0.10 之前 `streamSucceeded` 跳过 validateSpeak，是修复后仍 60% 失败的根因。修了之后 0%
+- ✅ **baseRules 规则 15**：prompt 层告知 LLM"违反会被后端硬拒"
+- ✅ **9 个 unit test 覆盖所有模式**
+- ✅ **自动化压测脚本** `tools/run-hallucination-test.ps1`：5 sessions × 30s × 3 轮
+
+**修复效果**：60% → **0%**（38 messages 验证）。详见 [ADR 0021](./adr/0021-llm-hallucination-output-validator.md) + [interview/11-hallucination-validation.md](./interview/11-hallucination-validation.md)。
+
+### v0.10（2026-07-08）前端埋点 + CORS 修复
+
+- ✅ **前端埋点复用后端 decision_events**（ADR 0020）：8 个 `fe.*` 事件接入实际用户操作
+- ✅ **CORS 修复**：dev env 用 `docker-compose.override.yml` + main.go 加 http.Server 包装 gin handler 解决 v0.10 CORS 404 / 401 链
+- ✅ **`backend/.air.toml`**：dev air 热重载指向 `./cmd/server`
+- ✅ **`docker-compose.override.yml`**：本地专用密码 + ALLOWED_ORIGINS
+
+详见 [ADR 0020](./adr/0020-frontend-analytics-via-decision-events.md) + [interview/10-frontend-analytics.md](./interview/10-frontend-analytics.md)。
+
+### v0.10.2（2026-07-08）GitHub Actions CI/CD
+
+- ✅ **`.github/workflows/test.yml`**：push / PR 触发，go test + pnpm test + tsc + lint + ADR index check
+- ✅ **`.github/workflows/deploy.yml`**：tag `v*.*.*` push 触发，build 镜像 → push ACR → SSH ECS pull + up
+- ✅ **tag-based deploy**：镜像 tag = git tag 名，可追溯 + 一键回滚
+- ✅ **ADR 0022**：决策文档
+
+详见 [ADR 0022](./adr/0022-github-actions-ci-cd.md)。

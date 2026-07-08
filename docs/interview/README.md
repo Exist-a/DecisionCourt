@@ -26,10 +26,12 @@
 | ⑧ | "我不懂 XX 这个名词" | [`07-key-terms.md`](./07-key-terms.md) |
 | ⑨ | "如果面试官问 XX 你怎么答" | [`08-faq-30-questions.md`](./08-faq-30-questions.md) |
 | ⑩ | "给我看真实数据" | [`09-data-snapshot.md`](./09-data-snapshot.md) |
+| ⑪ | "前端埋点 / 可观测性怎么延伸到前端" | [`10-frontend-analytics.md`](./10-frontend-analytics.md)（**v0.10 新增**） |
+| ⑫ | "LLM 输出幻觉 / Prompt 不够 / 怎么防编造" | [`11-hallucination-validation.md`](./11-hallucination-validation.md)（**v0.10.1 新增**） |
 
 ---
 
-## 2. 文档结构（11 章节 + data/）
+## 2. 文档结构（12 章节 + data/）
 
 ```
 interview/
@@ -44,6 +46,7 @@ interview/
 ├── 07-key-terms.md                 ← ⑧ 技术名词解释
 ├── 08-faq-30-questions.md          ← ⑨ 30 个面试问题
 ├── 09-data-snapshot.md             ← ⑩ 真实数据快照
+├── 10-frontend-analytics.md        ← ⑪ v0.10 前端埋点（**2026-07-08 新增**）
 └── data/                           ← 真实数据（从 /metrics / DB 导出）
     ├── metrics-snapshot.json
     ├── decision-events-snapshot.json
@@ -67,7 +70,7 @@ interview/
 
 ---
 
-## 4. 4 大亮点（用这 4 个撑起整个面试）
+## 4. 5 大亮点（用这 5 个撑起整个面试）
 
 | 亮点 | 章节 | 30 秒电梯版 |
 |---|---|---|
@@ -75,6 +78,8 @@ interview/
 | **信念引擎 v0.6** | §03 | 不用 0-100 主观分，用**贝叶斯 log-odds** 数学严谨地表达"AI 法官的相信度"。weaken 边 + 锚定 + belief_diffs 审计 trail。 |
 | **Gateway v2 装饰器** | §04 | 把"压缩 / 预算 / 限流 / 降级 / 审计"做成**装饰器链**，可插拔、可独立测。Smart Compression 关键消息不压缩。 |
 | **白盒化 v0.8** | §05 | **AI 系统的可观测性** = 三大支柱（slog / metrics / decision_events）+ 端到端 trace_id 串联。**最强杀手锏**——让 AI 调试像传统后端一样。 |
+| **前端埋点 v0.10** | §10 | **白盒化的横向延伸**——前端事件进同一张 `decision_events` 表，用 `fe.` 前缀区分。**跨源查询**：用户行为 + AI 决策一条 SQL join。8 个事件接入了 8 个实际用户操作。 |
+| **幻觉硬验证 v0.10.1** | §11 | **Prompt 规则 + post-validation 双层防御**——LLM 在 stress 下违反 60% 规则，post-validation 修到 0%。OpenAI/Anthropic 同套路（schema 约束 + output 校验）。 |
 
 ---
 
@@ -101,16 +106,18 @@ interview/
 ## 6. 面试前 1 小时 checklist
 
 - [ ] 通读 [`01-architecture-mindmap.md`](./01-architecture-mindmap.md) 一遍
-- [ ] 把 4 大亮点的 30 秒电梯版背熟
+- [ ] 把 **5 大亮点**的 30 秒电梯版背熟（§02 消息总线 / §03 信念 / §04 网关 / §05 白盒化 / **§10 前端埋点 / §11 幻觉硬验证**）
 - [ ] **重点复习 bug 4**（`engine_v06.go` ID 错配）—— 最能体现"数据层正确 ≠ 链路正确"
 - [ ] 翻 [`08-faq-30-questions.md`](./08-faq-30-questions.md) 30 个问题至少答出 25 个
 - [ ] 看 [`09-data-snapshot.md`](./09-data-snapshot.md) —— 真实数据 + 单场庭审 4 evidence × 4 agent = 16 belief_diff 数字
+- [ ] **如果被问"前端 / 可观测性 / 埋点"** —— 看 [`10-frontend-analytics.md`](./10-frontend-analytics.md)（v0.10，2026-07-08 新增）
+- [ ] **如果被问"LLM 幻觉 / Prompt 不够 / 怎么防编造"** —— 看 [`11-hallucination-validation.md`](./11-hallucination-validation.md)（v0.10.1，2026-07-08 新增）
 - [ ] 不背代码 —— 知道代码在哪就行
 - [ ] 看 [`../observability/case-study-2026-07-02.md`](../observability/case-study-2026-07-02.md) §11 面试故事模板（v0.8.3 版）
 
 ---
 
-## 7. 4 大亮点（用这 4 个撑起整个面试）
+## 7. 5 大亮点（用这 5 个撑起整个面试）
 
 | 亮点 | 章节 | 30 秒电梯版 |
 |---|---|---|
@@ -118,6 +125,7 @@ interview/
 | **信念引擎 v0.6** | §03 | 不用 0-100 主观分，用**贝叶斯 log-odds** 数学严谨地表达"AI 法官的相信度"。weaken 边 + 锚定 + belief_diffs 审计 trail。 |
 | **Gateway v2 装饰器** | §04 | 把"压缩 / 预算 / 限流 / 降级 / 审计"做成**装饰器链**，可插拔、可独立测。Smart Compression 关键消息不压缩。 |
 | **白盒化 v0.8** | §05 | **AI 系统的可观测性** = 三大支柱（slog / metrics / decision_events）+ 端到端 trace_id 串联。**最强杀手锏**——让 AI 调试像传统后端一样。 |
+| **前端埋点 v0.10** | §10 | **白盒化的横向延伸**——前端事件进同一张 `decision_events` 表，用 `fe.` 前缀区分前后端。**跨源查询**：用户行为 + AI 决策一条 SQL join。8 个事件接入了 8 个实际用户操作。 |
 | **5 个 bug 故事 v0.8.3** | §06 | 白盒化第一天暴露 3 个 + 真实庭审回归又暴露 2 个，**没有一个被单元测试发现**。**最有说服力的"业务跑得欢 ≠ 系统健康"实证**。 |
 
 ---

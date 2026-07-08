@@ -61,8 +61,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: '22'
+          # 不设 cache:pnpm,避免 cache 与 pnpm binary 互相依赖
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Setup pnpm

@@ -27,6 +27,9 @@
 | [0015](./0015-evidence-fidelity-no-hallucination.md) | v0.9.1 证据真实性与 LLM 幻觉防御（短证据输入触发编造细节） | ✅ | `internal/agent/prompts.go` + `orchestrator.go` |
 | [0017](./0017-websocket-uuid-credential.md) | WebSocket 鉴权改为"UUID 即凭证"（owner 软校验） | ✅ | `internal/api/websocket.go` |
 | [0018](./0018-websocket-origincheck-init-timing.md) | WebSocket CheckOrigin 改为运行时重读 config（Go init-timing 修复） | ✅ | `internal/api/websocket.go` |
+| [0020](./0020-frontend-analytics-via-decision-events.md) | 前端埋点复用 v0.8 decision_events 基础设施（v0.10） | ✅ | `internal/api/handler_events.go` · `frontend/lib/transport.ts` · `frontend/lib/analytics/` |
+| [0021](./0021-llm-hallucination-output-validator.md) | LLM 输出硬编码反幻觉验证器（v0.10.1 加固 ADR 0015） | ✅ | `internal/agent/output_validator.go` · `react_runner.go` · `prompts.go` |
+| [0022](./0022-github-actions-ci-cd.md) | GitHub Actions CI/CD（v0.10.2：test + tag push deploy） | ✅ | `.github/workflows/test.yml` · `deploy.yml` |
 
 ---
 
