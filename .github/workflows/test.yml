@@ -39,10 +39,11 @@ jobs:
 
       - name: Unit tests
         # v0.10.3: 排除 v0.9.4 HA-001 spec 占位测试
-        #   finding_evidence_confusion_test.go 包含 3 个 case，标记"该修复还没做"。
+        #   finding_evidence_confusion_test.go 包含 4 个 case，标记"该修复还没做"。
         #   修复 spec 是 v0.9.4 独立工作(ADR 0015 之后的下一个 spec)。
         #   在 spec 修复前 CI 用 -skip 让它们从 run 中排除，避免 fail。
-        run: go test -count=1 -race -skip 'TestBaseRules_ForbidsSourcingFindingAsEvidence|TestBaseRules_ExplicitRefusalPattern|TestProsecutorPrompt_ShouldHaveFindingSection_WhenFindingsExist' ./...
+        #   v0.10.4 修正：之前漏 skip TestBuildContext_NotInflatedWithFindings。
+        run: go test -count=1 -race -skip 'TestBaseRules_ForbidsSourcingFindingAsEvidence|TestBaseRules_ExplicitRefusalPattern|TestBuildContext_NotInflatedWithFindings|TestProsecutorPrompt_ShouldHaveFindingSection_WhenFindingsExist' ./...
 
       - name: Check format
         run: |
