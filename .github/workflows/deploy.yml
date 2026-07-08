@@ -1,44 +1,53 @@
 name: Deploy
 
-# CD workflow: tag push → build 镜像 → push ACR → SSH 到 ECS → docker compose pull + up
+# CD workflow: build 镜像 → push ACR → SSH 到 ECS → docker compose pull + up
 #
-# 触发: git tag push 形如 v*.*.* (e.g. v0.10.1, v1.0.0)
+# 触发条件 (v0.10.10 升级, 实现"push → 测试 → 部署"CI/CD 流水线):
+#   1. git tag v*.*.* push     → 立即跑 (保留, 生产发版用)
+#   2. workflow_dispatch       → 手动跑 (保留)
+#   3. Test workflow 跑完      → 只在 success 时跑 (v0.10.10 新增)
+#      (push main → Test 跑 → 全绿 → Deploy 跑)
 #
-# 镜像 tag: 用 git tag 名(精确可追溯,回滚 = checkout 老 tag 再 push)
-#          不再用 :latest(避免"哪个版本在跑"不清楚)
+# if gate 逻辑:
+#   - push tag            → 跑
+#   - workflow_dispatch   → 跑
+#   - workflow_run        → 只在 conclusion == 'success' 时跑
+#      (失败的 Test 不会触发 Deploy, 满足"测试通过才部署")
 #
-# 必备 GitHub Secrets (在 Settings → Secrets and variables → Actions):
-#   - ACR_REGISTRY        e.g. crpi-rnawo8jx69bslvbx.cn-hongkong.personal.cr.aliyuncs.com
-#   - ACR_USERNAME        e.g. Exist-a
-#   - ACR_PASSWORD        ACR 访问凭证密码
-#   - ECS_HOST            ECS 公网 IP 或 hostname
-#   - ECS_USER            e.g. root
-#   - ECS_SSH_KEY         私钥内容(完整 -----BEGIN ... PRIVATE KEY----- -----END ... -----)
-#   - NEXT_PUBLIC_API_URL e.g. https://decisioncourt.cn
-#   - NEXT_PUBLIC_WS_URL  e.g. wss://decisioncourt.cn
+# 镜像 tag:
+#   - push tag            → 用 git tag 名 (e.g. v0.10.1, 精确可追溯)
+#   - 其他情况             → 用 commit SHA 短 7 位 (e.g. 5604a24)
+#   - 不用 :latest(避免"哪个版本在跑"不清楚)
 #
-# 用法:
-#   git tag v0.10.1
-#   git push origin v0.10.1
-#   → 自动 build + push + deploy
-#
-# 回滚:
-#   git checkout v0.10.0   # (或者 git tag v0.10.0-rc)
-#   git push origin v0.10.0
-#   → ECS 跑 v0.10.0
+# 必备 GitHub Secrets (Settings → Secrets and variables → Actions):
+#   ACR_REGISTRY, ACR_USERNAME, ACR_PASSWORD, ECS_HOST, ECS_USER, ECS_SSH_KEY,
+#   NEXT_PUBLIC_API_URL, NEXT_PUBLIC_WS_URL
 
 on:
   push:
     tags: ['v*.*.*']
-  workflow_dispatch:    # 允许手动触发(不走 tag,tag 用 ${{ github.ref_name }} 解析)
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Test"]
+    types: [completed]
 
+# workflow_run 触发的 workflow 默认拿不到 secrets, 需要 permissions + secrets: inherit
+# (GitHub 2023 起的默认行为, 但显式声明更稳)
+permissions:
+  contents: read
+  actions: read
+
+# TAG: push tag 时用 tag 名, 其他情况用 commit SHA
+# (workflow_run 时 github.ref 是触发 workflow 的 ref = refs/heads/main, 不是 refs/tags/*)
 env:
-  TAG: ${{ github.ref_name }}
+  TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
 
 jobs:
   # ============== Build + Push ACR ==============
   build:
     name: Build & Push
+    # 3 选 1 gate: push tag / workflow_dispatch 必跑, workflow_run 只在 success 跑
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -81,6 +90,8 @@ jobs:
   deploy:
     name: Deploy to ECS
     needs: build
+    # 跟 build job 同样的 gate, 失败时 deploy 跳过
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH

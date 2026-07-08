@@ -2,7 +2,7 @@
 
 > **ADR**（Architecture Decision Record）是业界标准的"决策追溯"机制 —— 每份记录一个**已确定**的关键架构决策，包含**背景 / 选项对比 / 决策 / 后果**，便于后续维护者理解"为什么是这样"。
 >
-> 本目录收录 16 份关键决策，编号递增。修改 ADR 必须保留"决策当时"的上下文；如果决策变更，应该新增一份"撤销 / 替代"的 ADR。
+> 本目录收录 22 份关键决策，编号递增。修改 ADR 必须保留"决策当时"的上下文；如果决策变更，应该新增一份"撤销 / 替代"的 ADR。
 
 ---
 
@@ -30,6 +30,7 @@
 | [0020](./0020-frontend-analytics-via-decision-events.md) | 前端埋点复用 v0.8 decision_events 基础设施（v0.10） | ✅ | `internal/api/handler_events.go` · `frontend/lib/transport.ts` · `frontend/lib/analytics/` |
 | [0021](./0021-llm-hallucination-output-validator.md) | LLM 输出硬编码反幻觉验证器（v0.10.1 加固 ADR 0015） | ✅ | `internal/agent/output_validator.go` · `react_runner.go` · `prompts.go` |
 | [0022](./0022-github-actions-ci-cd.md) | GitHub Actions CI/CD（v0.10.2：test + tag push deploy） | ✅ | `.github/workflows/test.yml` · `deploy.yml` |
+| [0023](./0023-github-actions-ci-pause.md) | **暂停** GitHub Actions CI（v0.10.2-7 7 次失败复盘 + 重启条件） | ⏸️ 暂停 | `.github/workflows/test.yml`（v0.10.2 → v0.10.7 7 次失败记录）|
 
 ---
 

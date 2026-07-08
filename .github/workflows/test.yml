@@ -57,10 +57,20 @@ jobs:
         # v0.10.4: 跳过 v0.9.4 HA-001 spec 占位测试
         # finding_evidence_confusion_test.go 含 4 个 case 标记"该修复还没做"。
         # 修复 spec 是 v0.9.4 独立工作，spec 修复前 CI 用 -skip 避免 fail。
+        # v0.10.9: 加 -v 详细输出 + tee 到 log.txt,然后 upload artifact 公开下载
+        # (WebFetch 拿不到 step log,需要看具体哪个 test fail 时直接拉 artifact)
         run: |
-          go test -count=1 -race \
+          go test -count=1 -race -v \
             -skip 'TestBaseRules_ForbidsSourcingFindingAsEvidence|TestBaseRules_ExplicitRefusalPattern|TestBuildContext_NotInflatedWithFindings|TestProsecutorPrompt_ShouldHaveFindingSection_WhenFindingsExist' \
-            ./...
+            ./... 2>&1 | tee backend-test.log
+        # exit code 由 tee 决定, 但我们想让 step fail 时 log 也保留 — 不管 exit,都上传
+      - name: Upload backend test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-log
+          path: backend/backend-test.log
+          if-no-files-found: warn
 
   # ============== Frontend ==============
   frontend-test:
@@ -89,11 +99,14 @@ jobs:
         run: pnpm run tsc
 
       - name: Unit tests
-        run: pnpm exec node --experimental-strip-types --test \
-          lib/transport.test.ts \
-          lib/reconnect.test.ts \
-          lib/analytics/analytics.test.ts \
-          lib/analytics/runtime.test.ts
+        # v0.10.9 踩过 yaml 多行 \ 续行的坑:yaml 保留 \ 后的换行 + 缩进空格,
+        # shell 看到的文件名带前导空格, node --test 找不到。改 block scalar |。
+        run: |
+          pnpm exec node --experimental-strip-types --test \
+            lib/transport.test.ts \
+            lib/reconnect.test.ts \
+            lib/analytics/analytics.test.ts \
+            lib/analytics/runtime.test.ts
 
       - name: Build
         run: pnpm run build
