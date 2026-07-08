@@ -1,0 +1,107 @@
+name: Test
+
+# CI workflow: 跑所有测试 + lint + type-check
+# 触发: push / PR 到 main
+# 不需要 Docker / DB / 外部服务 —— 只跑单元测试
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ============== Backend ==============
+  backend-test:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test -count=1 -race ./...
+
+      - name: Check format
+        run: |
+          if [ "$(gofmt -l . | wc -l)" -ne 0 ]; then
+            echo "Files not formatted:"
+            gofmt -l .
+            exit 1
+          fi
+
+  # ============== Frontend ==============
+  frontend-test:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm tsc --noEmit
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  # ============== LLM 文档校验 ==============
+  doc-consistency:
+    name: Doc cross-links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check ADR index completeness
+        run: |
+          python3 << 'PYEOF'
+          import re, os, sys
+          with open('docs/adr/README.md', 'r') as f:
+              content = f.read()
+          refs = re.findall(r'\./(\d{4}-[^)]+\.md)', content)
+          missing = [r for r in refs if not os.path.exists('docs/adr/' + r)]
+          if missing:
+              print('Missing ADR files:', missing)
+              sys.exit(1)
+          print('All', len(refs), 'ADR refs resolve.')
+          PYEOF

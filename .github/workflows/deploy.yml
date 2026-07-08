@@ -1,0 +1,125 @@
+name: Deploy
+
+# CD workflow: tag push → build 镜像 → push ACR → SSH 到 ECS → docker compose pull + up
+#
+# 触发: git tag push 形如 v*.*.* (e.g. v0.10.1, v1.0.0)
+#
+# 镜像 tag: 用 git tag 名(精确可追溯,回滚 = checkout 老 tag 再 push)
+#          不再用 :latest(避免"哪个版本在跑"不清楚)
+#
+# 必备 GitHub Secrets (在 Settings → Secrets and variables → Actions):
+#   - ACR_REGISTRY        e.g. crpi-rnawo8jx69bslvbx.cn-hongkong.personal.cr.aliyuncs.com
+#   - ACR_USERNAME        e.g. Exist-a
+#   - ACR_PASSWORD        ACR 访问凭证密码
+#   - ECS_HOST            ECS 公网 IP 或 hostname
+#   - ECS_USER            e.g. root
+#   - ECS_SSH_KEY         私钥内容(完整 -----BEGIN ... PRIVATE KEY----- -----END ... -----)
+#   - NEXT_PUBLIC_API_URL e.g. https://decisioncourt.cn
+#   - NEXT_PUBLIC_WS_URL  e.g. wss://decisioncourt.cn
+#
+# 用法:
+#   git tag v0.10.1
+#   git push origin v0.10.1
+#   → 自动 build + push + deploy
+#
+# 回滚:
+#   git checkout v0.10.0   # (或者 git tag v0.10.0-rc)
+#   git push origin v0.10.0
+#   → ECS 跑 v0.10.0
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:    # 允许手动触发(不走 tag,tag 用 ${{ github.ref_name }} 解析)
+
+env:
+  TAG: ${{ github.ref_name }}
+
+jobs:
+  # ============== Build + Push ACR ==============
+  build:
+    name: Build & Push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ secrets.ACR_REGISTRY }}/decision-court/decision-court-backend:${{ env.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ secrets.ACR_REGISTRY }}/decision-court/decision-court-frontend:${{ env.TAG }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_WS_URL=${{ secrets.NEXT_PUBLIC_WS_URL }}
+            NEXT_PUBLIC_USE_MOCK=false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============== Deploy to ECS ==============
+  deploy:
+    name: Deploy to ECS
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            set -e
+            cd /opt/decisioncourt
+
+            # 拉新镜像
+            echo "==> 拉新镜像 (tag: ${{ env.TAG }})"
+            REGISTRY="${{ secrets.ACR_REGISTRY }}"
+            docker pull "$REGISTRY/decision-court/decision-court-backend:${{ env.TAG }}"
+            docker pull "$REGISTRY/decision-court/decision-court-frontend:${{ env.TAG }}"
+
+            # 重打 tag 到 latest(ECS compose 用 :latest)
+            docker tag "$REGISTRY/decision-court/decision-court-backend:${{ env.TAG }}" \
+                       "$REGISTRY/decision-court/decision-court-backend:latest"
+            docker tag "$REGISTRY/decision-court/decision-court-frontend:${{ env.TAG }}" \
+                       "$REGISTRY/decision-court/decision-court-frontend:latest"
+
+            # 重启容器
+            echo "==> 重启容器"
+            docker compose up -d
+
+            # 显示状态
+            echo "==> 部署结果"
+            docker compose ps
+
+            # 看 backend 健康
+            echo "==> Backend health check"
+            sleep 8
+            curl -fsS http://localhost:8080/health || (echo "health 失败" && docker compose logs --tail=30 backend && exit 1)
+
+            echo ""
+            echo "============================================================"
+            echo "  v${{ env.TAG }} 部署完成!"
+            echo "============================================================"
