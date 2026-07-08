@@ -614,6 +614,58 @@ GET /api/v1/courtrooms/:session_uuid/memory
 
 **实现位置**：`backend/internal/api/handler.go::GetVisibleMemory` + `backend/internal/a2a/bus.go::Bus.ListPrivateMemory`
 
+#### 3.5.4 前端埋点上报（v0.10）
+
+> 详见 [ADR 0020](./adr/0020-frontend-analytics-via-decision-events.md)。本节是 API 契约参考。
+
+```http
+POST /api/v1/courtrooms/:session_uuid/events
+```
+
+**用途**：前端 `analytics.track()` 调用的唯一落点。事件直接写入 `decision_events` 表（与后端业务 span 同一张表），`EventType` 以 `fe.` 前缀与后端 `span.*` 区分。
+
+**请求体**：
+
+```json
+{
+  "event_type": "fe.trial_started",
+  "payload": { "phase": "opening" },
+  "duration_ms": 0,
+  "status": "ok",
+  "error_msg": ""
+}
+```
+
+**字段说明**：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `event_type` | ✓ | 必须以 `fe.` 开头；长度 ≤ 50（DB schema `varchar(50)`） |
+| `payload` | ✗ | 自由格式 JSON map；**禁止**包含 PII 字段（`content` / `message` / `verdict` 等），前端 `containsPII()` 守卫会拒绝 |
+| `duration_ms` | ✗ | 事件持续时间（毫秒），用于 perf 事件 |
+| `status` | ✗ | 默认 `"ok"`，错误事件填 `"error"` |
+| `error_msg` | ✗ | 仅 `status="error"` 时有意义 |
+
+**响应**：
+
+```json
+{ "code": 0, "data": { "recorded": true } }
+```
+
+`recorded: false` 表示 recorder 未注入（生产装配失败 / 测试场景），前端仍按成功处理。
+
+**错误码**：
+
+- 400 `{"code":1001,...}`：`event_type` 缺失或 > 50 字符 / 请求体非 JSON
+- 403 `{"code":1403,...}`：非 session owner（防他人灌垃圾事件）
+- 404 `{"code":1002,...}`：session 不存在
+
+**降级策略**：recorder 写入失败（DB down / 超时）→ 仍返 200 + `recorded: false`，仅 `slog.Warn`。**埋点是 observability，不是 critical path**。
+
+**实现位置**：`backend/internal/api/handler_events.go::PostFrontendEvent`
+
+---
+
 #### 3.6 判决书
 
 #### 3.6.1 获取判决书

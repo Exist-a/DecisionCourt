@@ -404,6 +404,12 @@ ORDER BY agent_id, round;
 | **分布式会话** | Redis 缓存 `court_sessions` 实时状态，PG 持久化 |
 | **消息队列** | 新增异步任务表 `async_tasks`（或直接用 Redis 队列）|
 
+### 数据写入规约（v0.9.3 起）
+
+- `users.last_ua` / `audit_logs.ua` 为 PG `varchar(200)`，但移动浏览器（微信 / HONOR / OPPO 内置浏览器）的真实 UA 常达 450+ 字符。
+- **后端约定**：写入前必须经 `internal/util/TruncateUA` 截断到 ≤ 200 rune，并过滤掉 ASCII 控制字符（`< 0x20` 与 `0x7F` → 空格；保留 `\t \n \r`）。
+- 未来扩展任何"写入 UA 的接口"也要遵守同样约束。
+
 ---
 
 ## 7. 数据库选型确认
@@ -506,6 +512,79 @@ WHERE status = 'error'
   AND created_at > NOW() - INTERVAL '1 hour'
 GROUP BY event_type
 ORDER BY err_count DESC;
+```
+
+### 9.6 前端埋点事件（v0.10）
+
+详见 [ADR 0020](../adr/0020-frontend-analytics-via-decision-events.md)。本节补充 DB 层面的约定。
+
+**EventType 命名空间**：
+
+| 前缀 | 来源 | 典型示例 |
+|---|---|---|
+| `state_transition` | 后端状态机 | `state_transition` |
+| `span.<name>` | 后端业务 span | `span.llm_call`、`span.search_query` |
+| `convergence_triggered` | 后端收敛事件 | `convergence_triggered` |
+| **`fe.<name>`** | **前端用户行为 / 性能** | **`fe.trial_started`、`fe.phase_entered`、`fe.verdict_feedback`、`fe.ws_reconnect`** |
+
+后端查询可用 `WHERE event_type LIKE 'fe.%'` 一键过滤前端事件。
+
+**前端事件清单**（截至 v0.10.0）：
+
+| EventType | 触发时机 | 关键 payload 字段 |
+|---|---|---|
+| `fe.trial_started` | 用户点"开 庭" | `phase` |
+| `fe.phase_entered` | `phase.changed` WS 事件 | `from_phase`、`to_phase`、`duration_ms` |
+| `fe.evidence_submitted` | 用户提交证据 | `type`、`char_count` |
+| `fe.direct_verdict_triggered` | 用户点"直接判决" | `current_round`、`current_phase` |
+| `fe.tab_switched` | 右侧 4 Tab 切换 | `from_tab`、`to_tab` |
+| `fe.toggle_real_courthouse` | "AI 可视化 / 真实法庭"切换 | `enabled` |
+| `fe.verdict_feedback` | 判决反馈（关键事件） | `helpful`、`score_a`、`score_b` |
+| `fe.reopen_trial_triggered` | "补充证据重开" | `reason` |
+
+**PII 约束**：
+
+前端 analytics 模块自带 [PII 守卫](../../frontend/lib/analytics/index.ts) —— payload 任何字段名命中 `content / message / summary / verdict / context / title` 等黑名单就拒绝并 warn。**前端事件 payload 不应含用户证据原文、判决书正文等敏感内容**。需要记这些内容请走后端业务事件。
+
+**示例查询（前端漏斗分析）**：
+
+```sql
+-- 漏斗：trial_started → phase_entered(cross_exam) → verdict_feedback
+SELECT
+  s.session_uuid,
+  s.title,
+  MIN(CASE WHEN e.event_type = 'fe.trial_started' THEN e.created_at END) AS started_at,
+  MIN(CASE WHEN e.event_type = 'fe.phase_entered'
+           AND (e.payload->>'to_phase') = 'cross_exam' THEN e.created_at END) AS cross_exam_at,
+  MIN(CASE WHEN e.event_type = 'fe.verdict_feedback' THEN e.created_at END) AS feedback_at,
+  -- cross_exam 阶段停留时长(秒)
+  EXTRACT(EPOCH FROM
+    MIN(CASE WHEN e.event_type = 'fe.phase_entered'
+             AND (e.payload->>'to_phase') = 'cross_exam' THEN e.created_at END) -
+    MIN(CASE WHEN e.event_type = 'fe.phase_entered'
+             AND (e.payload->>'to_phase') = 'opening' THEN e.created_at END)
+  ) AS opening_to_cross_exam_sec
+FROM decision_events e
+JOIN court_sessions s ON s.session_uuid = e.session_uuid
+WHERE e.event_type LIKE 'fe.%'
+GROUP BY s.session_uuid, s.title
+ORDER BY started_at DESC
+LIMIT 50;
+
+-- 用户行为转化率(过去 7 天)
+SELECT
+  COUNT(DISTINCT session_uuid) FILTER (WHERE event_type = 'fe.trial_started') AS trials_started,
+  COUNT(DISTINCT session_uuid) FILTER (WHERE event_type = 'fe.direct_verdict_triggered') AS direct_verdict_count,
+  COUNT(DISTINCT session_uuid) FILTER (WHERE event_type = 'fe.verdict_feedback'
+                                       AND (payload->>'helpful')::bool) AS positive_feedback,
+  ROUND(
+    COUNT(DISTINCT session_uuid) FILTER (WHERE event_type = 'fe.direct_verdict_triggered')::numeric /
+    NULLIF(COUNT(DISTINCT session_uuid) FILTER (WHERE event_type = 'fe.trial_started'), 0),
+    3
+  ) AS direct_verdict_rate
+FROM decision_events
+WHERE event_type LIKE 'fe.%'
+  AND created_at > NOW() - INTERVAL '7 days';
 ```
 
 ### 9.5 容量估算

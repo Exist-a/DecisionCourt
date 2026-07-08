@@ -267,6 +267,8 @@ type User struct {
 	LastSeen   time.Time `gorm:"not null" json:"last_seen"`
 	// 简单的 IP+UA 指纹,只用于风控(异常登录告警),不做任何反向追踪。
 	// 留空表示未记录(GDPR 友好)。
+	// LastUA 受 PG varchar(200) 限制,写入前在 util.TruncateUA 截断到 ≤ 200 rune;
+	// 移动浏览器/微信内置浏览器 UA 常达 450+ 字符,直接 INSERT 会触发 SQLSTATE 22001。
 	LastIP     string    `gorm:"type:varchar(45)" json:"last_ip,omitempty"`
 	LastUA     string    `gorm:"type:varchar(200)" json:"last_ua,omitempty"`
 }
@@ -280,6 +282,7 @@ type AuditLog struct {
 	Action      string    `gorm:"type:varchar(50);not null;index"`  // e.g. "auth.anon" / "session.export"
 	Target      string    `gorm:"type:varchar(100);index"`          // e.g. session_uuid
 	IP          string    `gorm:"type:varchar(45)"`
+	// UA 受 PG varchar(200) 限制,写入前在 util.TruncateUA 截断到 ≤ 200 rune。
 	UA          string    `gorm:"type:varchar(200)"`
 	Result      string    `gorm:"type:varchar(20);default:'ok'"`    // "ok" / "denied" / "error"
 	Reason      string    `gorm:"type:varchar(200)"`                // 拒绝原因 / 错误摘要

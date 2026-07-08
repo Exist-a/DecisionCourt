@@ -1,0 +1,54 @@
+# v0.10.1 (2026-07-08): air 默认 build cmd 是 `go build -o ./tmp/main .`
+# 但 backend 根目录没有 `package main`(main.go 在 cmd/server/),导致 dev
+# 容器启动失败: "no Go files in /app" + "/app/tmp/main: not found"。
+#
+# 显式指定 cmd = "go build -o ./tmp/main ./cmd/server" 修复。
+#
+# 注意: 本文件仅用于 docker-compose.dev.yml 的 hot reload,生产 Dockerfile
+# (编译期) 不读 .air.toml,所以不影响生产构建。
+
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  args_bin = []
+  bin = "./tmp/main"
+  cmd = "go build -o ./tmp/main ./cmd/server"
+  delay = 1000
+  exclude_dir = ["assets", "tmp", "vendor", "testdata", "logs", "test-output"]
+  exclude_file = []
+  exclude_regex = ["_test\\.go"]
+  exclude_unchanged = true
+  follow_symlink = false
+  full_bin = ""
+  include_dir = ["cmd", "internal"]
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  include_file = []
+  kill_delay = "0s"
+  log = "build-errors.log"
+  poll = false
+  poll_interval = 0
+  rerun = false
+  rerun_delay = 500
+  send_interrupt = false
+  stop_on_error = false
+
+[color]
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  main_only = false
+  silent = false
+  time = false
+
+[misc]
+  clean_on_exit = false
+
+[screen]
+  clear_on_rebuild = false
+  keep_scroll = true

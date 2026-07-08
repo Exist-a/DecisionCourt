@@ -19,6 +19,9 @@ import { PhaseGuide } from "./PhaseGuide";
 import { HelpPopover } from "./HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+// v0.10 前端埋点 (ADR 0020): 见 runtime.ts 注释。模块级单例,
+  // 这里只在 useEffect 里 initAnalytics(sessionId) 绑 sessionUUID。
+import { initAnalytics, getAnalytics } from "@/lib/analytics/runtime";
 import {
   Dialog,
   DialogContent,
@@ -92,6 +95,11 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   const [verdictReady, setVerdictReady] = useState(false);
   const [waitingForNextRound, setWaitingForNextRound] = useState(false);
   const [nextRound, setNextRound] = useState(2);
+  // v0.10 (ADR 0020) fe.phase_entered: 跟踪"上一次进入 phase 的时刻 + 当前 phase",
+  // phase.changed 事件到达时计算 durationMs = now - lastEnteredAt。
+  // useRef 不触发 re-render,避免 phase 变化外引起额外渲染。
+  const lastPhaseEnteredAtRef = useRef<number>(Date.now());
+  const lastPhaseRef = useRef<string>("idle");
   // 右侧面板 Tab：庭审记录 vs 调查活动 vs 策略笔记 vs 信念轨迹。默认庭审记录。
   // v0.5 新增"策略笔记" tab，渲染 A2A 私有消息流（详见 memory-a2a-redesign.md §PR 4）。
   // v0.6 新增"信念轨迹" tab，渲染 belief_diffs 时间线 + 收敛徽章。
@@ -102,6 +110,10 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   // Load initial data and connect WebSocket
   useEffect(() => {
     let mounted = true;
+
+    // v0.10 (ADR 0020):绑 sessionUUID 到 analytics 单例。重复挂载同一 session
+    // (StrictMode dev 双调用 / 房间重连)安全——initAnalytics 幂等更新。
+    initAnalytics(sessionId);
 
     async function load() {
       try {
@@ -204,6 +216,20 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
       // Phase transition (e.g. continue_cross_exam → cross_exam round N+1)
       // implies a new round has begun — clear the "waiting" UI state.
       if (event.type === "phase.changed") {
+        // v0.10 (ADR 0020) fe.phase_entered:埋"上一阶段停留时长"。
+        // 这是用户行为漏斗最关键的维度——只在 phase.changed 触发,
+        // 不在 phase 静止时重复触发。
+        const payload = event.payload as { phase?: string };
+        if (payload?.phase) {
+          const now = Date.now();
+          getAnalytics().trackPhaseChange(
+            lastPhaseRef.current,
+            payload.phase,
+            now - lastPhaseEnteredAtRef.current,
+          );
+          lastPhaseRef.current = payload.phase;
+          lastPhaseEnteredAtRef.current = now;
+        }
         setWaitingForNextRound(false);
       }
 
@@ -294,18 +320,35 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     ws?.send(action);
   };
 
+  // v0.10 (ADR 0020) fe.tab_switched:看用户对哪些观测面板感兴趣。
+  // 抽成一个 helper:空操作不埋,避免 React StrictMode 双调用产生重复事件。
+  const handleTabChange = (nextTab: typeof sidebarTab) => {
+    if (nextTab === sidebarTab) return;
+    getAnalytics().track("fe.tab_switched", {
+      from_tab: sidebarTab,
+      to_tab: nextTab,
+    });
+    setSidebarTab(nextTab);
+  };
+
   const handleSendInput = () => {
     if (!inputValue.trim()) return;
+    const content = inputValue.trim();
     sendAction({
       action: "submit_evidence",
-      content: inputValue.trim(),
+      content,
       type: "fact",
     });
+    // v0.10 (ADR 0020) fe.evidence_submitted:用户参与度指标。
+    // payload 不含 content (PII 守卫会拒绝),只含 char_count。
+    getAnalytics().trackEvidenceSubmitted("fact", content.length);
     setInputValue("");
   };
 
   const handleSubmitEvidence = (content: string, type: EvidenceType) => {
     sendAction({ action: "submit_evidence", content, type });
+    // v0.10 (ADR 0020) fe.evidence_submitted:同上,只记录类型 + 字符数。
+    getAnalytics().trackEvidenceSubmitted(type, content.length);
   };
 
   const handleAnswerQuestion = () => {
@@ -322,6 +365,15 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   const handleSkipQuestion = () => {
     sendAction({ action: "skip_agent" });
     setPendingUserAction(null);
+  };
+
+  // v0.10 (ADR 0020) fe.toggle_real_courthouse:看用户对"白盒化 AI 视图"
+  // 的偏好。"真实法庭"模式会隐藏律师内心戏,UI-only filter。
+  const handleToggleRealCourthouse = () => {
+    getAnalytics().track("fe.toggle_real_courthouse", {
+      enabled: !realCourthouseMode,
+    });
+    toggleRealCourthouseMode();
   };
 
   const handleViewVerdict = async () => {
@@ -421,6 +473,12 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
                   }
                   const idempKey = startTrialIdempKeyRef.current;
 
+                  // v0.10 (ADR 0020) fe.trial_started:漏斗入口。
+                  // 后端无对应动作,纯前端用户行为埋点。
+                  getAnalytics().track("fe.trial_started", {
+                    phase: session?.current_phase ?? "idle",
+                  });
+
                   setStartingTrial(true);
                   try {
                     const res = await api.startTrial(sessionId, idempKey);
@@ -457,7 +515,15 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
             ) : (
               <Button
                 size="sm"
-                onClick={() => sendAction({ action: "direct_verdict" })}
+                onClick={() => {
+                  // v0.10 (ADR 0020) fe.direct_verdict_triggered:
+                  // 用户主动跳过 = 不耐烦/对当前 phase 质量不满的反向信号。
+                  getAnalytics().track("fe.direct_verdict_triggered", {
+                    current_round: session?.current_round ?? 0,
+                    current_phase: session?.current_phase ?? "unknown",
+                  });
+                  sendAction({ action: "direct_verdict" });
+                }}
                 className="bg-ink text-paper hover:bg-inkSoft rounded-sm px-4 h-9 font-data tracking-wider"
               >
                 <Gavel className="w-3.5 h-3.5 mr-1.5" />
@@ -650,7 +716,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
             <button
               role="tab"
               aria-selected={sidebarTab === "messages"}
-              onClick={() => setSidebarTab("messages")}
+              onClick={() => handleTabChange("messages")}
               className={`flex-1 px-3 py-2 text-[11px] font-data tracking-[0.15em] uppercase flex items-center justify-center gap-1.5 border-b-2 ${
                 sidebarTab === "messages"
                   ? "border-seal text-ink"
@@ -664,7 +730,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
             <button
               role="tab"
               aria-selected={sidebarTab === "investigator"}
-              onClick={() => setSidebarTab("investigator")}
+              onClick={() => handleTabChange("investigator")}
               className={`flex-1 px-3 py-2 text-[11px] font-data tracking-[0.15em] uppercase flex items-center justify-center gap-1.5 border-b-2 ${
                 sidebarTab === "investigator"
                   ? "border-seal text-ink"
@@ -678,7 +744,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
             <button
               role="tab"
               aria-selected={sidebarTab === "memory"}
-              onClick={() => setSidebarTab("memory")}
+              onClick={() => handleTabChange("memory")}
               className={`flex-1 px-3 py-2 text-[11px] font-data tracking-[0.15em] uppercase flex items-center justify-center gap-1.5 border-b-2 ${
                 sidebarTab === "memory"
                   ? "border-seal text-ink"
@@ -698,7 +764,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
             <button
               role="tab"
               aria-selected={sidebarTab === "belief"}
-              onClick={() => setSidebarTab("belief")}
+              onClick={() => handleTabChange("belief")}
               className={`flex-1 px-3 py-2 text-[11px] font-data tracking-[0.15em] uppercase flex items-center justify-center gap-1.5 border-b-2 ${
                 sidebarTab === "belief"
                   ? "border-seal text-ink"
@@ -725,7 +791,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
               <MemoryAuditPanel
                 entries={memoryEntries}
                 redactedMode={realCourthouseMode}
-                onToggleRedacted={toggleRealCourthouseMode}
+                onToggleRedacted={handleToggleRealCourthouse}
               />
             ) : (
               <BeliefTrajectoryTab

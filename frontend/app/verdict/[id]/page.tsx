@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+// v0.10 (ADR 0020) 判决页埋点：feedback / reopen_trial 是关键事件,
+  // 立即 flush 不容丢失（verdict_feedback 在 CRITICAL_EVENTS 清单里）。
+import { initAnalytics, getAnalytics } from "@/lib/analytics/runtime";
 import {
   useCourtroomStore,
   applyCourtEvent,
@@ -64,6 +67,10 @@ export default function VerdictPage() {
 
   useEffect(() => {
     if (storeVerdict) return;
+
+    // v0.10 (ADR 0020):判决页加载时 initAnalytics(sessionId),让 feedback /
+    // reopen_trial 等埋点能正确归属到当前 session。
+    initAnalytics(sessionId);
 
     async function load() {
       try {
@@ -256,6 +263,12 @@ export default function VerdictPage() {
   const handleReopen = async () => {
     setReopening(true);
     setReopenError(null);
+    // v0.10 (ADR 0020) fe.reopen_trial_triggered:判决质量反向信号。
+    // 用户主动 reopen = 觉得判决不足,需要补证据再论。这是
+    // 比 verdict_feedback 更强的负向信号(主动操作 vs 一键反馈)。
+    getAnalytics().track("fe.reopen_trial_triggered", {
+      reason: "user_initiated",
+    });
     try {
       const res = await api.sendAction(sessionId, { action: "reopen_trial" });
       if (res.code === 0) {
@@ -680,7 +693,15 @@ export default function VerdictPage() {
             <Button
               variant={feedback === "helpful" ? "default" : "outline"}
               size="sm"
-              onClick={() => setFeedback("helpful")}
+              onClick={() => {
+                // v0.10 (ADR 0020) fe.verdict_feedback:关键事件立即 flush。
+                // 这是判决质量唯一一手数据。需要 verdict 的 score_a / score_b
+                // (法官最终概率分布),从 verdict store 读。
+                const a = (verdict as { final_score_a?: number } | null)?.final_score_a ?? 0.5;
+                const b = (verdict as { final_score_b?: number } | null)?.final_score_b ?? 0.5;
+                getAnalytics().trackVerdictFeedback(true, a, b);
+                setFeedback("helpful");
+              }}
               className={
                 feedback === "helpful"
                   ? "bg-defense text-paper hover:bg-defense-ink rounded-sm px-4 h-9 text-xs font-data tracking-wider"
@@ -693,7 +714,13 @@ export default function VerdictPage() {
             <Button
               variant={feedback === "not_helpful" ? "default" : "outline"}
               size="sm"
-              onClick={() => setFeedback("not_helpful")}
+              onClick={() => {
+                // 同上 fe.verdict_feedback(关键事件)。
+                const a = (verdict as { final_score_a?: number } | null)?.final_score_a ?? 0.5;
+                const b = (verdict as { final_score_b?: number } | null)?.final_score_b ?? 0.5;
+                getAnalytics().trackVerdictFeedback(false, a, b);
+                setFeedback("not_helpful");
+              }}
               className={
                 feedback === "not_helpful"
                   ? "bg-prosecution text-paper hover:bg-prosecution-ink rounded-sm px-4 h-9 text-xs font-data tracking-wider"

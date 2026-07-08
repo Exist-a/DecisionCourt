@@ -128,12 +128,35 @@ frontend/
 ├── lib/
 │   ├── api.ts                    # API 客户端
 │   ├── websocket.ts              # WebSocket 封装
+│   ├── transport.ts              # v0.10 埋点传输层(批量 + 失败降级)
+│   ├── analytics/index.ts        # v0.10 track API + PII 守卫
 │   └── utils.ts
 ├── store/
 │   └── courtroomStore.ts         # Zustand 状态
 ├── public/
 └── package.json
 ```
+
+### 3.4 前端埋点(v0.10)
+
+后端 v0.8 已建"业务事件可观测性"三支柱(ADR 0010),但**前端完全是黑盒**。v0.10 补上用户行为漏斗 + 性能监控。
+
+**数据流**：前端 `track()` → `transport.enqueue()` → 批量 5s 窗口 → `POST /api/v1/courtrooms/:session_uuid/events` → 后端 `GormEventRecorder.Record()` → `decision_events` 表(EventType 以 `fe.` 前缀区分)。
+
+**架构**：
+
+| 模块 | 职责 |
+|---|---|
+| `lib/transport.ts` | 工厂 `createTransport(config, deps) → { enqueue, flush, size }`,批量 + 失败降级 + 容量保护 |
+| `lib/analytics/index.ts` | 工厂 `createAnalytics(deps) → { track, trackPhaseChange, ... }`,PII 守卫 + 便捷函数 |
+
+**关键事件**(立即 flush,不容丢失)：`fe.verdict_feedback` / `fe.ws_reconnect` / `fe.ws_missed_pong` / `fe.trial_completed`。
+
+**PII 守卫**：递归扫描 payload,任何一层含 `content / message / messages / raw_results / summary / verdict / context / title` 等敏感字段 → 拒绝并 warn。
+
+**埋点失败处理**：recorder nil / Record 返错 → 仍返 200,仅 slog 警告。**埋点是 observability,不是 critical path**。
+
+详细决策与备选方案见 [ADR 0020](./adr/0020-frontend-analytics-via-decision-events.md)。
 
 ---
 
@@ -545,6 +568,73 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 - **证据去重**：相同证据不重复注入上下文。
 - **结构化上下文**：用 JSON/表格替代自然语言描述，减少 Token。
 - **动态截断**：按 Token 预算截断低相关性内容，优先保留证据和信念状态。
+
+---
+
+### 6.5 LLM 输出反幻觉验证器（v0.10.1）
+
+**问题**：Prompt 规则不够用。LLM 在 stress 下（长 prompt + 复杂上下文 + 论证压力）会"局部遵守"规则，自己凑数字让论证"看起来权威"。
+
+实测 v0.9.1 ADR 0015 的 4 条 baseRules 仍 **60% 幻觉率**（5 个真实庭审 / 10 messages）。
+
+**方案**：在 LLM 输出**进入业务流之前**，跑硬编码正则扫描器，命中模式直接 reject + retry。**Prompt 规则 + post-validation 双层防御**才能防 LLM 编造。
+
+#### 6.5.1 模块结构
+
+| 文件 | 职责 |
+|---|---|
+| `backend/internal/agent/output_validator.go` | 核心，4 类正则 + 6 类 mode + ValidateAgainstHallucination() |
+| `output_validator_test.go` | 9 个 unit test 覆盖所有模式 |
+| `react_runner.go` line 372-394 | 流式路径接入（**关键**：流式成功也跑 validator，**不能跳过**） |
+| `prompts.go` baseRules 规则 15 | prompt 层防御（"如果违反会被后端硬拒"） |
+| `tools/run-hallucination-test.ps1` | 自动化压测脚本 |
+
+#### 6.5.2 三层防御（Layer A / B / C）
+
+| Layer | 模式 | 触发 |
+|---|---|---|
+| **A1** | "证据N/附件N" 引用 | evidence_refs 空 |
+| **A2** | 百分比 / 金额 | evidence_refs 空 |
+| **B** | evidence_refs 含未验证 ID | ref 非空 + allowedIDs 缺 |
+| **C** | 法院案号 `(YYYY)XX字第XXXX号` | **无条件 reject** |
+
+**关键洞察**：案号模式必须无条件 reject —— 实测发现即使 evidence_refs 非空，LLM 仍会在 content 里编造"(2022)京03民终4567号"让论证"看起来权威"。
+
+#### 6.5.3 4 类正则
+
+| 模式 | 正则 |
+|---|---|
+| 证据引用 | `证据[一二三四五六七八九十\d]+\|附件\s*\d+` |
+| 百分比 | `\d+(?:\.\d+)?\s*%` |
+| 案号 | `[（(]\d{4}[）)]\S{0,15}\d+号` |
+| 金额 | `\d+(?:\.\d+)?\s*(元\|万元\|亿元\|块钱\|百万元)` |
+
+#### 6.5.4 接入点（关键 bug 修复）
+
+```go
+// react_runner.go (v0.10.1)
+if streamSucceeded {
+    // 流式成功也跑 hallucination check,失败时回退到 retry 路径
+    if valResult := ValidateAgainstHallucination(out.Content, out.EvidenceRefs, nil); !valResult.OK {
+        // 把 streamed content 丢掉,让 retry 路径重新生成
+        streamSucceeded = false
+        out.Content = "" // 清空,触发 retry 路径
+    } else {
+        return Speaker{...}, steps, nil
+    }
+}
+```
+
+**关键发现**：v0.10 之前 `streamSucceeded` 直接 `return Speaker{...}` 跳过 validateSpeak。v0.10.1 修这个 bug 后 hallucination rate 从 60% → 0%。
+
+#### 6.5.5 验证结果
+
+| 阶段 | Hallucination rate | 样本 |
+|---|---|---|
+| 修复前 | **60% (6/10)** | 5 sessions × 2 messages |
+| 修复后（3 轮压测） | **0% (0/28)** | 14 sessions × 2 messages |
+
+详见 [ADR 0021](../adr/0021-llm-hallucination-output-validator.md)。
 
 ---
 

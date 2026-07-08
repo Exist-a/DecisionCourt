@@ -55,6 +55,16 @@ type Handler struct {
 
 	// v0.9 (ADR 0012 §决策 2):客户端 Idempotency-Key header,服务端 24h 去重。
 	Idempotency *idempotency.Idempotency
+
+	// v0.10 前端埋点 (ADR 0020):复用 v0.8 observability.EventRecorder,
+	// 前端事件直接落 decision_events 表,EventType 以 fe. 前缀与后端 span.X 区分。
+	// nil 时 POST /events 端点降级为 200 + 不写库(不阻塞前端)。
+	eventRecorder observability.EventRecorder
+}
+
+// WithEventRecorder 注入前端埋点 recorder。装配阶段(main.go)调用一次。
+func (h *Handler) WithEventRecorder(rec observability.EventRecorder) {
+	h.eventRecorder = rec
 }
 
 func NewHandler(service *courtroom.Service, investigationService *investigation.Service) *Handler {
@@ -157,6 +167,11 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 	// refresh / browser-back / court page reload. See
 	// service.ListPrivateMemory for visibility rationale.
 	api.GET("/courtrooms/:session_uuid/memory", h.GetVisibleMemory)
+
+	// v0.10 前端埋点 (ADR 0020):前端 track() API 的唯一落点。
+	// 复用 decision_events 表,EventType 以 fe. 前缀与后端 span.X 区分。
+	// 鉴权复用 checkSessionAccess(必须是 session owner,防他人灌垃圾事件)。
+	api.POST("/courtrooms/:session_uuid/events", h.PostFrontendEvent)
 
 	// LLM 端点(更严限流,user 维度)— 防"一秒 1000 次 dispatch_investigator"烧配额
 	llmGroup := api.Group("/")

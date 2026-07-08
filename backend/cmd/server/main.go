@@ -27,6 +27,7 @@ import (
 	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/decisioncourt/backend/internal/search"
+	"github.com/decisioncourt/backend/internal/util"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -122,6 +123,8 @@ func main() {
 	handler := api.NewHandler(courtroomSvc, courtroomSvc.InvestigationService())
 	// v0.8 白盒化：Handler 暴露 metrics 实例，让 /metrics 端点能查询 snapshot。
 	handler.WithMetrics(metrics)
+	// v0.10 前端埋点 (ADR 0020)：复用同一个 eventRecorder,前端事件落同一张表。
+	handler.WithEventRecorder(eventRecorder)
 
 	// v0.9 (ADR 0014): 每用户每天 N 次 StartTrial 限流(防弱网/脚本刷 trial 烧 LLM 配额)。
 	// 默认 5 次/24h,可通过 USER_TRIAL_LIMIT 环境变量调整;置 0 禁用。
@@ -141,12 +144,14 @@ func main() {
 
 	wsServer := api.NewWebSocketServer(hub, courtroomSvc)
 
-	r := gin.New()
 	// v0.8.3 安全(P2-2):生产模式 — 默认 debug 日志关掉,改用 slog 接管。
 	// dev (GIN_MODE=debug) 留个口子,便于本地排查。
+	// 必须放在 gin.New() 之前调用,否则 gin.New() 首次读取 mode 时仍会
+	// 以 debug 模式打印一行 [GIN-debug] [WARNING] 到 stderr。
 	if os.Getenv("GIN_MODE") == "" {
 		gin.SetMode(gin.ReleaseMode)
 	}
+	r := gin.New()
 	// v0.8 白盒化：trace middleware 在最前——给每个 HTTP 请求生成/提取 trace_id 并注入 ctx。
 	// metrics middleware 紧跟其后——记录 HTTP 请求耗时直方图。
 	r.Use(observability.TraceMiddleware())
@@ -165,6 +170,13 @@ func main() {
 		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: true,
 	}))
+
+	// v0.10.1 fix: gin v1.10+ 的 router 对"未注册 method"的请求(如浏览器
+	// CORS preflight 的 OPTIONS)不会调用 NoMethod handler,导致浏览器 preflight
+	// 永远收到 403 + 缺失 CORS header,所有跨域请求 fail。
+	// 实测 NoMethod 在 v1.12 不可靠,改用 http.Server 在 engine 外层 wrap
+	// 拦截 OPTIONS,non-OPTIONS 请求 fall through 到 gin engine。
+	_ = allowedOrigins // 供 OPTIONS handler 引用,避免 lint warning
 
 	// v0.8.3 安全(P0-1)：auth 端点(/auth/anon / /auth/logout)无需 token；
 	// /health / /metrics 也公开。其余所有 /api/v1/* 由 auth.Middleware 守门。
@@ -209,7 +221,47 @@ func main() {
 		}
 	}()
 
-	if err := r.Run(":" + port); err != nil {
+	// v0.10.1 CORS preflight fix: gin engine 外层包一层 OPTIONS 处理,
+	// 浏览器 preflight 收到 204 + CORS header 后再走真实请求。
+	//
+	// Access-Control-Allow-Origin 必须是单个 origin(浏览器规范),
+	// 不能逗号分隔多个。做法:看 request 的 Origin,是否在 allowedOrigins 列表里,
+	// 在的话 echo 那个 Origin + Vary: Origin(告诉浏览器 cache 按 origin 分)。
+	//
+	// 关键: 当前端 credentials: "include" 时,响应必须带
+	// Access-Control-Allow-Credentials: true,否则浏览器拒绝放行 cookie。
+	// 真实请求(非 OPTIONS)也必须 echo 这两个 header,因为浏览器在 2xx 响应里
+	// 重新校验 CORS。
+	originAllowed := func(origin string) bool {
+		for _, o := range allowedOrigins {
+			if o == origin {
+				return true
+			}
+		}
+		return false
+	}
+	srv := &http.Server{
+		Addr: ":" + port,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			origin := req.Header.Get("Origin")
+			if originAllowed(origin) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
+			if req.Method == http.MethodOptions {
+				if origin != "" {
+					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+					w.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID, Idempotency-Key")
+					w.Header().Set("Access-Control-Max-Age", "86400")
+				}
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			r.ServeHTTP(w, req)
+		}),
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
 
@@ -277,7 +329,7 @@ func anonAuthHandler(cfg config.Config) gin.HandlerFunc {
 				FirstSeen: now,
 				LastSeen:  now,
 				LastIP:    c.ClientIP(),
-				LastUA:    c.GetHeader("User-Agent"),
+				LastUA:    util.TruncateUA(c.GetHeader("User-Agent")),
 			}
 			// SQLite-style upsert;Postgres 同样支持 ON CONFLICT via GORM
 			if err := model.DB.Where("user_id = ?", req.UserID).
@@ -297,7 +349,7 @@ func anonAuthHandler(cfg config.Config) gin.HandlerFunc {
 			Action:    "auth.anon",
 			Target:    req.UserID,
 			IP:        c.ClientIP(),
-			UA:        c.GetHeader("User-Agent"),
+			UA:        util.TruncateUA(c.GetHeader("User-Agent")),
 			Result:    "ok",
 			CreatedAt: time.Now().UTC(),
 		}
