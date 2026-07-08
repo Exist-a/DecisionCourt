@@ -360,6 +360,12 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 			//     通常为空）；validateSpeak 可能失败 → 走 retry 路径
 			//     （用 Complete 重新生成完整 JSON）—— 这是兜底，确保 speak
 			//     永远能给用户一份发言
+			//
+			// v0.10.1 (ADR 0021):流式成功也要跑 hallucination validation。
+			// 之前逻辑跳过 validateSpeak 假设"结构校验必过",但 hallucination
+			// check(evidence_refs 空但内容含证据/案号/百分比)是新加的,
+			// LLM 在 stress 下违反频率 60%。失败时强制走非流式 retry,
+			// 让 LLM 看到错误信息重新生成。
 			streamSucceeded := false
 			if r.cfg.OnSpeakChunk != nil {
 				if streamed, ok := r.streamSpeakContent(ctx, out, messages); ok {
@@ -367,20 +373,25 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 					streamSucceeded = true
 				}
 			}
-			// 仅在流式失败时才允许 retry 路径（流式成功时 content 必非空，
-			// validateSpeak 必通过，没必要 retry 浪费时间）。
 			if streamSucceeded {
-				step.ElapsedMs = time.Since(stepStart).Milliseconds()
-				steps = append(steps, step)
-				r.emitStep(step)
+				// 流式成功也跑 hallucination check,失败时回退到 retry 路径
+				if valResult := ValidateAgainstHallucination(out.Content, out.EvidenceRefs, nil); !valResult.OK {
+					// 把 streamed content 丢掉,让 retry 路径重新生成
+					streamSucceeded = false
+					out.Content = "" // 清空,触发 retry 路径
+				} else {
+					step.ElapsedMs = time.Since(stepStart).Milliseconds()
+					steps = append(steps, step)
+					r.emitStep(step)
 
-				return Speaker{
-					Content:      out.Content,
-					Reasoning:    out.Reasoning,
-					EvidenceRefs: out.EvidenceRefs,
-					Confidence:   out.Confidence,
-					Stance:       out.Stance,
-				}, steps, nil
+					return Speaker{
+						Content:      out.Content,
+						Reasoning:    out.Reasoning,
+						EvidenceRefs: out.EvidenceRefs,
+						Confidence:   out.Confidence,
+						Stance:       out.Stance,
+					}, steps, nil
+				}
 			}
 			if err := validateSpeak(&out); err != nil {
 				// One retry with a correction hint, same pattern as parse
@@ -670,6 +681,20 @@ func validateSpeak(o *AgentOutput) error {
 	default:
 		return fmt.Errorf("invalid stance: %q", o.Stance)
 	}
+
+	// v0.10.1 (ADR 0021):硬编码验证 LLM 输出是否有 hallucination 模式。
+	// baseRules 第 4/5/13/14 条虽然禁止,但 LLM 在 stress 下会违反。
+	// 这里调用 output_validator.go 扫 content + evidence_refs。
+	// Reject 会触发现有 retry 机制(react_runner.go:385),LLM 看到
+	// FormatValidationIssuesForRetry() 解释后重新生成。
+	//
+	// 当前实现只验证 evidence_refs 空时的硬约束(用户最痛的 bug),
+	// evidence_refs 非空时的 ID 校验(需 session 上下文)留 v0.11。
+	valResult := ValidateAgainstHallucination(o.Content, o.EvidenceRefs, nil)
+	if !valResult.OK {
+		return fmt.Errorf("hallucination detected: %s", FormatValidationIssuesForRetry(valResult.Issues))
+	}
+
 	return nil
 }
 

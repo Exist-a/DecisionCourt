@@ -142,6 +142,23 @@ Prompt 头部加引导语：
 
 ---
 
+## 后续加固（v0.10.1）
+
+2026-07-08 实测发现，仅靠 ADR 0015 的 prompt 防御仍 **60% 幻觉率**（5 个真实庭审 / 10 messages）。LLM 在 stress 下会"局部遵守"规则，自己凑数字让论证"看起来权威"。
+
+**加固方案**：在 LLM 输出**进入业务流之前**加 post-processing 硬编码扫描（ADR 0021）。
+
+| 维度 | ADR 0015（仅 prompt） | ADR 0015 + ADR 0021（双层） |
+|---|---|---|
+| 防御层 | 1 层（prompt 自约束） | 2 层（prompt + post-validation） |
+| 实测幻觉率 | **60%** | **0%** |
+| 复杂度 | 低 | 中（9 个 validator test） |
+| 误伤 | 无 | 偶发（25% prosecutor content 空，可接受） |
+
+详见 [ADR 0021](./0021-llm-hallucination-output-validator.md)。
+
+---
+
 ## 关联
 
 - **主文档**：[`docs/decisioncourt-agent-design.md`](../decisioncourt-agent-design.md) §基
