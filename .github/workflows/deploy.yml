@@ -103,7 +103,9 @@ jobs:
           command_timeout: 5m
           script: |
             set -e
-            cd /opt/decisioncourt
+            # v0.10.12: ECS 实际路径是 /opt/DecisionCourt (大写 D, 跟 scripts/ecs.ps1 一致)
+            # 之前写 /opt/decisioncourt (小写 d) 跟 ecs.ps1 不一致,导致 cd fail 整个 deploy 1 秒挂
+            cd /opt/DecisionCourt
 
             # 拉新镜像
             echo "==> 拉新镜像 (tag: ${{ env.TAG }})"
