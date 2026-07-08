@@ -36,10 +36,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          # go.mod 写的是 go 1.26.1,setup-go v6 支持 go-version-file 自动读 toolchain
-          go-version-file: 'go.mod'
+          # go.mod 在 backend/ 下,setup-go 的 go-version-file 相对的是
+          # $GITHUB_WORKSPACE,所以要写完整路径 (v0.10.8 踩过这个坑:
+          #  'go.mod does not exist' = setup-go 在 $GITHUB_WORKSPACE 找 go.mod,
+          #  实际在 backend/go.mod)
+          go-version-file: 'backend/go.mod'
           cache: true
-          cache-dependency-path: 'go.sum'
+          cache-dependency-path: 'backend/go.sum'
 
       - name: Resolve modules
         run: go mod download
@@ -109,15 +112,17 @@ jobs:
 
       - name: Verify ADR index count
         # 校验 docs/adr/README.md 索引的 ADR 数量 == 真实 .md 文件数量
+        # v0.10.8 踩过的坑: BRE 模式下 `|` 是字面字符不是元字符,
+        # '^### \[\|^| [0-9]' 第二个分支的 `^` 实际不生效(只在首分支锚定),
+        # 所以 grep -c 永远返回 0。改用 grep -E (ERE) + 显式 | 交替。
         run: |
           expected=$(ls docs/adr/*.md | wc -l)
-          actual=$(grep -c '^### \[\|^| [0-9]' docs/adr/README.md)
+          actual=$(grep -E -c '^\| \[[0-9]+\]' docs/adr/README.md)
           echo "Expected ADR count (real files): $expected"
           echo "Indexed ADR count (README refs): $actual"
-          # 注: README 索引可能每个 ADR 一行,简单数量匹配
-          if [ "$expected" -gt 22 ]; then
-            echo "ADR count looks healthy: $expected files"
+          if [ "$expected" -gt 22 ] && [ "$actual" -gt 18 ]; then
+            echo "ADR count looks healthy: $expected files, $actual indexed"
           else
-            echo "WARN: ADR count unusually low ($expected), verify README index"
+            echo "WARN: ADR count low (files=$expected, indexed=$actual), verify README"
             exit 1
           fi
