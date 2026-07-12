@@ -30,7 +30,8 @@
 | [0020](./0020-frontend-analytics-via-decision-events.md) | 前端埋点复用 v0.8 decision_events 基础设施（v0.10） | ✅ | `internal/api/handler_events.go` · `frontend/lib/transport.ts` · `frontend/lib/analytics/` |
 | [0021](./0021-llm-hallucination-output-validator.md) | LLM 输出硬编码反幻觉验证器（v0.10.1 加固 ADR 0015） | ✅ | `internal/agent/output_validator.go` · `react_runner.go` · `prompts.go` |
 | [0022](./0022-github-actions-ci-cd.md) | GitHub Actions CI/CD（v0.10.2：test + tag push deploy） | ✅ | `.github/workflows/test.yml` · `deploy.yml` |
-| [0023](./0023-github-actions-ci-pause.md) | **暂停** GitHub Actions CI（v0.10.2-7 7 次失败复盘 + 重启条件） | ⏸️ 暂停 | `.github/workflows/test.yml`（v0.10.2 → v0.10.7 7 次失败记录）|
+| [0023](./0023-github-actions-ci-pause.md) | GitHub Actions CI 暂停 + 恢复完整复盘（v0.10.2 ~ v0.10.15 共 14 版迭代） | ✅ | `.github/workflows/test.yml` + `deploy.yml` + 8 个 Secrets |
+| [0024](./0024-silent-error-fix-pr1.md) | 静默错误全局修复 PR 1（后端 UserFacingError 类型 + broadcast + 状态机新 action） | ✅ | `internal/courtroom/errors.go` + `statemachine.go` + `service.go` + `api/handler.go` + `api/websocket.go` + `agent/react_runner.go` |
 
 ---
 

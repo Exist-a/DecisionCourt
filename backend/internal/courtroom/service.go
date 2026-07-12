@@ -547,6 +547,15 @@ func (s *Service) ProcessUserAction(
 		//   - 发 trial.reopened 事件，前端 verdict 页监听后会 router.push 回
 		//     /court/[id]，继续之前的庭审。
 		return s.reopenTrial(ctx, session)
+	case "force_skip_opening":
+		// v0.10.17 (silent-error-fix): 用户在 OPENING_SPEECHES_FAILED 时
+		// 选择"跳过开场,直接进入质证"。直接调 ForceSkipOpening
+		// (内部已经过 ValidateAction)。
+		return s.ForceSkipOpening(ctx, session.SessionUUID)
+	case "restart_opening":
+		// v0.10.17 (silent-error-fix): 用户选择"重新尝试开庭陈述"。
+		// 内部已经过 ValidateAction,异步跑 RunOpeningSpeeches。
+		return s.RestartOpening(ctx, session.SessionUUID)
 	default:
 		return fmt.Errorf("unsupported action: %s", action)
 	}
@@ -2209,6 +2218,97 @@ func (s *Service) Broadcast(sessionUUID string, event Event) {
 
 func (s *Service) broadcastEvent(sessionUUID string, event Event) {
 	s.Broadcast(sessionUUID, event)
+}
+
+// ForceSkipOpening 把 trial 从 opening 阶段直接推到 cross_exam(round=1),
+// 不再等待 ReAct 开庭陈述完成。
+//
+// v0.10.17 (silent-error-fix): 用于 OPENING_SPEECHES_FAILED 时的"跳过开场"
+// recovery 按钮。用户已选无可选 (ReAct max iterations),与其让 trial 卡住,
+// 不如让用户跳过开场直接进入质证。
+//
+// 行为:
+//  1. ValidateAction(opening, "force_skip_opening")  ← 状态机允许
+//  2. transitionPhase(opening → cross_exam, round=1)
+//  3. broadcast opening.finished + cross_exam.started 事件
+//  4. 可选:在 messages 表插一条 system 提示 "用户跳过开场陈述"
+//
+// 副作用:不留 opening 陈词记录。设计选择,因为 ReAct 失败本身就意味着
+// 没有"正确"的开场陈述。
+func (s *Service) ForceSkipOpening(ctx context.Context, sessionUUID string) error {
+	var session model.CourtSession
+	if err := s.db.Where("session_uuid = ?", sessionUUID).First(&session).Error; err != nil {
+		return err
+	}
+
+	if err := s.stateMachine.ValidateAction(session.CurrentPhase, "force_skip_opening"); err != nil {
+		return err
+	}
+
+	if err := s.transitionPhase(&session, model.PhaseCrossExam, 1); err != nil {
+		return fmt.Errorf("force skip opening: %w", err)
+	}
+
+	// 广播:让前端能看到状态变化 + 可选 toast "已跳过开场"
+	s.broadcastEvent(sessionUUID, Event{
+		Type: "opening.finished",
+		Payload: map[string]interface{}{
+			"reason": "user_force_skipped",
+			"phase":  string(model.PhaseCrossExam),
+			"round":  1,
+		},
+	})
+	slog.Info("opening force-skipped by user",
+		"session_uuid", sessionUUID,
+		"reason", "user_force_skipped",
+	)
+	return nil
+}
+
+// RestartOpening 重新跑一次 RunOpeningSpeeches (原 ReAct 流程不变)。
+//
+// v0.10.17 (silent-error-fix): 用于 OPENING_SPEECHES_FAILED 时的"重试"
+// recovery 按钮。如果重试仍然失败,降级为 BroadcastUserFacingError
+// 推荐 force_skip_opening / direct_verdict。
+//
+// 注意:这是异步操作 (跟 RunOpeningSpeeches 一样走 goroutine),HTTP
+// 返回 200 后 ReAct 在后台跑。
+func (s *Service) RestartOpening(ctx context.Context, sessionUUID string) error {
+	var session model.CourtSession
+	if err := s.db.Where("session_uuid = ?", sessionUUID).First(&session).Error; err != nil {
+		return err
+	}
+
+	if err := s.stateMachine.ValidateAction(session.CurrentPhase, "restart_opening"); err != nil {
+		return err
+	}
+
+	// 异步跑,跟 RunOpeningSpeeches 一致
+	go func() {
+		bgCtx := context.Background()
+		if err := s.RunOpeningSpeeches(bgCtx, sessionUUID); err != nil {
+			slog.Error("restart opening failed",
+				"session_uuid", sessionUUID, "error", err)
+			// 兜底:再次失败时给"强制跳过"或"直接判决"选项
+			ufe := NewUserFacingError(
+				ClassFatal, CodeRestartOpeningFailed,
+				"重新尝试开庭陈述仍失败,建议直接进入质证或判决",
+			).WithDetail(err.Error()).
+				WithRecovery(
+					RecoveryAction{Type: "skip_opening", Label: "跳过开场,直接进入质证", Action: "force_skip_opening"},
+					RecoveryAction{Type: "direct_verdict", Label: "直接判决", Action: "direct_verdict"},
+				)
+			s.BroadcastUserFacingError(sessionUUID, ufe)
+		}
+	}()
+
+	s.broadcastEvent(sessionUUID, Event{
+		Type: "opening.restarted",
+		Payload: map[string]interface{}{
+			"phase": string(model.PhaseOpening),
+		},
+	})
+	return nil
 }
 
 func findAgent(agents []model.Agent, agentType model.AgentType) *model.Agent {

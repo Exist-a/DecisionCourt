@@ -213,13 +213,14 @@ func (s *WebSocketServer) Handler(c *gin.Context) {
 			now := time.Now()
 			if ok && now.Sub(last) < wsMinActionInterval {
 				s.connMu.Unlock()
-				s.hub.Broadcast(sessionUUID, courtroom.Event{
-					Type: "error",
-					Payload: map[string]interface{}{
-						"code":    "WS_THROTTLED",
-						"message": "too many user.action in short time, slow down",
-					},
-				})
+				// v0.10.17 (silent-error-fix): 用 UFE 替代裸字符串广播。
+				// ClassUserInput:用户操作错 (太快),前端 Toast 3s 自动消失。
+				ufe := courtroom.NewUserFacingError(
+					courtroom.ClassUserInput,
+					courtroom.CodeActionThrottled,
+					"操作过于频繁,请稍候再试",
+				)
+				s.service.BroadcastUserFacingError(sessionUUID, ufe)
 				continue
 			}
 			s.lastAction[conn] = now
@@ -257,13 +258,14 @@ func (s *WebSocketServer) Handler(c *gin.Context) {
 					err = s.service.ProcessUserAction(ctx, sessionUUID, action, event.Payload)
 				}
 				if err != nil {
-					s.hub.Broadcast(sessionUUID, courtroom.Event{
-						Type: "error",
-						Payload: map[string]interface{}{
-							"code":    "ACTION_FAILED",
-							"message": err.Error(),
-						},
-					})
+					// v0.10.17 (silent-error-fix): 用 ClassifyError 自动分类:
+					//   - 状态机拒绝 → ClassUserInput + CodeActionStateRejected
+					//   - Budget 耗尽 → ClassFatal + CodeBudgetExhausted
+					//   - ReAct max iter → ClassFatal + CodeOpeningSpeechesFailed
+					//   - 其他 → ClassTransient + CodeActionFailed + retry
+					// 之前裸 err.Error() 既不安全也不能分类。
+					ufe := courtroom.ClassifyError(err)
+					s.service.BroadcastUserFacingError(sessionUUID, ufe)
 				}
 			}()
 		}

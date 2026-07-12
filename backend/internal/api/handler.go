@@ -321,11 +321,21 @@ func (h *Handler) StartTrial(c *gin.Context) {
 				c.Header("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 				now := time.Now().UTC()
 				resetsAt := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
+				// v0.10.17 (silent-error-fix): HTTP 响应里加 user_facing_error
+				// envelope,让前端 fetchJson 能识别并弹 Toast/Modal。
+				// 前端 fetchJson 在非 2xx 时尝试解析 user_facing_error 字段。
+				// 旧字段(error/message/retry_after/resets_at)保留向后兼容。
+				ufe := courtroom.NewUserFacingError(
+					courtroom.ClassFatal,
+					courtroom.CodeTrialRateLimited,
+					"今日庭审额度已用完,请明天再来",
+				).MarkNonRecoverable()
 				c.JSON(http.StatusTooManyRequests, gin.H{
 					"error":               "rate_limit_exceeded",
 					"message":             "已达今日 trial 配额上限。请等待重试。",
 					"retry_after_seconds": int(retryAfter.Seconds()),
 					"resets_at":           resetsAt.Format(time.RFC3339),
+					"user_facing_error":   ufe,
 				})
 				return
 			}
@@ -355,13 +365,11 @@ func (h *Handler) StartTrial(c *gin.Context) {
 	go func() {
 		if err := h.service.RunOpeningSpeeches(context.Background(), sessionUUID); err != nil {
 			slog.Error("opening speeches failed", "session_uuid", sessionUUID, "error", err)
-			h.service.Broadcast(sessionUUID, courtroom.Event{
-				Type: "error",
-				Payload: map[string]interface{}{
-					"code":    "OPENING_SPEECHES_FAILED",
-					"message": "agent 开幕陈词失败,已记录到日志",
-				},
-			})
+			// v0.10.17 (silent-error-fix): 用 ClassifyError 把 Go 错误分类
+			// 成 UFE,带 3 个 recovery 按钮 (restart / skip / direct verdict)。
+			// 之前是裸字符串广播,前端完全无法处理。
+			ufe := courtroom.ClassifyError(err)
+			h.service.BroadcastUserFacingError(sessionUUID, ufe)
 		}
 	}()
 
@@ -427,7 +435,7 @@ func (h *Handler) UserAction(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
 	var req struct {
-		Action  string                 `json:"action" binding:"required,max=50,oneof=direct_verdict continue_cross_exam start_cross_exam skip_agent dispatch_investigator reopen_trial"`
+		Action  string                 `json:"action" binding:"required,max=50,oneof=direct_verdict continue_cross_exam start_cross_exam skip_agent dispatch_investigator reopen_trial force_skip_opening restart_opening"`
 		Payload map[string]interface{} `json:"payload"`
 	}
 

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,15 @@ import (
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
 )
+
+// ErrReactMaxIterations is returned by ReActRunner.Run when the loop
+// reaches cfg.MaxIterations without ever producing a speak action.
+//
+// v0.10.17 (silent-error-fix): 让上层 (courtroom/service.go) 用
+// errors.Is 分类用户可见错误,而不是匹配 err.Error() 字符串。
+// 历史原因:之前用 fmt.Errorf("react: max iterations ...") 返回,
+// 前端看到的是裸字符串,无法按"可恢复 vs 不可恢复"分类。
+var ErrReactMaxIterations = errors.New("react: max iterations exceeded without speak")
 
 // Tool is the contract every ReAct-callable tool must satisfy. Tools run
 // inside the agent's process and must be safe to invoke from concurrent

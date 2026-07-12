@@ -61,6 +61,7 @@
 | [0011](./adr/0011-llm-probability-hard-clamp.md) | v0.8.4 LLM 输出概率值后端硬编码 Clamp（DeepSeek 抽风修复） | ✅ | `internal/agent/probability.go` |
 | [0022](./adr/0022-github-actions-ci-cd.md) | v0.10.2 GitHub Actions CI/CD（test.yml + deploy.yml + tag-based deploy） | ✅ | `.github/workflows/` |
 | [0023](./adr/0023-github-actions-ci-pause.md) | v0.10.7~15 CI 暂停与恢复完整复盘（14 版迭代，✅ v0.10.15 端到端跑通） | ✅ | ADR 0023 §5 当前 dev 工作流 |
+| [0024](./adr/0024-silent-error-fix-pr1.md) | v0.10.17 静默错误全局修复 PR 1（后端 UserFacingError 类型 + 4 个静默错误点改造） | ✅ | `backend/internal/courtroom/errors.go` + `statemachine.go` + `service.go` + `api/handler.go` + `api/websocket.go` + `agent/react_runner.go` |
 
 ### 5.5 v0.8+ 持续可观测性完善计划
 
