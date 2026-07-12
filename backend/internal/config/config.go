@@ -161,6 +161,27 @@ func Load() {
 	viper.SetEnvPrefix("")
 	viper.AutomaticEnv()
 
+	// v0.10.19 修复 (P0-2 副作用): viper 1.21.0 AutomaticEnv() 对 UPPERCASE
+	// env var (e.g. JWT_SECRET) 默认转 lowercase 查找 (jwt_secret), 找不到。
+	// 之前 SetDefault("JWT_SECRET", "decisioncourt-secret") 让 viper 不查 env
+	// 也能拿到值, bug 被掩盖。v0.10.18 删除 default 后 bug 暴露: backend 启动
+	// 报 FATAL JWT_SECRET is empty, 即使容器 env 实际有 JWT_SECRET。
+	//
+	// 修复: 显式 BindEnv 把 viper key 锁定到真实 env var 名 (uppercase),
+	// 跳过 viper 内部的 lowercase 转换。对 5 个关键 env 做强制绑定:
+	//   - JWT_SECRET      (P0-2 fail-fast)
+	//   - DATABASE_URL    (P0-4 mustEnvs)
+	//   - LLM_API_KEY     (业务关键, 即使没值也允许 warning)
+	//   - BOCHA_API_KEY   (搜索 provider)
+	//   - ALLOWED_ORIGINS (WS CheckOrigin 白名单, v0.9.3 单值 split bug)
+	//
+	// 其他 env 继续走 AutomaticEnv (lowercase 查找), 但因为 SetDefault 有值,
+	// 不会因为 bug 启动失败 —— 只是拿默认值, 而不是真实 env 值 (这是另一个 bug,
+	// 但范围小, 不在本次修复)。
+	for _, key := range []string{"JWT_SECRET", "DATABASE_URL", "LLM_API_KEY", "BOCHA_API_KEY", "ALLOWED_ORIGINS"} {
+		_ = viper.BindEnv(key, key) // 显式绑定到同名 env var (跳过 lowercase 转换)
+	}
+
 	if err := viper.Unmarshal(&AppConfig); err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}

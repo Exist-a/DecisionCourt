@@ -177,13 +177,19 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 
 ### 9.2 ECS 连接信息（user 提供，2026-07-12 起）
 
+**存储位置**：`secrets/ecs.env`（gitignored，仓库不追踪）
+
 | 项 | 值 |
 |---|---|
-| **ECS_HOST** | `<user 提供>`（IP 或域名，user 在对话中告知） |
-| **ECS_USER** | `admin`（v0.10.15 deploy.yml Secrets 修复后确认） |
-| **SSH_KEY** | `$env:USERPROFILE\.ssh\id_ed25519`（本地路径，与 GitHub Secrets `ECS_SSH_KEY` 同源 ed25519 key） |
-| **ECS 项目目录** | `/opt/DecisionCourt`（v0.10.12 修过大小写） |
+| **ECS_HOST** | `secrets/ecs.env::ECS_HOST`（user 提供，2026-07-12） |
+| **ECS_USER** | `secrets/ecs.env::ECS_USER`（v0.10.15 deploy.yml Secrets 修复后确认） |
+| **SSH_KEY** | `secrets/ecs.env::ECS_SSH_KEY_PATH`（本地路径，与 GitHub Secrets `ECS_SSH_KEY` 同源 ed25519 key） |
+| **ECS 项目目录** | `secrets/ecs.env::ECS_PROJECT_DIR`（v0.10.12 修过大小写） |
 | **Docker Compose** | `docker compose`（v2 CLI，`docker-compose` v1 已废弃） |
+
+**使用方式**：Agent 每次 SSH 前 `Read secrets/ecs.env` 拿最新值（避免硬编码）。也可以用 `Get-Content secrets/ecs.env | ForEach-Object { if ($_ -match '^([^#][^=]+)=(.*)$') { Set-Item -Path "Env:$($Matches[1])" -Value $Matches[2] } }` 注入到 PowerShell 环境变量。
+
+**为什么 gitignored**：`secrets/` 已在 `.gitignore`（§8.1 提到的"Local secrets backups"分类）。ECS IP 不算高敏，但公开给攻击者多一个扫描目标。
 
 ### 9.3 允许 Agent 直接执行的 SSH 操作
 
