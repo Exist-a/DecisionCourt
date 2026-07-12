@@ -7,11 +7,10 @@
 | # | Skill | 触发场景 | 文件 |
 |---|-------|----------|------|
 | 1 | **ecs-ssh-diagnose** | GitHub Actions Deploy 失败 / 容器 Restarting / /health 不响应 | [ecs-ssh-diagnose.md](./ecs-ssh-diagnose.md) |
-| 2 | **viper-env-fix** | Viper 配置加载报错（FATAL: required config XXX is empty）但容器 env 有值 | [viper-env-fix.md](./viper-env-fix.md) |
-| 3 | **secret-redaction** | grep / cat 任何敏感文件（.env / 容器 env / docker inspect）后输出 | [secret-redaction.md](./secret-redaction.md) |
-| 4 | **adr-template** | 写新 ADR 记录重要技术决策 | [adr-template.md](./adr-template.md) |
-| 5 | **release-notes-template** | 发版 v0.X.Y 后写详细发布说明 | [release-notes-template.md](./release-notes-template.md) |
-| 6 | **git-commit-amend** | commit message 错了 / commit 漏文件 / 修正刚 commit 的内容 | [git-commit-amend.md](./git-commit-amend.md) |
+| 2 | **secret-redaction** | grep / cat 任何敏感文件（.env / 容器 env / docker inspect）后输出 | [secret-redaction.md](./secret-redaction.md) |
+| 3 | **adr-template** | 写新 ADR 记录重要技术决策 | [adr-template.md](./adr-template.md) |
+| 4 | **release-notes-template** | 发版 v0.X.Y 后写详细发布说明 | [release-notes-template.md](./release-notes-template.md) |
+| 5 | **git-commit-amend** | commit message 错了 / commit 漏文件 / 修正刚 commit 的内容 | [git-commit-amend.md](./git-commit-amend.md) |
 
 ## Skill 设计原则
 
