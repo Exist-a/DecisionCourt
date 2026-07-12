@@ -174,5 +174,13 @@
             - lib/api.ts::fetchJson 解析 user_facing_error + 401 清 token + 抛 ApiError
             - lib/errorBus.test.ts (20 个 case) + lib/toast-store.test.ts (7 个 case) = 27 个 case 全过
             - pnpm tsc / pnpm lint / pnpm test 全过 (29/29 测试)
-            - 待 PR 3-7(CourtroomScene / Verdict / 文档 / Banner / ErrorBoundary)
+2026-07-12  PR 3 实装 (CourtroomScene 错误反馈接入)
+            - WS event.type === "error" → handleWsError(payload)
+            - onConnectionStateChange → toast (reconnecting BANNER / connected success / closed fatal)
+            - 7 个 try/catch console.error → console.debug (toast 已由 fetchJson 展示)
+            - startTrial alert() → toastFatal (START_TRIAL_FAILED)
+            - handleWsError 注 入 onRecoveryClick: ws.send({action: "restart_opening" ...})
+            - wsRef (useRef) 修复 stale closure
+            - ErrorEvent.payload 扩展支持 class/recovery/detail 字段
+            - 待 PR 4-7(Verdict / 文档 / Banner / ErrorBoundary)
 ```
