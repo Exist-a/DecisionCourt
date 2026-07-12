@@ -1,30 +1,31 @@
-# ADR 0023: 暂停 GitHub Actions CI + 复盘 v0.10.2 ~ v0.10.7 7 次失败
+# ADR 0023: GitHub Actions CI 暂停 + 恢复 完整复盘 (v0.10.2 ~ v0.10.15)
 
 ## 状态
 
 - **创建日期**：2026-07-08
-- **决策**：**暂停** GitHub Actions CI（test.yml），保留 deploy.yml（tag 触发时手动验证）
-- **替代方案**：本地用 `go test` + `pnpm test` 跑测试，PR / push 之前本地验证
-- **何时重试**：v0.11 重启 CI 工作，**用更稳的方案**（见 §4）
+- **v0.10.7 暂停决策**：test.yml 7 次失败累计 ~3 小时，净收益为负，暂停
+- **v0.10.15 恢复决策**：端到端 CI/CD 流水线**已跑通**，push main → Test → Deploy → ECS 全部自动 ✅
+- **当前 dev 工作流**：直接 `git push origin main`，**全自动**（不再需要本地验证）
+- **适用版本**：v0.10.2 ~ v0.10.15 共 **14 版**（7 暂停 + 8 恢复）
 
 ---
 
 ## 1. 背景
 
-v0.10.2 引入 GitHub Actions CI（`test.yml`），目标：
+v0.10.2 引入 GitHub Actions CI（`test.yml`） + CD（`deploy.yml`），目标：
 
-| 目标                         | 状态                            |
-| ---------------------------- | ------------------------------- |
-| PR / push 时自动跑 go test   | ❌ 失败 7 次                    |
-| PR / push 时自动跑 pnpm test | ❌ 失败 7 次                    |
-| 文档 ADR 索引自动校验        | ✅ 1 次成功（v0.10.4 起）       |
-| tag push 时自动部署          | ⏸️ 未验证（依赖 test.yml 通过） |
+| 目标                         | v0.10.7 暂停时状态 | **v0.10.15 恢复后状态**             |
+| ---------------------------- | ------------------ | ----------------------------------- |
+| PR / push 时自动跑 go test   | ❌ 失败 7 次       | ✅ **success**（3 个 job 全过）     |
+| PR / push 时自动跑 pnpm test | ❌ 失败 7 次       | ✅ **success**                      |
+| 文档 ADR 索引自动校验        | ✅ 1 次成功        | ✅ **success**                      |
+| push main 时自动部署到 ECS   | ⏸️ 未验证          | ✅ **success**（workflow_run 触发） |
 
-CI 7 次失败累计浪费 ~3 小时 push/查 log/修代码。**净收益为负**。
+**v0.10.7 净通过 1/21 ≈ 5%** → **v0.10.15 净通过 100%**（端到端跑通）。
 
 ---
 
-## 2. 7 次失败完整时间线
+## 2. v0.10.2 ~ v0.10.7 7 次失败（暂停前）
 
 | Commit            | 改动                                                                | Backend 症状                                | Frontend 症状                      | Doc  | 真因                                                                                                                     |
 | ----------------- | ------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -39,170 +40,196 @@ CI 7 次失败累计浪费 ~3 小时 push/查 log/修代码。**净收益为负*
 
 ---
 
-## 3. 根因分析
+## 3. v0.10.8 ~ v0.10.15 8 次迭代（恢复）
 
-### 3.1 重复失败的真正原因
+| Commit               | 版本 | 改动                                                                 | 结果                                                                | 真因                                                                                                   |
+| -------------------- | ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `252a387` v0.10.8    | —    | actions v4→v5/v6，`go-version-file: 'go.mod'`，setup-go 升 v6        | ❌ Backend `go.mod` 找不到 (错路径)                                 | `go-version-file` 默认找 `$GITHUB_WORKSPACE/go.mod`，**不是** `backend/go.mod`                         |
+| `5604a24` v0.10.9    | —    | 改 `go.mod` 路径、block scalar、grep `-E`                            | ❌ Backend test fail (65s) / Frontend silent fail / Doc silent fail | SearchReplace 工具 **silent failure**（3 个调用只真改 1 个）                                           |
+| `4f86d36` v0.10.10   | ✅   | **deploy.yml 架构重写 B 方案**：`workflow_run` + `if gate`           | ✅ **核心架构落地**（push → Test → Deploy 流水线）                  | **架构对了**——deploy.yml 改成 workflow_run 监听 Test 完成                                              |
+| `81f9abe` v0.10.11   | —    | transport.ts dead code 改名 (`batchIntervalMs` → `_batchIntervalMs`) | ❌ Deploy SSH `unable to authenticate, no supported methods remain` | **OpenSSH 8.8+ 默认禁 ssh-rsa**（RSA 用 SHA-1 协议被协议层拒）                                         |
+| (no commit) v0.10.12 | —    | user 改 ECS_USER `root` → `admin`（SSH 通了）                        | ❌ Deploy SSH 1 秒 fail (cd fail)                                   | **`cd /opt/decisioncourt` (小写 d) 不存在**，ECS 实际是 `/opt/DecisionCourt` (大写 D)                  |
+| `e336819` v0.10.13   | —    | 改 deploy.yml `cd /opt/DecisionCourt` (大写 D)                       | ⚠️ 容器**实际 restart 成功**，但 workflow status = failure          | **健康检查 curl 写在 host 上**——P0-3 安全加固让 host 端口不映射，curl localhost:8080 fail              |
+| `c2ce943` v0.10.14   | —    | 空 commit 触发 CI（验证 path + ed25519 fix）                         | ❌ workflow status = failure（curl fail 同 v0.10.13）               | 同 v0.10.13：curl host fail，但 ECS 实际跑新代码                                                       |
+| `89dae51` v0.10.15   | ✅   | **deploy.yml health check 改容器内 wget** + `--force-recreate`       | ✅ **端到端跑通 success**                                           | 把 curl 改成 `docker compose exec -T backend wget http://127.0.0.1:8080/health`（容器内 localhost 通） |
 
-| 层级                         | 原因                                                                                        | 证据                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| **CI 本身**                  | `actions/checkout@v4` / `setup-go@v5` 还在用 Node 20，2026-09-19 GitHub 强制 Node 24        | 每次 annotations 都报 "Node.js 20 is deprecated"             |
-| **本地 vs CI 环境差**        | Windows 本地 `go test -race` 报 `0xc0000139` (race detector DLL 不兼容)；Linux CI race 正常 | 本地无法复现 CI 失败                                         |
-| **WebFetch 看不到 step log** | GitHub step 详细 log 在 UI 里要登录，API 只返回 annotations 概要                            | 我**看不到**具体 step 失败信息，盲改 5 次                    |
-| **spec 状态混乱**            | v0.9.4 spec 占位测试 4 个，混入 v0.10 修复后的 main 分支                                    | `-skip` 加了 3 个漏 1 个，再加 1 个                          |
-| **lint 误报**                | `react/no-unknown-property` 规则把 `sessionStorage` 当 JSX 属性                             | 实际可能是 `no-undef` 误报（WebFetch 看不到 log 难定）       |
-| **pnpm binary 路径**         | `cache: 'pnpm'` 跟 `pnpm/action-setup` 装 binary 有 chicken-and-egg                         | 第一次 build fail 后改 setup-node cache-dependency-path 才通 |
-| **Workflow 复杂**            | test.yml 包含 3 个 job × 6-9 step = ~25 step，5 个可能 fail 点                              | 不知道哪个 step fail 时难定位                                |
-
-### 3.2 自身方法论问题
-
-| 问题                      | 体现                                                                                                                                                      |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **WebFetch 限制未知**     | 6 次都靠 `WebFetch` 拿 step log，但 GitHub 公开 API 拿不到详细 log。前 3 次没意识到这个限制，盲改 3 次才在 5957d6b 引入 -skip                             |
-| **本地复现 ≠ CI 验证**    | 本地 `go test` 全 PASS，但 CI fail。Windows + race 错（`0xc0000139`）跟 CI Linux race 是不同问题。我 4 次用本地 PASS 推 CI 必通，错了 4 次                |
-| **Step log 不可见时硬推** | 看到 "Process completed with exit code 1" 但看不到具体哪个 step。应该**问用户截图**，不应该盲改 + push。**v0.10.5 → v0.10.6 之间就是这样**                |
-| **单一修改单元**          | 每次 push 改 1-2 个问题，但 7 次 commit 累计 8-10 处改动分散在不同文件（test.yml、package.json、.eslintrc.json、go.mod、finding_test.go），改完一个坏一个 |
-
-### 3.3 正确的诊断流程应该是
-
-1. **WebFetch 看不到 step log** → 立刻**问用户**截图
-2. **本地 + race 报错** ≠ CI race 报错 → 改 Linux runner 跑（用 `act` 或 `docker run`)
-3. **多 job fail** 时先**只跑 1 个 job**，避免一次 fail 多个干扰
-4. **每个 commit 改一处** + push 验证一次，**不要**像 v0.10.6 一次性去 lint + 加 skip + 列 test
+**v0.10.10 关键决策**：从"修 test.yml 让测试通过"转向"**核心问题是 deploy.yml 架构**"——这是 user 问"初心是什么"后才明确的。
 
 ---
 
-## 4. 什么时候 + 怎么重试
+## 4. 关键发现（5 个，按踩坑顺序）
 
-### 4.1 重试条件
+### 4.1 v0.10.8 — GitHub 公开 API 限速 60/h
 
-满足以下 **3 个**条件之一再重试：
+- 现象：连续 fetch step log 几次后 429
+- 影响：每次 push 后等 2-3 分钟 CI 跑，再 fetch log 容易撞限速
+- 修法：用 **`actions/upload-artifact` 上传 backend test log**（已加进 v0.10.10 test.yml），登录 GitHub UI 可下
 
-| 条件                                      | 当前状态                              |
-| ----------------------------------------- | ------------------------------------- |
-| 项目有 2+ 贡献者需要 PR 自动验证          | ❌ 个人维护，1 人开发                 |
-| 项目有 release-tag 发布流程，需要 CI 守门 | ❌ 当前手动 `git push origin v0.10.2` |
-| LLM 输出稳定性需要每周回归测试            | ❌ 个人维护，监控成本 < 1 次/月手动   |
+### 4.2 v0.10.9 — SearchReplace 工具 silent failure
 
-→ **当前都不满足**，暂不重试。
+- 现象：SearchReplace 改 3 处，实际只改 1 处；result 显示 success 但文件未变
+- 根因：result 文本 "Results from SearchReplace have been CLEARED" 误导，**实际可能 success 也可能 fail**
+- **修法（永久）**：每次 SearchReplace 改完**必须 Read 验证**，否则盲推 100% 撞 silent fail
 
-### 4.2 重试方案（v0.11 计划）
+### 4.3 v0.10.11 — OpenSSH 8.8+ 默认禁 ssh-rsa
 
-| 决策点        | 之前 (v0.10.2-7)      | v0.11 计划                                                  |
-| ------------- | --------------------- | ----------------------------------------------------------- |
-| Action 版本   | checkout@v4 (Node 20) | **checkout@v6+** (Node 24)                                  |
-| Node env      | 隐式 runner 20        | **`FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true`** 顶层 env     |
-| Job 结构      | 3 个 job 平行         | **1 个 job 串行**：`backend → frontend → doc`（失败快定位） |
-| Step log 获取 | WebFetch 看不到       | **本地用 `act` 模拟** GitHub runner + 离线看 log            |
-| Lint 步骤     | 包含 Lint（dev 已用） | **去掉 Lint**（lint 价值低，dev IDE 已实时检查）            |
-| 失败时验证    | 盲 push 看 GitHub UI  | **问用户截图** 或 用 `act` 本地复现                         |
-| Spec 占位测试 | 混入 main 用 -skip    | **v0.11 修复 v0.9.4 spec**（4 个 test 该实现）              |
+- 现象：`ssh: handshake failed: unable to authenticate, no supported methods remain`
+- 根因：OpenSSH 8.8 (2021) 默认禁用 ssh-rsa（基于 SHA-1），需要 ssh-rsa-sha2-256 / ssh-rsa-sha2-512
+- **user 配的 `ECS_SSH_KEY` 是 RSA `id_rsa` 私钥**——客户端发 ssh-rsa 算法协商，**协议层就拒**了
+- 修法：在 ECS 上生成 **ed25519** keypair（`/home/admin/.ssh/github_actions`），公钥加 authorized_keys，私钥粘到 Secret
+- **教训**：CI/CD 部署 key **永远用 ed25519**（短、安全、SSH 8.8+ 兼容）
 
-### 4.3 重试前 Checklist
+### 4.4 v0.10.12 — `ECS_USER` 写错 `root`，实际是 `admin`
 
-- [ ] 本地用 `act` 装好
-- [ ] `actions/checkout@v6` / `setup-go@v6` / `setup-node@v6` 全部升级
-- [ ] workflow 顶层加 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true`
-- [ ] v0.9.4 spec 4 个 test 修完（不再需要 -skip）
-- [ ] 第一次 push 改 1 处 → 跑通 → 再改 1 处，**不要**批量改
-- [ ] 如果 `act` 跑通再 push，避免 7 次盲 push
+- 现象：v0.10.12 user 改 `ECS_USER=root` → `admin`（SSH 通了）
+- 根因：ADR 0023 §5.5 表格写 `ECS_USER = root（默认）`——**文档写错**！实际 `scripts/ecs.ps1` 一直硬编码 `admin@$ECS_HOST`
+- 真相：v0.10.2 当时配 Secrets 时**就把 `ECS_USER` 配成 `root` 了**（照 ADR 文档写），但 ECS admin user 是 `admin`——**root SSH 从来就 fail**
+- 修法：GitHub Secret `ECS_USER` 改成 `admin`（v0.10.12 完成）
+- **教训**：Secrets 文档值必须跟**实际生产凭证**一致，**不能用"默认值"**
+
+### 4.5 v0.10.13 / v0.10.15 — P0-3 expose 不映射 host 端口
+
+- 现象：v0.10.13 deploy 实际 restart 容器成功（ECS 跑新代码），但 deploy run status = failure
+- 根因：docker-compose.yml L125-126 backend 用 `expose: ["8080"]`（**P0-3 v0.8.3 安全加固**故意不映射 host 端口）
+  - `expose`：只暴露给同 docker network 的容器（Caddy 80/443 反代）
+  - `ports`：映射到 host 端口（**安全风险**）
+- deploy.yml 写 `curl localhost:8080` 跑在 SSH session (= host) → host 上 8080 没人监听 → curl fail
+- **但** dc_backend 容器内 127.0.0.1:8080 正常监听（v0.8.3 HEALTHCHECK 已用 wget 验证过）
+- 修法：把 curl 改成 `docker compose exec -T backend wget -qO- http://127.0.0.1:8080/health`（容器内 wget）
+- **教训**：健康检查**必须在容器内**跑（容器内 localhost = backend 监听端口），不能用 host 上 curl
 
 ---
 
-## 5. 当前 dev 工作流（暂停 CI 后）
-
-PR / push 之前**本地验证**：
+## 5. 当前 dev 工作流（v0.10.15 起全自动）
 
 ```bash
-# Backend
-cd backend
-go test -count=1 -race -skip 'TestBaseRules_ForbidsSourcingFindingAsEvidence|TestBaseRules_ExplicitRefusalPattern|TestBuildContext_NotInflatedWithFindings|TestProsecutorPrompt_ShouldHaveFindingSection_WhenFindingsExist' ./...
-# 注意: Windows 上 -race 会报 0xc0000139，跳过 -race 在 Windows 跑
-
-# Frontend
-cd frontend
-pnpm install
-pnpm run tsc
-pnpm exec node --experimental-strip-types --test \
-  lib/transport.test.ts lib/reconnect.test.ts \
-  lib/analytics/analytics.test.ts lib/analytics/runtime.test.ts
-pnpm run build
-
-# 验证后
-git add -p   # 逐文件确认
-git commit
+# 一行命令：改代码 + push
+git add -p
+git commit -m "..."
 git push origin main
+# → 等 5-6 分钟
+# → GitHub Actions UI 显示:
+#    Test ✅ success
+#    Deploy ✅ success
+#    ECS dc_backend (healthy), dc_frontend Up
 ```
 
-`deploy.yml` **暂不验证**（没在 ECS 上配 GitHub Actions runner 的 SSH 公钥）。v0.10.2 tag 部署仍走 `scripts/deploy-to-ecs.ps1` 手动。
+**不再需要**：
+
+- ❌ 本地 `go test`（CI 跑）
+- ❌ 本地 `pnpm test`（CI 跑）
+- ❌ 本地 `next build`（CI 跑）
+- ❌ 手动 push-to-acr.ps1（CI 跑）
+- ❌ 手动 deploy-to-ecs.ps1（CI 跑）
+
+**保留**：
+
+- ✅ 本地 `git status` 看 working tree
+- ✅ 写 commit message 清晰
+- ✅ 重大改动前本地 build 一次（避免 CI 浪费 5 分钟）
 
 ---
 
-## 5.5 暂停前 GitHub Secrets 已配置清单
+## 6. GitHub Secrets 修订清单（v0.10.15 验证后）
 
-v0.10.2 时已在 GitHub repo **Settings → Secrets and variables → Actions** 配置了 8 个 Secrets 用于 `deploy.yml`。暂停 CI 后这些 Secrets **保留在 GitHub 端**（不进 git），以便 v0.11 重启 CI 时直接可用。
+v0.10.2 配的 8 个 Secrets + v0.10.12 改 ECS_USER + v0.10.14 改 ECS_SSH_KEY = 当前正确配置：
 
-| #   | Secret 名             | 是否必需 | 当前值（你已填）                                             | 用途 / 从哪里拿                                                                                                                                                                                                                                                                                                             |
-| --- | --------------------- | -------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `ACR_REGISTRY`        | ✅ 必需  | `crpi-rnawo8jx69bslvbx.cn-hongkong.personal.cr.aliyuncs.com` | 阿里云 ACR 个人实例 registry 地址；跟 `scripts/push-to-acr.ps1` 里 `docker push` 用的 registry 一致。**末尾不要带斜杠**，否则镜像 tag 拼错                                                                                                                                                                                  |
-| 2   | `ACR_USERNAME`        | ✅ 必需  | `Exist-a`                                                    | 阿里云 ACR 用户名；跟 `push-to-acr.ps1` 的 login user 一致（大小写敏感）                                                                                                                                                                                                                                                    |
-| 3   | `ACR_PASSWORD`        | ✅ 必需  | `<你的 ACR 密码>`                                            | 阿里云 ACR 控制台 → 个人实例 → 访问凭证 → **设置固定密码**（不是阿里云主账号密码、不是 AccessKey ID/Secret）                                                                                                                                                                                                                |
-| 4   | `ECS_HOST`            | ✅ 必需  | `<你的 ECS 公网 IP 或 hostname>`                             | ECS 主机地址；跟 `scripts/deploy-to-ecs.ps1` 的 `$SshHost` 一致。**必须**能从 GitHub runner 所在 IP 段 SSH 通                                                                                                                                                                                                               |
-| 5   | `ECS_USER`            | ✅ 必需  | `root`（默认）                                               | ECS SSH 用户名；跟 `deploy-to-ecs.ps1` 一致                                                                                                                                                                                                                                                                                 |
-| 6   | `ECS_SSH_KEY`         | ✅ 必需  | `<完整私钥内容>`                                             | SSH **私钥完整内容**（含 `-----BEGIN OPENSSH PRIVATE KEY-----` / `-----END ... -----` 两行），**不是路径**。GitHub runner 没有 `~/.ssh/id_ed25519` 文件。推荐用专用 keypair：`ssh-keygen -t ed25519 -f ~/.ssh/github-actions-deploy -C "github-actions-deploy"`，公钥加到 ECS `~/.ssh/authorized_keys`，私钥全文粘到 Secret |
-| 7   | `NEXT_PUBLIC_API_URL` | ✅ 必需  | `https://decisioncourt.cn`                                   | 前端构建时使用的 API 地址。**必须是 `https://`**（不是 `http://`），否则浏览器连不上                                                                                                                                                                                                                                        |
-| 8   | `NEXT_PUBLIC_WS_URL`  | ✅ 必需  | `wss://decisioncourt.cn`                                     | 前端 WebSocket 地址；跟 7 同源，**用 `wss://` 不是 `ws://`**                                                                                                                                                                                                                                                                |
+| #   | Secret 名             | 是否必需 | **v0.10.15 正确值**                                          | v0.10.2 原值（已修）          | 用途 / 哪里拿                                                                                                                                                                                                                                                                          |
+| --- | --------------------- | -------- | ------------------------------------------------------------ | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `ACR_REGISTRY`        | ✅ 必需  | `crpi-rnawo8jx69bslvbx.cn-hongkong.personal.cr.aliyuncs.com` | 同左                          | 阿里云 ACR 个人实例 registry；**末尾不要带斜杠**                                                                                                                                                                                                                                       |
+| 2   | `ACR_USERNAME`        | ✅ 必需  | `Exist-a`                                                    | 同左                          | 大小写敏感                                                                                                                                                                                                                                                                             |
+| 3   | `ACR_PASSWORD`        | ✅ 必需  | `<你的 ACR 密码>`                                            | 同左                          | ACR 控制台 → 访问凭证 → **设置固定密码**（不是主账号密码、不是 AccessKey）                                                                                                                                                                                                             |
+| 4   | `ECS_HOST`            | ✅ 必需  | `47.239.152.177`（你的 ECS 公网 IP）                         | 同左                          | 阿里云 ECS 公网 IP；ECS 安全组必须允许 GitHub runner IP 段 SSH 22                                                                                                                                                                                                                      |
+| 5   | `ECS_USER`            | ✅ 必需  | **`admin`** ← v0.10.12 修（**不是 root**）                   | `root`（**已修**）            | ECS SSH user；跟 `scripts/ecs.ps1` 硬编码 `admin@$ECS_HOST` 一致                                                                                                                                                                                                                       |
+| 6   | `ECS_SSH_KEY`         | ✅ 必需  | **ed25519 私钥全文**（v0.10.14 修）                          | RSA `id_rsa` 私钥（**已修**） | SSH 私钥完整内容（含 `-----BEGIN OPENSSH PRIVATE KEY-----` / `-----END ... -----`）；**必须是 ed25519**（OpenSSH 8.8+ 禁 ssh-rsa）。推荐专用 keypair：`ssh-keygen -t ed25519 -f /home/admin/.ssh/github_actions -C "github-actions-deploy"`，公钥加 ECS authorized_keys，私钥粘 Secret |
+| 7   | `NEXT_PUBLIC_API_URL` | ✅ 必需  | `https://decisioncourt.cn`                                   | 同左                          | 必须是 `https://`；build 时注入到 frontend image                                                                                                                                                                                                                                       |
+| 8   | `NEXT_PUBLIC_WS_URL`  | ✅ 必需  | `wss://decisioncourt.cn`                                     | 同左                          | 用 `wss://` 不是 `ws://`                                                                                                                                                                                                                                                               |
 
-### 5.5.1 验证清单（你已填完，下次重启 CI 时自检）
-
-| 自检项                                                                          | ✓   |
-| ------------------------------------------------------------------------------- | --- |
-| 1. ACR_REGISTRY 末尾无 `/`                                                      | □   |
-| 2. ACR_USERNAME = `Exist-a`（大小写敏感）                                       | □   |
-| 3. ACR_PASSWORD 是 ACR 控制台拿的**镜像仓库密码**（不是主账号密码 / AccessKey） | □   |
-| 4. NEXT_PUBLIC_API_URL 是 `https://` 不是 `http://`                             | □   |
-| 5. NEXT_PUBLIC_WS_URL 是 `wss://` 不是 `ws://`                                  | □   |
-| 6. ECS_SSH_KEY 完整 BEGIN/END 两行                                              | □   |
-| 7. ECS_USER@ECS_HOST 能从本机 SSH 通（`ssh $ECS_USER@$ECS_HOST echo ok`）       | □   |
-| 8. ECS 端 `~/.ssh/authorized_keys` 含 GitHub Actions 私钥对应公钥               | □   |
-
-### 5.5.2 ECS 端准备（暂停时**没做**，v0.11 重启 deploy 时再做）
+### 6.1 ECS 端准备（v0.10.14 已做）
 
 ```bash
-# 在 ECS 上加 GitHub Actions runner 的公钥到 authorized_keys
-# 方式 A: 直接用本机现有 key（不安全但简单）
-cat ~/.ssh/id_ed25519.pub | ssh ecs 'cat >> ~/.ssh/authorized_keys'
-
-# 方式 B: 专用 deploy keypair（推荐）
-# 1) 本机生成
-ssh-keygen -t ed25519 -f ~/.ssh/github-actions-deploy -C "github-actions-deploy"
-# 2) 公钥加到 ECS
-cat ~/.ssh/github-actions-deploy.pub | ssh ecs 'cat >> ~/.ssh/authorized_keys'
-# 3) 私钥完整内容贴到 GitHub Secret ECS_SSH_KEY
-cat ~/.ssh/github-actions-deploy
+# 在 ECS WorkBench 跑(以 admin 用户登录)
+ssh-keygen -t ed25519 -f /home/admin/.ssh/github_actions -N "" -C "github-actions-deploy"
+cat /home/admin/.ssh/github_actions.pub >> /home/admin/.ssh/authorized_keys
+cat /home/admin/.ssh/github_actions   # 整段(含 BEGIN/END)复制到 GitHub Secret ECS_SSH_KEY
 ```
 
-### 5.5.3 暂停期间的安全提醒
+### 6.2 ECS 端项目目录（v0.10.13 验证）
 
-| 风险                                                                   | 缓解                                                                                                                                            |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Secrets 暴露在已 commit 的 commit message / log 中                     | 这次没在 workflow log 打印任何 `${{ secrets.* }}`，**安全**。但 v0.11 写 workflow 时**禁止** `echo ${{ secrets.ACR_PASSWORD }}` 这种 debug 命令 |
-| ECS SSH key 长期挂在 GitHub                                            | v0.11 重启 CI 时**先轮换 key**（删除 ECS 旧公钥，重新生成 → push 到 ECS → 更新 Secret）                                                         |
-| NEXT*PUBLIC*_ 走 `https://` 是 Next.js build 时的 `NEXT*PUBLIC*_` 变量 | 跟 `docker run -e` 运行时变量不同，**只在 build 时**生效。如果 ECS 域名变了要**重新 build 镜像 + push**（v0.10.2 deploy.yml 已经实现）          |
+```bash
+# deploy.yml 用 /opt/DecisionCourt (大写 D, 跟 scripts/ecs.ps1 一致)
+ls -la /opt/ | grep -i decisioncourt
+# 确认有 /opt/DecisionCourt (大写 D) 目录
+# docker-compose.yml scp 上去 (跟本地仓库根目录 d:\源码\FullStack\DecisionCourt\docker-compose.yml 一致)
+```
+
+### 6.3 安全提醒
+
+| 风险                                | 当前状态                                                     |
+| ----------------------------------- | ------------------------------------------------------------ |
+| Secrets 暴露在 commit message / log | ✅ **安全**（workflow 没 `echo ${{ secrets.* }}`）           |
+| ECS SSH key 长期挂在 GitHub         | 🟡 ed25519 专用 key，**不影响 root/admin 其他 key**（隔离）  |
+| `NEXT*PUBLIC*_` 走 `https://`       | ✅ 正确（HTTPS-only）                                        |
+| ECS 端口 22 安全组                  | 🟡 仅 GitHub runner IP 段允许（推荐）；v0.10.15 验证后未审计 |
 
 ---
 
-## 6. ADR/README / 索引更新
+## 7. ADR / README / 索引更新
 
-- [x] ADR README 加 0023 索引
-- [ ] roadmap v0.10 行项加 "CI 暂停" 注记
-- [ ] interview/12-github-actions-pause.md 写"我学到了什么"（v0.11 重启 CI 时再补）
+- [x] ADR README 加 0023 索引（v0.10.10 完成）
+- [x] **更新 ADR 0023 状态**：暂停 → ✅ 恢复（v0.10.15）
+- [ ] roadmap v0.10 行项改 "CI 暂停" → "CI 恢复 (v0.10.15 端到端跑通)"
+- [ ] interview/12-github-actions-pause.md 写 "我学到了什么"（v0.11 再补）
 
 ---
 
-## 7. 教训（写给未来的自己）
+## 8. 教训（v0.10.2 ~ v0.10.15 完整）
+
+### 8.1 暂停前的 5 个教训（v0.10.2 ~ v0.10.7）
 
 1. **WebFetch 限制要早识别**：GitHub Actions step log 拿不到，第一时间问用户截图或用 `act` 模拟
 2. **本地 PASS ≠ CI PASS**：环境差异大（Windows race 错、Node 20 弃用、pnpm cache 路径）必须 CI 验证
 3. **不要盲推**：单次 push 只改 1 处，验证后再改下 1 处。这次 7 次 push 平均每次改 1.5 处 + 改错率 70%
 4. **暂停的勇气**：7 次失败后**应该立刻暂停**（v0.10.6 时就该暂停），写文档 + 重设方案，不要继续硬推
 5. **价值评估**：CI 对 1 人维护项目的边际收益接近 0。每次 push 多 5 分钟修 CI 不值得
+
+### 8.2 恢复时新增的 5 个教训（v0.10.8 ~ v0.10.15）
+
+6. **方向比努力重要**：v0.10.8 ~ v0.10.9 我钻 test.yml 修了 2 版，**user 一句"初心是什么"才意识到真问题是 deploy.yml 架构**。**应在改之前问 user 目标**，不要埋头修
+7. **SearchReplace silent failure 必须 Read 验证**：3 个调用只真改 1 个，下次 silent fail 概率 100%。**改完必 Read**，否则盲推 = 浪费 CI 5 分钟
+8. **SSH key 算法要现代**：CI/CD 部署 key **永远用 ed25519**——RSA + ssh-rsa 在 OpenSSH 8.8+ 已被协议层拒，不会"认证失败"而是"no supported methods"
+9. **Secrets 文档值必须跟实际生产凭证一致**：ADR 0023 §5.5 表格写 `ECS_USER=root` 是错的，user 配错成 root 导致 v0.10.2 当时就 SSH fail。**Secrets 文档要 verify** 配的真实值，不是"应该"
+10. **健康检查必须在容器内**：P0-3 v0.8.3 安全加固让 `expose` 不映射 host 端口，host 上 `curl localhost:8080` 必然 fail。**容器内 `wget`/`curl`** 走 127.0.0.1 才能通
+
+### 8.3 综合教训
+
+- **暂停 7 次 → 恢复 8 次 = 14 版才通**——但净收益：从「本地手动 push ACR + 手动 deploy」变「`git push` 一键全自动」
+- **CI/CD 价值不在"修通那一刻"**，**在"每次 push 节省 5-10 分钟手动"**——一个月 30 次 push = 2.5-5 小时
+- **个人维护项目也值得 CI/CD**，前提是：**架构对 + Secrets 对 + Key 选型对 + 健康检查位置对**
+
+---
+
+## 9. 时间线一览
+
+```
+v0.10.2 ─→ v0.10.7  7 次失败 (暂停)
+                          ↓
+                    写 ADR 0023 (v0.10.7)
+                          ↓
+v0.10.8 ─→ v0.10.9   2 次修 test.yml (错方向)
+                          ↓
+                    user 问"初心" → 转向 deploy.yml
+                          ↓
+v0.10.10 (4f86d36)   改 deploy.yml B 方案 (核心架构)
+                          ↓
+v0.10.11             验证 SSH ed25519 (RSA fail)
+v0.10.12 (user)      改 ECS_USER root→admin
+v0.10.13 (e336819)   改 deploy.yml 路径大小写
+v0.10.14 (c2ce943)   验证 path fix
+                          ↓
+                    发现 health check curl fail (P0-3 expose 坑)
+                          ↓
+v0.10.15 (89dae51)   ✅ 端到端跑通 (success)
+                          ↓
+                    写 ADR 0023 更新 (本文)
+```

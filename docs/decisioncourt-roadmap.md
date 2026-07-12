@@ -232,3 +232,48 @@ WebSearch + 判决书生成
 - ✅ **ADR 0022**：决策文档
 
 详见 [ADR 0022](./adr/0022-github-actions-ci-cd.md)。
+
+### v0.10.7 ~ v0.10.15（2026-07-08 ~ 2026-07-12）CI 暂停与恢复
+
+> **状态**：✅ **端到端跑通**（v0.10.15 commit `89dae51`）。push main → Test → Deploy → ECS 全部自动。
+> 详见 [ADR 0023](./adr/0023-github-actions-ci-pause.md)（完整复盘，14 版迭代）。
+
+#### v0.10.7 暂停（净通过 1/21 ≈ 5%）
+
+- ❌ 7 次连续失败：util 包未 commit / Node 20 弃用 / SearchReplace silent failure / WebFetch 拿不到 step log
+- 📝 写 ADR 0023 v1.0，记录 5 个暂停教训
+
+#### v0.10.10 方向转折（核心架构落地）
+
+- ✅ **deploy.yml 架构重写**：`workflow_run` + `if gate`（Test 完成后才触发 Deploy）
+- ❌ 中途 5 次失败：test.yml 错方向修了 2 版（user 问"初心是什么"才意识到真问题是 deploy.yml 架构）
+
+#### v0.10.15 端到端跑通（commit `89dae51`）
+
+- ✅ **SSH key 算法升级**：RSA `id_rsa` → ed25519（OpenSSH 8.8+ 默认禁 ssh-rsa）
+- ✅ **`ECS_USER` 修正**：`root` → `admin`（ADR §5.5 文档值错误，实际 admin）
+- ✅ **路径大小写**：`/opt/decisioncourt` → `/opt/DecisionCourt`（跟 `scripts/ecs.ps1` 一致）
+- ✅ **健康检查位置修正**：host 上 `curl` → 容器内 `wget 127.0.0.1:8080`（P0-3 安全加固 `expose` 不映射 host 端口）
+
+#### 当前 dev 工作流（v0.10.15 起全自动）
+
+```bash
+git push origin main
+# → 等 5-6 分钟
+# → GitHub Actions UI 显示: Test ✅ → Deploy ✅ → ECS 健康
+```
+
+不再需要手动 `push-to-acr.ps1` / `deploy-to-ecs.ps1` / 本地 `next build` 验证。详见 ADR 0023 §5。
+
+#### 已删除的废弃脚本（v0.10 改用 tag-based deploy）
+
+- ❌ `scripts/commit-and-push.ps1`（v0.10 tag push 自动）
+- ❌ `scripts/deploy-to-ecs.ps1`（v0.10 deploy.yml SSH 自动）
+- 📦 **保留**：`scripts/push-to-acr.ps1` / `scripts/deploy-on-ecs.sh`（个人 fallback，CI down 时手动用）
+
+#### 同步影响
+
+- ✅ ADR 0023 状态：暂停 → **✅ 恢复**（v0.10.15 验证）
+- ✅ GitHub Secrets 全部修正（`ECS_USER=admin` / `ECS_SSH_KEY=ed25519`）
+- ✅ `.github/workflows/test.yml` actions 升 v6（node24 强制）
+- ✅ `frontend/lib/transport.ts` `_batchIntervalMs` 修 ESLint dead code warning
