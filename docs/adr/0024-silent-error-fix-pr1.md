@@ -182,5 +182,27 @@
             - handleWsError 注 入 onRecoveryClick: ws.send({action: "restart_opening" ...})
             - wsRef (useRef) 修复 stale closure
             - ErrorEvent.payload 扩展支持 class/recovery/detail 字段
-            - 待 PR 4-7(Verdict / 文档 / Banner / ErrorBoundary)
+2026-07-12  PR 4 实装 (Verdict 页 + auth.ts 错误反馈) commit dd23089
+            - verdict/[id]/page.tsx exportSession/reopenTrial 双通道反馈
+            - auth.ts ensureAuthToken 3 个 console.error 改 toastFatal (AUTH_ANON_FAILED)
+            - reportAuthError helper: dynamic import 避免循环依赖
+2026-07-12  PR 5 实装 (文档同步) commit a9f46a6
+            - api-design §4.3.9 扩展示完整 UFE JSON + 字段表
+            - api-design §5.1 新增 user_facing_error envelope 规范
+            - tech-spec §8.3 新增错误处理规范 (后端/前端/Toast 策略)
+            - prd §4.6.3 新增错误反馈 UX (4 渠道 / 4 class / 3 反模式 / 4 正解)
+2026-07-12  PR 6 (Breaker fallback Banner) deferred
+            - 原因: 需后端改造 search 包 (circuit breaker)
+            - 当前 fallback 是 silent 的 (只减少结果数, 无 toast)
+            - 影响 P1 (次要), 不阻塞 v0.10.17 收尾
+2026-07-12  PR 7 实装 (顶层 ErrorBoundary) commit tbd
+            - app/error.tsx 路由级 ErrorBoundary: 友好错误页 + toastFatal 双通道
+            - app/global-error.tsx 根 ErrorBoundary: 极简黑白页 (ToastContainer 可能也崩)
+            - 触发范围: client component render throw / root layout throw
+            - 不会捕获: event handler (用 toast), server component (用 global-error)
+2026-07-12  ✅ v0.10.17 silent-error-fix 全部 PR 1-7 收尾
+            累计: 后端 errors.go + 13 单测 / 前端 toastStore + errorBus + Toast
+                  + 29 单测 / docs 3 文档 / ErrorBoundary 2 文件
+            验证: backend go build + go test 全过
+                  frontend pnpm tsc + lint + node --test 全过
 ```
