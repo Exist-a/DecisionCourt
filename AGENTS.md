@@ -162,3 +162,73 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 ### 8.5 例外
 
 唯一例外：用户**显式、明确、单独说一次**"改 .env 第 X 行"——但 Agent 仍需在执行前用 `Read` 工具读当前完整内容，再用读到的内容做精确 `old_str`。**任何模糊指令（如"删注释"、"改配置"）一律视为不授权**。
+
+---
+
+## 9. ECS 运维连接能力（OPS_CONNECTION_POLICY · 2026-07-12 增补）
+
+### 9.1 触发背景
+
+2026-07-12 v0.10.18 部署失败（Deploy to ECS job 失败 2 次）时，Agent 因**默认不知道能 SSH 到 ECS**而让用户手动跑命令查 docker logs，导致诊断延迟。
+
+**事实**：本机 `~/.ssh/id_ed25519` + `~/.ssh/id_rsa` 是 ECS 部署密钥（与 GitHub Actions Secrets `ECS_SSH_KEY` 同源）。Agent 通过 `RunCommand` 调 `ssh` 命令即可直连 ECS，不需要 user 中转。
+
+**根因**：AGENTS.md 没写这条能力 → Agent 每次遇到"线上问题"都默认 user 跑命令 → 浪费用户时间。
+
+### 9.2 ECS 连接信息（user 提供，2026-07-12 起）
+
+| 项 | 值 |
+|---|---|
+| **ECS_HOST** | `<user 提供>`（IP 或域名，user 在对话中告知） |
+| **ECS_USER** | `admin`（v0.10.15 deploy.yml Secrets 修复后确认） |
+| **SSH_KEY** | `$env:USERPROFILE\.ssh\id_ed25519`（本地路径，与 GitHub Secrets `ECS_SSH_KEY` 同源 ed25519 key） |
+| **ECS 项目目录** | `/opt/DecisionCourt`（v0.10.12 修过大小写） |
+| **Docker Compose** | `docker compose`（v2 CLI，`docker-compose` v1 已废弃） |
+
+### 9.3 允许 Agent 直接执行的 SSH 操作
+
+| 操作 | 命令模板 | 适用场景 |
+|------|----------|----------|
+| 查看容器状态 | `ssh -i $env:USERPROFILE\.ssh\id_ed25519 admin@<ECS_HOST> "cd /opt/DecisionCourt && docker compose ps"` | Deploy 失败 / 容器 crash |
+| 查看 backend 日志 | `ssh ... "cd /opt/DecisionCourt && docker compose logs --tail=50 backend"` | 查 fail-fast 原因 |
+| 查看 frontend 日志 | `ssh ... "cd /opt/DecisionCourt && docker compose logs --tail=30 frontend"` | 前端异常 |
+| 查看 host .env 关键项 | `ssh ... "cd /opt/DecisionCourt && grep -E '^(JWT_SECRET\|DATABASE_URL\|LLM_API_KEY)' .env \| sed 's/=.*/=<hidden>/'"` | 确认 fail-fast 诱因 |
+| 查看 VOLUME 权限 | `ssh ... "ls -ld /opt/DecisionCourt/logs /opt/DecisionCourt/logs/backend"` | UID 10001 权限 |
+| 看镜像 tag | `ssh ... "docker images \| grep decision-court"` | 镜像是否拉下来 |
+| 触发手动 deploy | `ssh ... "cd /opt/DecisionCourt && ./deploy-on-ecs.sh"` | Deploy workflow 失败后手动重跑 |
+| 健康检查 | `ssh ... "cd /opt/DecisionCourt && docker compose exec -T backend wget -qO- http://127.0.0.1:8080/health"` | 容器是否真健康 |
+
+### 9.4 禁止 Agent 直接执行的 SSH 操作
+
+| 操作 | 原因 |
+|------|------|
+| `docker compose down` / `docker rm` / `rm -rf` | 销毁性操作，需 user 显式授权 |
+| 修改 `/opt/DecisionCourt/.env` | 包含真实 key，违反 §8 敏感文件红线 |
+| `docker compose up -d` 不带 `--force-recreate` | 可能复用旧容器，新镜像不生效 |
+| `kill -9` / `pkill -f` 任何进程 | 绕过 docker 生命周期管理 |
+| `chmod 777` / `chown -R` 大范围改权限 | 安全降级 |
+
+### 9.5 最佳实践
+
+1. **诊断顺序**：先用 §9.3 表里的"轻量命令"（`docker compose ps` + `logs --tail=50`），90% 问题一次定位
+2. **不要乱试修复命令**：找到 root cause 后，**先告诉用户修复方案**，让 user 决定要不要执行（或 user 明确授权 Agent 执行）
+3. **不回显 key**：如 grep 出 `JWT_SECRET=...`，用 `sed 's/=.*/=<hidden>/'` 隐藏
+4. **超时保护**：用 `command_timeout: 30s` 或 `-o ConnectTimeout=10` 防止 hang
+5. **输出截断**：用 `| head -n 100` / `| tail -n 50` 限制输出大小
+
+### 9.6 异常处理
+
+| 现象 | 排查方向 |
+|------|----------|
+| `Permission denied (publickey)` | SSH_KEY 路径错 / key 失效 / known_hosts 不一致 |
+| `Connection timed out` | ECS 安全组未放行本地 IP / ECS 没开机 |
+| `Host key verification failed` | `ssh-keyscan -t ed25519 <ECS_HOST>` 更新 known_hosts |
+| `bash: command not found` | ECS 上没装该命令（如 `jq` / `htop`）|
+
+---
+
+## 10. ECS 连接信息更新记录
+
+| 日期 | ECS_HOST | 备注 |
+|---|---|---|
+| 2026-07-12 | _待 user 提供_ | v0.10.18 Deploy 失败时建立本节 |
