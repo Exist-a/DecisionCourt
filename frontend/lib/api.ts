@@ -12,6 +12,8 @@ import type {
 } from "@/types";
 import { mockApi } from "./mock/mockApi";
 import { ensureAuthToken, getAuthToken } from "./auth";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { ApiError, handleApiError } from "./errorBus";
 
 const useMock = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 

@@ -166,5 +166,13 @@
             - PR 1 实装:errors.go + statemachine + service + handler + websocket + tests
             - 13 个新单元测试全过
             - go build + go test 无回归
-            - 待 PR 2-7（前端 + 联调）
+2026-07-12  PR 2 实装(前端 Toast 系统 + errorBus + fetchJson + layout + tests)
+            - lib/toastStore.ts (zustand store + severityFromUFE, 无 JSX 便于测试)
+            - lib/errorBus.ts (UFE 翻译 / handleWsError / handleApiError / ApiError class)
+            - components/ui/Toast.tsx (Toast + ToastContainer + useEffect 自动 dismiss)
+            - app/layout.tsx 挂 ToastContainer
+            - lib/api.ts::fetchJson 解析 user_facing_error + 401 清 token + 抛 ApiError
+            - lib/errorBus.test.ts (20 个 case) + lib/toast-store.test.ts (7 个 case) = 27 个 case 全过
+            - pnpm tsc / pnpm lint / pnpm test 全过 (29/29 测试)
+            - 待 PR 3-7(CourtroomScene / Verdict / 文档 / Banner / ErrorBoundary)
 ```

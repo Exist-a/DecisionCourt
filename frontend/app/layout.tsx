@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { ToastContainer } from "@/components/ui/Toast";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -37,6 +38,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} font-body antialiased bg-paper text-ink`}
       >
         {children}
+        {/* v0.10.17 silent-error-fix: 全局 Toast 容器,
+            自动渲染 store 中的 toast(右下角堆叠) + degraded banner(顶部)。
+            任何组件 import useToastStore().push 即可弹 toast,无需手动挂。 */}
+        <ToastContainer />
       </body>
     </html>
   );
