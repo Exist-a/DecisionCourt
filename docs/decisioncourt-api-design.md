@@ -1423,6 +1423,8 @@ WebSocket 心跳。前端每 25s 发一次 `{type:"ping"}`，服务端立即回
 
 ## 5. 错误码设计
 
+业务级错误码（返回 `data.code` 字段，非 HTTP status）：
+
 | 错误码 | HTTP 状态码 | 说明 |
 |---|---|---|
 | `0` | 200 | 成功 |
@@ -1431,6 +1433,21 @@ WebSocket 心跳。前端每 25s 发一次 `{type:"ping"}`，服务端立即回
 | `1003` | 409 | 当前阶段不允许该操作 |
 | `2001` | 500 | LLM 调用失败 |
 | `2002` | 500 | 搜索服务不可用 |
+
+### 5.1 `user_facing_error` envelope（v0.10.17 silent-error-fix）
+
+所有面向用户的失败响应（HTTP 4xx/5xx + WS `error` 事件）都携带 `user_facing_error` envelope
+或 WS `error.payload`，结构与 §4.3.9 相同。前端 `fetchJson` / `handleWsError` 自动解析 + 弹 Toast。
+
+| ErrorClass | 前端展示策略 | 典型示例 |
+|---|---|---|
+| `user_input` | Toast 3s 自动消失 | `WS_THROTTLED` / `ACTION_STATE_REJECTED` |
+| `transient` | Toast 5s + "重试" 按钮 | `ACTION_FAILED` / `RECOVERY_FAILED` |
+| `degraded` | 顶部 Banner 持续显示 | `BREAKER_DEGRADED` |
+| `fatal` | Toast 不自动消失 + 强制 recovery 按钮 | `OPENING_SPEECHES_FAILED` / `BUDGET_EXHAUSTED` / `TRIAL_RATE_LIMITED` |
+
+完整错误码清单见 [ADR 0024 §2.1](./adr/0024-silent-error-fix-pr1.md)。
+新增错误码时必须同时更新 ADR 0024 + 前后端常量。
 
 ---
 

@@ -386,6 +386,48 @@ Phase 3: 全量切读到 a2a_messages → drop 旧表
 - 当前用户量下，PDF 导出使用率 < 5%，不值得优化
 - 如果将来需要：可加 `?format=pdf` query 参数，触发后端 wkhtmltopdf 路径
 
+### 4.6.3 错误反馈 UX（v0.10.17 silent-error-fix）
+
+> **为什么这一节独立**：错误反馈是用户感知"系统是否在工作"的最直接信号。v0.10.17 之前
+> 12 处静默错误黑洞让用户产生"庭审卡住" / "网络问题" / "我哪里做错了" 的困惑（实际是
+> 后端错误但前端没显示）。这一节定义 UX 规范。
+
+**核心原则**：**永远不让用户看到"操作无反应"**。所有面向用户的失败都通过结构化错误反馈，
+用户能看到"发生了什么 + 怎么恢复"。
+
+**4 类反馈渠道**（按用户感知强度递增）：
+
+| 渠道 | 触发场景 | 自动消失 | 用户操作 |
+|---|---|---|---|
+| Toast（右下角堆叠） | 临时性错误（操作太快 / 操作无效） | 3-5s | 关闭 / 点击按钮 |
+| Banner（顶部横幅） | 系统降级（搜索不可用 / breaker 打开） | **不消失** | 自定义恢复动作 |
+| Modal（页面中央） | 资源耗尽（trial 配额 / budget） | **不消失** | 强制决策（去判决页 / 等明天） |
+| 页面级 setState | 业务级错误（导出失败 / 重开失败） | **不消失** | 重试按钮 |
+
+**Toast 4 class 映射**（与 ErrorClass 对应）：
+
+| Class | 用户场景 | 反馈 |
+|---|---|---|
+| `user_input` | 操作错（按钮按错 / 阶段不允许） | Toast 3s + 无按钮 |
+| `transient` | 临时失败（网络抖动 / 5xx） | Toast 5s + "重试"按钮 |
+| `degraded` | 系统降级（搜索不可用） | 顶部 Banner 持续 |
+| `fatal` | 无法继续（budget 耗尽 / ReAct 卡死） | Toast 不消失 + 强制 recovery 按钮 |
+
+**反模式**（避免）：
+
+- ❌ `window.alert(...)`：阻塞 + 丑样式 + 用户体验差
+- ❌ `console.error` 后静默：用户完全无感知
+- ❌ 重复反馈：toast + 页面 setState + console.error 三处都说同一件事
+
+**正确做法**（v0.10.17 实装）：
+
+- ✅ HTTP 错误由 `lib/api.ts::fetchJson` → `errorBus.handleApiError` 自动 toast
+- ✅ WS 错误事件由 `CourtroomScene` handler → `handleWsError` 自动 toast
+- ✅ 业务代码 catch 块只 `console.debug`（toast 已展示）+ 页面 setState（持久详情）
+- ✅ recovery 按钮 onClick 由调用方注入（典型：`ws.send({action: "restart_opening"})`）
+
+完整规范见 [ADR 0024 §2.1](./adr/0024-silent-error-fix-pr1.md) + [tech-spec §8.3](./decisioncourt-tech-spec.md)。
+
 ---
 
 ## 5. 证据系统

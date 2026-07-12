@@ -749,6 +749,35 @@ type CourtEvent =
 - [`frontend/lib/reconnect.test.ts`](file:///d:/源码/FullStack/DecisionCourt/frontend/lib/reconnect.test.ts) — 6 cases 覆盖退避序列、cap 行为、stale state 防御、重置 round-trip
 - `node --experimental-strip-types --test lib/reconnect.test.ts` 跑
 
+### 8.3 错误处理规范（v0.10.17 silent-error-fix）
+
+> 目标：**永远不让用户看到"操作无反应"**。所有面向用户的失败都通过结构化 UserFacingError 投递，
+> 前端 Toast / Banner / Modal 三种展示策略自动分类。
+
+**后端（Go）**：
+- 失败错误用 `courtroom.ClassifyError(err)` 分类成 UFE（不直接 `return err`）
+- WS 推送用 `service.BroadcastUserFacingError(sessionUUID, ufe)`（不是 `Broadcast(..., Event{Type:"error"})`）
+- HTTP 4xx/5xx 在响应里加 `user_facing_error` envelope（参考 api-design §5.1）
+- 状态机拒绝用 `*StateMachineError`（typed error，`ClassifyError` 自动拿 phase 拼友好消息）
+- 新增 ErrorCode 时同步更新 `backend/internal/courtroom/errors.go` 常量 + ADR 0024
+
+**前端（Next.js）**：
+- 任何组件 `import { useToastStore, handleWsError, handleApiError } from "@/lib/errorBus"`
+- WS `event.type === "error"` → `handleWsError(event.payload, { onRecoveryClick })`
+- HTTP `fetchJson` 已自动处理（PR 2 实装）
+- 业务代码（CourtroomScene / verdict 页）catch 块只需 `console.debug`，**不要 console.error 后静默**——
+  toast 已由 `fetchJson` 展示，console.error 是重复反馈
+
+**Toast 展示策略**（4 class 映射）：
+| Class | 展示 | 自动消失 | 按钮 |
+|---|---|---|---|
+| `user_input` | 右下角 Toast | 3s | 无 |
+| `transient` | 右下角 Toast | 5s | "重试" |
+| `degraded` | 顶部 Banner | 不消失 | 自定义 |
+| `fatal` | 右下角 Toast | **不消失** | 强制 recovery |
+
+详见 [ADR 0024 §2.1](../adr/0024-silent-error-fix-pr1.md) + frontend `components/ui/Toast.tsx` + `lib/errorBus.ts`。
+
 ---
 
 ## 9. 部署方案
