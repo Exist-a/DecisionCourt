@@ -46,8 +46,8 @@ RUN pnpm build
 # ============= runtime stage =============
 FROM node:20-alpine AS runtime
 
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -u 1001 -S nextjs -G nodejs
+RUN addgroup -g 10001 -S nodejs && \
+    adduser -u 10001 -S nextjs -G nodejs
 
 WORKDIR /app
 

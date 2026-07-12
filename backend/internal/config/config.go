@@ -112,7 +112,12 @@ func Load() {
 	viper.SetDefault("SEARXNG_URL", "http://searxng:8080")
 	viper.SetDefault("TAVILY_API_KEY", "")
 	viper.SetDefault("BOCHA_API_KEY", "")
-	viper.SetDefault("JWT_SECRET", "decisioncourt-secret")
+	// P0-2 安全(v0.10.18)：删除 JWT_SECRET 默认值。
+	// 之前设了默认 "decisioncourt-secret",会让 Load() 的 mustEnvs fail-fast
+	// 检查看到非空值就放行,等于绕过 fail-fast 保护 — 用户即使忘了设
+	// JWT_SECRET,程序也照常启动,所有 JWT 都用公开仓库能读到的密钥签发。
+	// 任何后续添加 jwt.Parse() 的代码会直接踩坑。
+	// 修复:不设 default,缺失时由 Load() 的 mustEnvs log.Fatalf 阻断启动。
 
 	viper.SetDefault("AGENT_GATEWAY_ENABLED", false)
 	viper.SetDefault("AGENT_GATEWAY_PROMPT_COMPRESSION", false)

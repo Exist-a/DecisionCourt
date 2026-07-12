@@ -4,7 +4,7 @@
 # 关键安全变更:
 #   1. 所有 image 锁具体版本(去掉 :latest)
 #   2. postgres / redis 端口从 host 网络移除(只走 backend 内部访问)
-#   3. backend / frontend 加 user: "1001:1001" 切非 root
+#   3. backend / frontend 加 user: "10001:10001" 切非 root
 #   4. cap_drop: [ALL] + no-new-privileges 限制容器能力
 #   5. 关键卷 read_only: true + tmpfs 写临时目录
 #   6. JWT_SECRET 必填(:?报错),不再有默认值

@@ -34,8 +34,8 @@ FROM alpine:3.20
 
 # v0.8.3 安全：升级到具体版本(非 :latest),同步加 ca-certificates + tzdata
 RUN apk add --no-cache ca-certificates tzdata && \
-    addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
+    addgroup -g 10001 -S appgroup && \
+    adduser -u 10001 -S appuser -G appgroup
 
 WORKDIR /app
 COPY --from=builder /app/server /app/server
