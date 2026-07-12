@@ -1024,10 +1024,12 @@ go test -short ./...
 - ✅ 后端目录结构：新增 `internal/a2a` 与 `internal/private_memory` 模块。
 - ✅ 风险与缓解：Agent 附和/叛变、私有记忆泄露的应对方案。
 
-### 14.2 代码现状（截至 2026-06-29）
+### 14.2 代码现状（截至 2026-07-12 v0.10.17 收尾）
 
 | 设计点 | 状态 | 代码位置 |
 |---|---|---|
+| **静默错误全局修复 v0.10.17** | ✅ 已实装 | `courtroom/errors.go` + `lib/errorBus.ts` + `Toast.tsx` + 4 catch 改造 + ErrorBoundary（详见 [ADR 0024 §2-§8](./adr/0024-silent-error-fix-pr1.md) + [release-notes/v0.10.17.md](./release-notes/v0.10.17.md)）|
+| 庭审 CRUD + WebSocket Hub | ✅ 已实装 | `internal/api/handler.go` + `internal/api/hub.go` |
 | A2A 消息总线 | ✅ 已实装 | `internal/a2a/` + `a2a_messages` 表 + 12 项隔离测试 |
 | 私有记忆池 | ✅ 已实装 | `internal/private_memory/` + `private_memories` 表 + 9 项隔离测试 |
 | 调查员派遣 | ✅ 已实装 | `internal/investigation/` + `investigation_findings` 表 + 10 项测试 |

@@ -1117,12 +1117,13 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 
 ---
 
-## 15. 当前进度与状态（截至 2026-06-29）
+## 15. 当前进度与状态（截至 2026-07-12 v0.10.17 收尾）
 
 ### 15.1 已实现
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
+| **静默错误全局修复 v0.10.17** | ✅ 已实装 | 7 个 PR（PR 1 后端 UFE + PR 2-4 前端 Toast/errorBus + PR 5 文档 + PR 7 ErrorBoundary），详见 [ADR 0024 §2-§8](./adr/0024-silent-error-fix-pr1.md) + [release-notes/v0.10.17.md](./release-notes/v0.10.17.md) + [§4.6.3 错误反馈 UX](#463-错误反馈-uxv01017-silent-error-fix) |
 | 项目骨架 | ✅ | `frontend/`、`backend/`、`docker-compose.yml`、`.env.example`、README 已创建 |
 | 前端页面 | ✅ | 首页/立案页、庭审主界面（含右侧 Tab + 调查活动面板）、判决书页，白色极简主题 + 凹陷输入框 |
 | 前端 Real 驱动 | ✅ | Zustand store + 真实 WebSocket 订阅所有 ReAct 事件，pnpm tsc 通过 |

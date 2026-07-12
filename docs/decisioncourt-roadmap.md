@@ -277,3 +277,72 @@ git push origin main
 - ✅ GitHub Secrets 全部修正（`ECS_USER=admin` / `ECS_SSH_KEY=ed25519`）
 - ✅ `.github/workflows/test.yml` actions 升 v6（node24 强制）
 - ✅ `frontend/lib/transport.ts` `_batchIntervalMs` 修 ESLint dead code warning
+
+### v0.10.17（2026-07-12）静默错误全局修复
+
+> **状态**：✅ **收尾**（commit `860294a` + tag `v0.10.17`，8 commit 推送 + ECS 部署）
+> 触发：用户反馈"庭审无反应"（session `09282a8a-25c2-4019-83e0-eb1c22f49e11` opening 死锁）
+> 完整计划：[`.trae/documents/silent-error-fix-plan.md`](../.trae/documents/silent-error-fix-plan.md) v1.0
+> 完整记录：[ADR 0024 §2-§8](../adr/0024-silent-error-fix-pr1.md)
+
+#### 修复前 vs 修复后
+
+| 场景 | 修复前 | 修复后 |
+|---|---|---|
+| opening 死锁（ReAct max iter） | 黑屏，用户等死 | Toast + 3 recovery 按钮（重启/跳过/判决） |
+| WS throttle（操作太快） | console.log（dev 才看得到） | Toast 3s + 文案 |
+| 状态机拒绝（错阶段操作） | console.error（静默） | Toast + 当前阶段提示 |
+| Trial rate limit 429 | alert("quota exceeded") | Toast + 文案 + retry_after |
+| HTTP 5xx | throw Error，console.error | Toast + retry 按钮 |
+| Verdict 导出失败 | alert | Toast + 页面级 setState |
+| auth.ts token 失败 | console.error 后返回空 | Toast + 清 token |
+| 客户端 component render throw | 白屏 + dev console | app/error.tsx 友好页 + Toast |
+| Root layout throw | 整个 app 崩 | app/global-error.tsx 极简黑白页 |
+
+#### 7 个 PR 切片（按依赖顺序）
+
+| PR | 范围 | 关键文件 | 单测 |
+|---|---|---|---|
+| **PR 1** 后端 UFE 类型 | `courtroom/errors.go` + 4 改 + 1 sentinel | 后端 | 13 case |
+| **PR 2** 前端 Toast + errorBus | `toastStore.ts` + `errorBus.ts` + `Toast.tsx` + layout | 前端 | 20+9 case |
+| **PR 3** CourtroomScene 接入 | WS handler + 7 catch + alert + recovery 注入 | 前端 | — |
+| **PR 4** Verdict + auth | 双通道反馈 + dynamic import | 前端 | — |
+| **PR 5** 文档同步 | api-design §5.1 / tech-spec §8.3 / prd §4.6.3 | 文档 | — |
+| **PR 6** Breaker fallback Banner | **deferred**（需后端 search 包改造）| — | — |
+| **PR 7** 顶层 ErrorBoundary | `app/error.tsx` + `app/global-error.tsx` | 前端 | — |
+
+**累计**：13 + 29 = **42 个新单测全过**，0 回归。
+
+#### 完整错误链路
+
+```
+后端失败
+  ↓ ClassifyError(err)
+  ↓ BroadcastUserFacingError(sessionUUID, ufe)
+  ↓ WS event.type === "error"
+前端 handleWsError(payload, { onRecoveryClick })
+  ↓ severityFromUFE(class) → level/duration
+  ↓ ToastContainer 自动渲染
+  ↓ 用户点 recovery 按钮
+  ↓ ws.send({ action: "restart_opening" / "force_skip_opening" / ... })
+后端 ProcessUserAction → ForceSkipOpening / RestartOpening
+                                              ↑
+                              任何 render throw → app/error.tsx
+```
+
+#### 4 class 反馈策略
+
+| Class | 展示 | 自动消失 | 按钮 | 典型 |
+|---|---|---|---|---|
+| `user_input` | 右下角 Toast | 3s | 无 | `WS_THROTTLED` / `ACTION_STATE_REJECTED` |
+| `transient` | 右下角 Toast | 5s | "重试" | `ACTION_FAILED` / `RECOVERY_FAILED` |
+| `degraded` | 顶部 Banner | 不消失 | 自定义 | `BREAKER_DEGRADED` |
+| `fatal` | 右下角 Toast | **不消失** | 强制 recovery | `OPENING_SPEECHES_FAILED` / `BUDGET_EXHAUSTED` / `TRIAL_RATE_LIMITED` |
+
+#### 部署 + 后续
+
+- ✅ push main（89dae51..860294a，8 commit）+ push tag `v0.10.17` → 触发 GitHub Actions Test + Deploy
+- ✅ Deploy：build 镜像 → push ACR → SSH ECS → `--force-recreate` → 容器内 `wget` health check
+- ⏸ **P0-1 鉴权** 立即启动（JWT 库 + 30 天已确定，UID 10001 已确定）
+- ⏸ **P0-3 容器硬化** 立即启动
+- ⏸ **PR 6 search 包 circuit breaker** 推迟到下次 sprint
