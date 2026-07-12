@@ -507,8 +507,18 @@ export interface VerdictReadyEvent extends CourtEvent {
 
 export interface ErrorEvent extends CourtEvent {
   type: "error";
-  payload: {
-    code: string;
-    message: string;
+  /**
+   * v0.10.17 (silent-error-fix PR 1): payload 字段对齐后端
+   * backend/internal/courtroom/errors.go::UserFacingError JSON 结构。
+   * 之前只有 code/message,前端无法分类(class) / 渲染按钮(recovery[])。
+   *
+   * 兼容:旧客户端只用 code/message,新客户端走 handleWsError 自动分类。
+   * payload 是 UFE 结构而不是裸字段,所以类型用 any + runtime 守卫。
+   * 详细字段参考 frontend/lib/errorBus.ts::UserFacingErrorPayload。
+   */
+  payload: Record<string, unknown> & {
+    code?: string;
+    message?: string;
+    class?: string;
   };
 }

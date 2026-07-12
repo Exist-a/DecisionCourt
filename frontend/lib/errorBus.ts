@@ -110,8 +110,14 @@ export function handleUserFacingError(
 /**
  * WebSocket event.type === "error" 时调用。
  * WS payload 已经是 UserFacingError JSON(由后端 BroadcastUserFacingError 投递)。
+ *
+ * options.onRecoveryClick: 注入 recovery button onClick,
+ * 例: 用户点 "重新尝试开庭陈述" → 调用 ws.send({action: "restart_opening"})
  */
-export function handleWsError(payload: unknown): string | null {
+export function handleWsError(
+  payload: unknown,
+  options?: Parameters<typeof handleUserFacingError>[1],
+): string | null {
   if (!isUserFacingError(payload)) {
     // 兜底: 后端可能广播了非标准 error 事件(class/code/message 缺失)
     // 用 info toast 提示用户,不静默吞
@@ -123,9 +129,9 @@ export function handleWsError(payload: unknown): string | null {
           ? JSON.stringify(payload).slice(0, 200)
           : "未知错误",
     };
-    return handleUserFacingError(fallback);
+    return handleUserFacingError(fallback, options);
   }
-  return handleUserFacingError(payload);
+  return handleUserFacingError(payload, options);
 }
 
 /**

@@ -7,6 +7,15 @@ import { api } from "@/lib/api";
 import { createCourtWebSocket, type CourtEventHandler } from "@/lib/websocket";
 import type { Agent, EvidenceType, UserActionRequest } from "@/types";
 import { usePhaseUI } from "@/hooks/usePhaseUI";
+// v0.10.17 silent-error-fix PR 3: 错误反馈接入。
+// 之前 7 个 try/catch 全部 console.error 后静默,用户看不到任何反馈。
+// 改 toastFatal/toastWarning 让用户知道发生了什么 + 怎么恢复。
+import {
+  handleWsError,
+  toastFatal,
+  toastSuccess,
+  toastWarning,
+} from "@/lib/errorBus";
 import { AgentAvatar } from "./AgentAvatar";
 import { ArgumentMap } from "./ArgumentMap";
 import { EvidenceBoard } from "./EvidenceBoard";
@@ -80,6 +89,10 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   const [ws, setWs] = useState<ReturnType<typeof createCourtWebSocket> | null>(
     null,
   );
+  // v0.10.17 silent-error-fix PR 3: wsRef 跟 ws state 同步,
+  // 让 onRecoveryClick 在 handler 闭包里能拿到最新的 ws 实例(stale closure 修复)。
+  // setWs 是异步,如果只用 ws state,创建时拿到的 ws 在 deps 变化后已过期。
+  const wsRef = useRef<ReturnType<typeof createCourtWebSocket> | null>(null);
   const [lastSpeakerId, setLastSpeakerId] = useState<string | null>(null);
   const [currentBubble, setCurrentBubble] = useState<{
     agentId: string;
@@ -207,10 +220,57 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
 
     load();
 
-    const socket = createCourtWebSocket(sessionId);
+    const socket = createCourtWebSocket(sessionId, {
+      // v0.10.17 silent-error-fix PR 3: WS 连接状态变化 → toast 反馈。
+      // 之前只在 console.log 打印,用户看不到。
+      // - "reconnecting" → BANNER_"网络中断,正在重连" (持续显示)
+      // - "connected"    → BANNER 升级 → success toast "已恢复"
+      // - "closed"       → fatal toast "连接已断开"
+      onConnectionStateChange: (state) => {
+        if (state === "reconnecting") {
+          toastWarning("网络中断,正在重连...", "WS_RECONNECTING");
+        } else if (state === "connected") {
+          toastSuccess("已恢复连接", "WS_CONNECTED");
+        } else if (state === "closed") {
+          toastFatal("连接已断开,请刷新页面", {
+            code: "WS_CLOSED",
+          });
+        }
+      },
+      // 重连尝试日志:之前只在 console.log,现在打 fe.ws_reconnect 事件
+      // (analytics 自动 flush,因为是 CRITICAL 事件)
+      onReconnectAttempt: (attempt, delayMs) => {
+        getAnalytics().track("fe.ws_reconnect", {
+          attempt,
+          delay_ms: delayMs,
+        });
+      },
+    });
     setWs(socket);
+    wsRef.current = socket;
 
     const handler: CourtEventHandler = (event) => {
+      // v0.10.17 silent-error-fix PR 3: 后端 BroadcastUserFacingError
+      // 投递的事件 type === "error",payload 是 UserFacingError。
+      // 之前这里没 case,事件被 applyCourtEvent 当作未知事件丢弃,
+      // 用户只看到 console.log 缺失。
+      //
+      // onRecoveryClick 注入:用户点 toast 上的 recovery 按钮时,
+      // 把后端 action 包装成 UserActionRequest 通过 WS 发回。
+      // 例: opening.finished 重试 → ws.send({action: "restart_opening"})
+      if (event.type === "error") {
+        handleWsError(event.payload, {
+          onRecoveryClick: (r: { action?: string }) => {
+            // r.action 可能是 "restart_opening" / "force_skip_opening" 等
+            // 扩展后端新增的 action,需要 cast (UserActionRequest.action 是受限联合类型)
+            if (r.action && wsRef.current) {
+              wsRef.current.send({ action: r.action as UserActionRequest["action"] });
+            }
+          },
+        });
+        return; // 错误事件不往下走 store apply
+      }
+
       applyCourtEvent(event);
 
       // Phase transition (e.g. continue_cross_exam → cross_exam round N+1)
@@ -487,12 +547,20 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
                       const updated = await api.getSession(sessionId);
                       if (updated.code === 0) setSession(updated.data);
                     } else {
-                      alert("启动庭审失败：" + (res as unknown as { message?: string }).message);
+                      // v0.10.17 silent-error-fix PR 3: alert() → toastFatal。
+                      // 之前用 window.alert(),阻塞 + 样式丑 + 用户体验差。
+                      // handleApiError 已经在 fetchJson 里 toast 了 429 / 5xx,
+                      // 这里只处理 res.code !== 0 的业务级错误(后端 200 但 logic 失败)。
+                      const msg = (res as unknown as { message?: string }).message ?? "未知错误";
+                      toastFatal("启动庭审失败：" + msg, {
+                        code: "START_TRIAL_FAILED",
+                      });
                     }
                   } catch (err) {
-                    console.error("[Courtroom] failed to start trial:", err);
-                    alert("启动庭审失败，请检查网络或后端日志");
-                    // 保留 idempKey,用户点 retry 用同 key
+                    // v0.10.17 silent-error-fix PR 3: alert() → toastFatal。
+                    // handleApiError 已经在 fetchJson 里 toast,这里仅 console.debug。
+                    // 保留 idempKey,用户点 retry 用同 key。
+                    console.debug("[Courtroom] start trial failed (toast already shown):", err);
                   } finally {
                     setStartingTrial(false);
                   }
