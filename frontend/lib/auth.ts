@@ -101,7 +101,11 @@ export async function ensureAuthToken(): Promise<string> {
       body: JSON.stringify({ user_id: uid }),
     });
     if (!res.ok) {
-      console.error("[auth] /auth/anon failed:", res.status, res.statusText);
+      // v0.10.17 silent-error-fix PR 4: 之前 console.error 后静默吞错,
+      // 用户看不到任何反馈,所有 API/WS 请求都失败但不告知原因。
+      // 现在用 dynamic import 避免循环依赖(auth.ts → errorBus 反向会循环),
+      // toastFatal 让用户知道"匿名身份签发失败",可重试。
+      void reportAuthError(`匿名身份签发失败 (HTTP ${res.status})`);
       return "";
     }
     const json = (await res.json()) as {
@@ -109,7 +113,7 @@ export async function ensureAuthToken(): Promise<string> {
       data: { user_id: string; token: string; expires_in: number };
     };
     if (json.code !== 0) {
-      console.error("[auth] /auth/anon error:", json);
+      void reportAuthError(`匿名身份签发被拒绝: ${json.code}`);
       return "";
     }
     const { token, expires_in } = json.data;
@@ -118,8 +122,24 @@ export async function ensureAuthToken(): Promise<string> {
     localStorage.setItem(STORAGE_KEY_TOKEN_EXP, String(expEpoch));
     return token;
   } catch (err) {
-    console.error("[auth] /auth/anon exception:", err);
+    void reportAuthError(
+      `匿名身份签发异常: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return "";
+  }
+}
+
+// v0.10.17 silent-error-fix PR 4: reportAuthError 把 auth 错误通过 toast 通知用户。
+// 单独抽 helper 是为了避免在 ensureAuthToken 主体里直接 dynamic import,
+// 让 lint/reader 更容易看清控制流。dynamic import 是为了打破循环依赖:
+// auth.ts 是 import 链上游(api.ts/websocket.ts/transport.ts 都依赖它),
+// 如果 auth.ts 在模块顶层 import errorBus,会形成循环依赖。
+async function reportAuthError(message: string): Promise<void> {
+  try {
+    const { toastFatal } = await import("./errorBus");
+    toastFatal(message, { code: "AUTH_ANON_FAILED" });
+  } catch {
+    // errorBus 自身加载失败(理论上不会发生,极端情况如 SSR),静默兜底
   }
 }
 

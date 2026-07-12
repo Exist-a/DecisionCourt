@@ -274,10 +274,18 @@ export default function VerdictPage() {
       if (res.code === 0) {
         router.push(`/court/${sessionId}`);
       } else {
-        setReopenError(`服务端拒绝: ${JSON.stringify(res)}`);
+        // v0.10.17 silent-error-fix PR 4: 业务级错误也走 toast。
+        const msg = `服务端拒绝: ${JSON.stringify(res)}`;
+        setReopenError(msg);
+        const { toastFatal } = await import("@/lib/errorBus");
+        toastFatal(`重开庭审失败: ${msg}`, { code: "REOPEN_FAILED" });
       }
     } catch (e) {
-      setReopenError(e instanceof Error ? e.message : "重开失败");
+      // v0.10.17 silent-error-fix PR 4: 双通道反馈(toast + 页面 setState)
+      const msg = e instanceof Error ? e.message : "重开失败";
+      setReopenError(msg);
+      const { toastFatal } = await import("@/lib/errorBus");
+      toastFatal(`重开庭审失败: ${msg}`, { code: "REOPEN_FAILED" });
     } finally {
       setReopening(false);
     }
