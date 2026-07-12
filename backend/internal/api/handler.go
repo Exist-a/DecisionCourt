@@ -49,6 +49,12 @@ type Handler struct {
 	// 注入方式:handler.LLMRateLimit = middleware.RateLimit(middleware.LLMConfig)
 	LLMRateLimit gin.HandlerFunc
 
+	// v0.10.20 (ADR 0027 §决策 3) L1 Per-Session action 限流中间件。
+	// 按 session UUID 隔离的 rate.Limiter, 防 F5 狂点把正常用户拖慢。
+	// RPS=2 / Burst=5 (经用户 2026-07-12 确认)。
+	// 注入方式:handler.SessionRateLimit = middleware.SessionRateLimit(middleware.DefaultSessionConfig)
+	SessionRateLimit gin.HandlerFunc
+
 	// v0.9 用户限流 (ADR 0014):每用户每天 N 次 StartTrial。nil 时不限流。
 	// 注入方式:handler.TrialRateLimiter = ratelimit.NewMemoryRateLimiter(cfg.UserTrialLimit, 24*time.Hour)
 	TrialRateLimiter ratelimit.RateLimiter
@@ -177,6 +183,12 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 	llmGroup := api.Group("/")
 	if h.LLMRateLimit != nil {
 		llmGroup.Use(h.LLMRateLimit)
+	}
+	// v0.10.20 (ADR 0027 §决策 3) L1 Per-Session action 限流: 按 session 维度更细限流。
+	// 串联在 LLMRateLimit 之后, 形成"user 维度 + session 维度"双重防护。
+	// 防 F5 狂点同一 session 把 session lock 排队拖慢正常用户。
+	if h.SessionRateLimit != nil {
+		llmGroup.Use(h.SessionRateLimit)
 	}
 	llmGroup.POST("/courtrooms/:session_uuid/evidences", h.SubmitEvidence)
 	llmGroup.POST("/courtrooms/:session_uuid/actions", h.UserAction)
@@ -341,6 +353,21 @@ func (h *Handler) StartTrial(c *gin.Context) {
 			}
 		}
 	}
+
+	// v0.10.20 (ADR 0027 §决策 3) L0 全局并发 trial 信号量。
+	// 注意: L0 不在 handler 层直接 TryAcquire,而是交给 service.withCancel 管理。
+	// 原因: handler 层 TryAcquire + service.withCancel 会双重 acquire 同 1 个 slot
+	//       (同一 trial 占 2 个 slot, max=5 实际只能开 2-3 个)。
+	//
+	// 失败 UX:
+	//   - handler.StartTrial 已 HTTP 200 返回 ("trial 已开始")
+	//   - 后台 goroutine 内 RunOpeningSpeeches → service.withCancel 失败
+	//   - service.BroadcastUserFacingError 把错误推到 WS
+	//   - 前端通过 WS 收到 UserFacingError → 显示 "系统繁忙" Toast
+	//
+	// 这是"业务级限流走业务级错误通道"的正确设计 (与 TrialRateLimiter 不同:
+	// Per-User 配额是 HTTP 级的, 必须立即返 429; 而 L0 全局并发是 trial 真正
+	// 启动后才发现, 自然走 WS 通道)。
 
 	if _, ok := h.checkSessionAccess(c, sessionUUID); !ok {
 		h.writeAudit(c, "session.start", sessionUUID, "denied", "owner check failed")

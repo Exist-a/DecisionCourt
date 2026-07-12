@@ -119,6 +119,10 @@ func main() {
 	// v0.8 白盒化：注入 metrics + event recorder，让 RunCrossExamRound / StateTransition 等
 	// 业务级 span 自动归集指标 + 落库到 decision_events。
 	courtroomSvc.WithObservability(metrics, eventRecorder)
+	// v0.10.20 (ADR 0027 §决策 3) L0 全局并发 trial 信号量。
+	// max=5 是阿里云 ECS 2C2G 实测安全值 (5 trial × ~400MB/trial = 2GB)。
+	// 经用户 2026-07-12 确认。生产环境通过 .env RATE_LIMIT_MAX_CONCURRENT_TRIALS 调。
+	courtroomSvc.WithConcurrencyLimiter(courtroom.NewConcurrencyLimiter(5))
 
 	handler := api.NewHandler(courtroomSvc, courtroomSvc.InvestigationService())
 	// v0.8 白盒化：Handler 暴露 metrics 实例，让 /metrics 端点能查询 snapshot。
@@ -190,6 +194,16 @@ func main() {
 	// 按 user 限流 5 req/s(防"一秒 1000 次 dispatch_investigator"烧配额)。
 	authedGroup.Use(middleware.RateLimit(middleware.DefaultConfig))
 	handler.LLMRateLimit = middleware.RateLimit(middleware.LLMConfig)
+	// v0.10.20 (ADR 0027 §决策 3) L1 Per-Session action 限流: 按 session 维度细粒度限流。
+	// RPS=2 / Burst=5 (经用户 2026-07-12 确认) — 防 F5 狂点把正常用户拖慢。
+	// OnReject 回调: 拒绝时记录 session_rate_limit_rejected_total metric, 给 Grafana dashboard。
+	handler.SessionRateLimit = middleware.SessionRateLimit(middleware.SessionConfig{
+		RPS:   middleware.DefaultSessionConfig.RPS,
+		Burst: middleware.DefaultSessionConfig.Burst,
+		OnReject: func() {
+			metrics.IncCounter(observability.MetricSessionRateLimitRejectedTotal, nil)
+		},
+	})
 	authedGroup.Use(auth.Middleware(config.AppConfig.JWTSecret))
 	handler.RegisterAPIRoutes(authedGroup)
 

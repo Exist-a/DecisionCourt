@@ -66,6 +66,16 @@ const (
 	MetricSpanTotal              = "span_total"
 	MetricSpanErrorTotal         = "span_error_total"
 	MetricSpanDuration           = "span_duration_seconds"
+
+	// v0.10.20 (ADR 0027 §决策 3) 限流防御 metric 名。
+	//   - SessionRateLimitRejectedTotal: L1 Per-Session action 限流拒绝数
+	//   - GlobalConcurrencyRejectedTotal: L0 全局并发 trial 限流拒绝数
+	//   - GlobalConcurrencyCurrent: 当前活跃 trial 数 (gauge)
+	//   - GlobalConcurrencyMax: 配置的 max concurrent trials (gauge)
+	MetricSessionRateLimitRejectedTotal = "session_rate_limit_rejected_total"
+	MetricGlobalConcurrencyRejectedTotal = "global_concurrency_rejected_total"
+	MetricGlobalConcurrencyCurrent       = "global_concurrency_current"
+	MetricGlobalConcurrencyMax           = "global_concurrency_max"
 )
 
 // memMetrics 是线程安全的内存实现。

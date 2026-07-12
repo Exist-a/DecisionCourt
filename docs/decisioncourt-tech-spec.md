@@ -1048,14 +1048,18 @@ go test -short ./...
 | **v0.5+ MemoryEntry 结构化字段** | ✅ 已实装 | 后端 `recordSideEffects` payload 拆 `stance` / `confidence` / `reasoning`；前端 `MemoryEntry` type 加 3 个可选字段 + `MemoryTimeline` 渲染结构化卡片 |
 | **v0.5+ AgentAvatar 思考脉冲动画** | ✅ 已实装 | `globals.css` `@keyframes ring-think-pulse` 1.6s 呼吸；`.thinking-prosecutor` 绛红 / `.thinking-defender` 深青 |
 | **v0.5+ 前端 envelope 字段名修正** | ✅ 已实装 | `courtroomStore.ts` 读 `p.from`（后端字段名），加 `mapFromToAgentType()` 归一化函数处理 agent UUID 残留 |
+| **v0.10.20 4 层限流防御深度**（ADR 0027）| ✅ 已实装 | L3 Per-IP（已有 v0.8.3） + L2 Per-User Trial（已有 ADR 0014） + **L1 Per-Session（新增 `middleware/session_ratelimit.go`，令牌桶 RPS=2/Burst=5）** + **L0 全局并发 trial（新增 `courtroom/concurrency.go`，buffered channel 信号量 max=5）**；19 个测试（6 L1 + 6 L0 + 4 集成 + 3 metric）；4 个 metric 名常量（global_concurrency_* / session_rate_limit_rejected_total） |
 
 ### 14.3 后续可改进（不在 MVP 范围）
 
 1. **Agent Gateway 第二阶段**：模型路由、响应缓存（v0.5+ 已实装统一接入 / 审计 / Prompt 压缩 / Token 预算 / 限流 / Fallback / 文件日志）
-2. **智能收敛**：连续两轮信念度变化 < 5% 提前进入 closing
-3. **信念引擎动态更新**：当前初始化 + snapshot 已做，未基于证据实时更新
-4. **Bocha 结果引用图谱**：在 InvestigatorPanel 里把搜索结果按相关性排序
-5. **ReAct 多轮反思**：当前 LLM 自带反思，MaxReflects=3 已预留 hook 可继续调优
+2. **限流 Config 化 + Redis backend**：当前 L0 max=5 / L1 RPS=2 硬编码在 main.go。DAU > 5000 时切 Redis + 改 env 配置（ADR 0027 §7A.3 已留扩展路径）
+3. **限流 Grafana dashboard**：4 个限流 metric 已采集（observability/metrics.go），Phase C Prometheus 接入后做可视化
+4. **Per-Agent breaker**：prosecutor breaker 打开时 defender 仍能工作（v0.11+）
+5. **智能收敛**：连续两轮信念度变化 < 5% 提前进入 closing
+6. **信念引擎动态更新**：当前初始化 + snapshot 已做，未基于证据实时更新
+7. **Bocha 结果引用图谱**：在 InvestigatorPanel 里把搜索结果按相关性排序
+8. **ReAct 多轮反思**：当前 LLM 自带反思，MaxReflects=3 已预留 hook 可继续调优
 
 详细 UX 与数据模型细化：[decisioncourt-ux-refinement.md](./decisioncourt-ux-refinement.md)
 

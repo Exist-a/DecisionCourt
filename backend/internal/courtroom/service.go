@@ -76,6 +76,10 @@ type Service struct {
 	recoveryAttemptedTotal atomic.Uint64
 	recoverySucceededTotal atomic.Uint64
 	recoveryFailedTotal    atomic.Uint64
+
+	// v0.10.20 (ADR 0027 §决策 3) L0 全局并发 trial 信号量。
+	// nil 表示不限流 (向后兼容)。生产通过 WithConcurrencyLimiter 注入。
+	concurrencyLimiter *ConcurrencyLimiter
 }
 
 // WithObservability 注入 metrics + event recorder。装配阶段（main.go）调用一次。
@@ -122,6 +126,62 @@ func (s *Service) getSessionLock(sessionUUID string) *sync.Mutex {
 	return s.sessionLocks[sessionUUID]
 }
 
+// WithConcurrencyLimiter 注入 L0 全局并发 trial 信号量 (ADR 0027)。
+// 调用方式: NewService(...).WithConcurrencyLimiter(courtroom.NewConcurrencyLimiter(max))
+// nil 表示不限流 (向后兼容, 单测场景)。
+func (s *Service) WithConcurrencyLimiter(lim *ConcurrencyLimiter) *Service {
+	s.concurrencyLimiter = lim
+	return s
+}
+
+// ConcurrencyStats 返回当前 L0 状态 (供 observability / debug 用)。
+// 返回: current (已占 slot), max (上限), available (剩余)。
+func (s *Service) ConcurrencyStats() (current, max, available int) {
+	if s.concurrencyLimiter == nil {
+		return 0, 0, 0
+	}
+	return s.concurrencyLimiter.Stats()
+}
+
+// TryAcquireConcurrencySlot 尝试拿 L0 slot。
+// 返回 true → 拿到 slot (后续 Release 由 service.withCancel.wrappedCancel 在 trial
+//              真正结束时自动触发)
+// 返回 false → 系统满载,handler 应返回 429 + CodeConcurrentTrialLimit
+//
+// 与 service.withCancel 内的 TryAcquire 关系:
+//   - handler 层调这个 → 在 HTTP 200 返回前拦截,用户 UI 立即看到错误
+//   - service.withCancel 内的 TryAcquire → 兜底,防止"绕过 handler"的内部调用
+//   - 两次 TryAcquire 操作同一个 slot,任何一个成功即可继续
+//
+// ⚠️ 这个方法只在 handler.StartTrial 入口调一次,且必须成功 → 否则整个 trial
+// 流程不应继续。service.withCancel 内的 TryAcquire 是兜底,不期望触发。
+func (s *Service) TryAcquireConcurrencySlot() bool {
+	if s.concurrencyLimiter == nil {
+		return true // nil limiter = 不限流
+	}
+	return s.concurrencyLimiter.TryAcquire()
+}
+
+// recordConcurrencyMetric v0.10.20 (PR 3) 写 L0 metric 的辅助方法。
+// 调用时机: withCancel 入口 (成功或失败时各调一次)。
+// 写 3 个 metric:
+//   - MetricGlobalConcurrencyRejectedTotal: counter (成功时不变, 失败时 +1)
+//   - MetricGlobalConcurrencyCurrent: gauge (成功时 +1, 失败时不变 — 因为失败 = 没 acquire)
+//   - MetricGlobalConcurrencyMax: gauge (配置值)
+// nil-safe: s.metrics 为 nil 时静默跳过 (向后兼容, 测试场景)。
+func (s *Service) recordConcurrencyMetric(acquired bool) {
+	if s.metrics == nil || s.concurrencyLimiter == nil {
+		return
+	}
+	if !acquired {
+		s.metrics.IncCounter(observability.MetricGlobalConcurrencyRejectedTotal, nil)
+		return
+	}
+	cur, max, _ := s.concurrencyLimiter.Stats()
+	s.metrics.SetGauge(observability.MetricGlobalConcurrencyCurrent, nil, float64(cur))
+	s.metrics.SetGauge(observability.MetricGlobalConcurrencyMax, nil, float64(max))
+}
+
 // InvestigationService exposes the investigation.Service the courtroom
 // wired up at construction time. The api.Handler reads it to expose the
 // /investigations REST endpoint. Returns nil if not configured.
@@ -150,12 +210,38 @@ func (s *Service) GetDiffRepository() belief.DiffRepository {
 	return s.diffRepo
 }
 
-func (s *Service) withCancel(ctx context.Context, sessionUUID string) (context.Context, context.CancelFunc) {
+func (s *Service) withCancel(ctx context.Context, sessionUUID string) (context.Context, context.CancelFunc, error) {
+	// v0.10.20 (ADR 0027 §决策 3) L0 全局并发 trial 信号量检查。
+	// 在 withCancel 入口检查,语义 = "当前活跃 trial 数 < max"。
+	// 超限 → 返回 ErrConcurrencyLimitExceeded,调用方应停止启动 trial。
+	//
+	// 与 session_lock 的关系:
+	//   - session_lock 是"同 session 内串行化" (锁粒度细)
+	//   - concurrencyLimiter 是"全局 trial 并发上限" (锁粒度粗)
+	//   - 两者正交, 同时工作
+	if s.concurrencyLimiter != nil && !s.concurrencyLimiter.TryAcquire() {
+		// v0.10.20 (PR 3) metric: L0 拒绝时计数 +1
+		s.recordConcurrencyMetric(false)
+		return nil, nil, ErrConcurrencyLimitExceeded
+	}
+	// v0.10.20 (PR 3) metric: L0 成功后更新 gauge (current / max)
+	s.recordConcurrencyMetric(true)
+
 	ctx, cancel := context.WithCancel(ctx)
 	s.callsMu.Lock()
 	s.activeCalls[sessionUUID] = cancel
 	s.callsMu.Unlock()
-	return ctx, cancel
+
+	// wrappedCancel: 原 cancel + 自动 Release L0 slot。
+	// 调用方 defer cancel() 会触发 wrappedCancel,自动释放 slot。
+	originalCancel := cancel
+	wrappedCancel := func() {
+		originalCancel()
+		if s.concurrencyLimiter != nil {
+			s.concurrencyLimiter.Release()
+		}
+	}
+	return ctx, wrappedCancel, nil
 }
 
 func (s *Service) clearCancel(sessionUUID string) {
@@ -315,7 +401,10 @@ func (s *Service) RunOpeningSpeeches(ctx context.Context, sessionUUID string) er
 		return err
 	}
 
-	ctx, cancel := s.withCancel(ctx, sessionUUID)
+	ctx, cancel, err := s.withCancel(ctx, sessionUUID)
+	if err != nil {
+		return err
+	}
 	defer cancel()
 	defer s.clearCancel(sessionUUID)
 
@@ -1008,7 +1097,10 @@ func (s *Service) runCrossExamRound(ctx context.Context, session model.CourtSess
 	}()
 
 	// Run one round of cross-exam (prosecutor + defender speak)
-	roundCtx, cancel := s.withCancel(ctx, session.SessionUUID)
+	roundCtx, cancel, err := s.withCancel(ctx, session.SessionUUID)
+	if err != nil {
+		return err
+	}
 	defer cancel()
 
 	agents, evidences, messages, err := s.loadSessionData(session.ID)
@@ -1302,7 +1394,10 @@ func (s *Service) lookupSession(sessionUUID string) (model.CourtSession, error) 
 }
 
 func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) error {
-	ctx, cancel := s.withCancel(ctx, session.SessionUUID)
+	ctx, cancel, err := s.withCancel(ctx, session.SessionUUID)
+	if err != nil {
+		return err
+	}
 	defer cancel()
 	defer s.clearCancel(session.SessionUUID)
 

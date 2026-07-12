@@ -48,9 +48,14 @@ const (
 	CodeActionThrottled     ErrorCode = "WS_THROTTLED"
 	CodeActionFailed        ErrorCode = "ACTION_FAILED"
 
-	CodeTrialRateLimited ErrorCode = "TRIAL_RATE_LIMITED"
-	CodeBudgetExhausted  ErrorCode = "BUDGET_EXHAUSTED"
-	CodeBreakerDegraded  ErrorCode = "BREAKER_DEGRADED"
+	CodeTrialRateLimited       ErrorCode = "TRIAL_RATE_LIMITED"
+	CodeBudgetExhausted        ErrorCode = "BUDGET_EXHAUSTED"
+	CodeBreakerDegraded        ErrorCode = "BREAKER_DEGRADED"
+	// v0.10.20 (ADR 0027) L0 全局并发 trial 信号量拒绝。
+	// 与 CodeTrialRateLimited (L2) 区别:
+	//   - TRIAL_RATE_LIMITED → 同一 user 当天 trial 配额用完 (可明天再来)
+	//   - CONCURRENT_TRIAL_LIMIT → 系统全局 trial slot 已满 (建议 30s 后重试)
+	CodeConcurrentTrialLimit ErrorCode = "CONCURRENT_TRIAL_LIMIT"
 
 	CodeRecoveryFailed ErrorCode = "RECOVERY_FAILED"
 )
@@ -119,16 +124,30 @@ func NewUserFacingError(class ErrorClass, code ErrorCode, message string) UserFa
 //
 // 分类规则 (按 errors.Is 顺序匹配):
 //
-//   - agent.ErrReactMaxIterations  → ClassFatal + CodeOpeningSpeachesFailed + 3 recovery
+//   - ErrConcurrencyLimitExceeded   → ClassTransient + CodeConcurrentTrialLimit (建议稍后重试)
+//   - agent.ErrReactMaxIterations   → ClassFatal + CodeOpeningSpeachesFailed + 3 recovery
 //   - agent_gateway.ErrBudgetExhausted → ClassFatal + CodeBudgetExhausted
-//   - StateMachineError            → ClassUserInput + CodeActionStateRejected
-//   - 其他                          → ClassTransient + CodeActionFailed + retry
+//   - StateMachineError             → ClassUserInput + CodeActionStateRejected
+//   - 其他                           → ClassTransient + CodeActionFailed + retry
 func ClassifyError(err error) UserFacingError {
 	if err == nil {
 		return UserFacingError{}
 	}
 
-	// 1. ReAct max iterations - 通常是 LLM 反复调整失败,Fatal 但可恢复
+	// 1. v0.10.20 (ADR 0027) L0 全局并发 trial 信号量拒绝。
+	// Transient 类 — 用户稍后重试可能成功 (其他用户 trial 结束 slot 释放)。
+	if errors.Is(err, ErrConcurrencyLimitExceeded) {
+		return NewUserFacingError(
+			ClassTransient, CodeConcurrentTrialLimit,
+			"系统当前庭审数已达上限,请稍后再试",
+		).WithDetail(err.Error()).
+			WithRecovery(
+				RecoveryAction{Type: "retry", Label: "重试"},
+				RecoveryAction{Type: "navigate", Label: "查看历史庭审", NavigateTo: "/dashboard"},
+			)
+	}
+
+	// 2. ReAct max iterations - 通常是 LLM 反复调整失败,Fatal 但可恢复
 	if errors.Is(err, agent.ErrReactMaxIterations) {
 		return NewUserFacingError(
 			ClassFatal, CodeOpeningSpeechesFailed,
@@ -141,7 +160,7 @@ func ClassifyError(err error) UserFacingError {
 			)
 	}
 
-	// 2. Token budget 耗尽 - 用户无法继续,可跳到判决
+	// 3. Token budget 耗尽 - 用户无法继续,可跳到判决
 	if errors.Is(err, agent_gateway.ErrBudgetExhausted) {
 		return NewUserFacingError(
 			ClassFatal, CodeBudgetExhausted,
@@ -152,7 +171,7 @@ func ClassifyError(err error) UserFacingError {
 			)
 	}
 
-	// 3. 状态机拒绝 - 用户操作错,不可恢复(让他换个阶段再试)
+	// 4. 状态机拒绝 - 用户操作错,不可恢复(让他换个阶段再试)
 	var stateErr *StateMachineError
 	if errors.As(err, &stateErr) {
 		return NewUserFacingError(
@@ -161,7 +180,7 @@ func ClassifyError(err error) UserFacingError {
 		).WithDetail(err.Error())
 	}
 
-	// 4. 兜底:通用操作失败 - 默认可重试
+	// 5. 兜底:通用操作失败 - 默认可重试
 	return NewUserFacingError(
 		ClassTransient, CodeActionFailed,
 		"操作未能完成",
