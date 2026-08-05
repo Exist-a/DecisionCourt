@@ -170,7 +170,7 @@
 | Agent Gateway 多实例 Token Budget 持久化 | ⏳ | 现仅内存 |
 | 强制立场一致性检查（LLM-as-judge 打回重生成） | ⏳ | 现靠 Prompt 自约束 |
 | 新意度检查（Jaccard 相似度 > 60% 强制换角度） | ⏳ | 现靠 Prompt 自约束 |
-| 发言长度硬截断（300 字 + 重试） | ⏳ | 现靠 Prompt 自约束 |
+| 发言长度硬截断（300 字 + 重试） | ✅ v0.10.21 PR-B | 后端 `react_runner.go` applySpeakerLengthLimit 硬截断 + `truncateRunes` (rune 计, 中文友好) + Speaker.ContentTruncated/OriginalRunes 透传前端 chip；prompt 200 → 300 字同步 |
 | "已反驳证据"集合跟踪 | ⏳ | 未实装状态机 |
 | Redis 分布式 WebSocket 广播 | ⏳ | 现单节点 Hub（v0.9 ADR 0012 已决策不引入） |
 | 后端高可用 + 水平扩展 | ⏳ | ADR 0012 决策**单机部署**，架构层面不引入 Redis Pub/Sub |
@@ -227,7 +227,7 @@ v0.9 全部决策已落地,代码 + 测试 + 文档三向对齐,准备部署到�
 
 - 多实例 backend + Redis Pub/Sub + LLM 异步化 + DB 主从
 - Agent Gateway 模型路由 / 多 provider fail-over
-- 强制立场一致性检查 / 新意度检查 / 300 字硬截断 / "已反驳证据"集合跟踪
+- 强制立场一致性检查 / 新意度检查 / 300 字硬截断 ✅ v0.10.21 / "已反驳证据"集合跟踪
 - LLM Output 正则扫(ADR 0015 暂缓方案)
 - 专家证人 / 陪审团 / 历史庭审 / PDF 导出 / 商业化
 

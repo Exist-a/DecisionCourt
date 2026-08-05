@@ -159,7 +159,7 @@ new_p          = sigmoid(logit(p)_{t+1}), clamp 到 [0.05, 0.95]
 
 #### 4.3.3 防止诡辩与重复
 
-- ⏳ **v0.7+ 计划**：限制每轮发言长度（最多 300 字）—— MVP 阶段靠 Prompt 自约束，未做后端硬截断 + 重试。
+- ✅ **v0.10.21 PR-B**：限制每轮发言长度（最多 300 字）—— 后端 `react_runner.go` applySpeakerLengthLimit 硬截断 + Speaker 结构体 + `truncateRunes` 工具函数 (中文友好按 rune 计)；返回字段 `ContentTruncated` + `OriginalRunes` 透传前端做 chip 提示。`prompts.go` baseRules 同步 200 → 300 字。
 - ⏳ **v0.7+ 计划**：禁止引用已经被反驳且未翻盘的证据 —— MVP 阶段 LLM 自由引用，未做"已反驳证据"集合跟踪。
 - ⏳ **v0.7+ 计划**：引入"新意度"检查：如果 Agent 本轮发言与之前轮次重复度超过 60%，要求其更换角度 —— MVP 阶段未实装 Jaccard 相似度计算，重复发言靠 Prompt 自约束。
 
@@ -1033,7 +1033,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 **v0.7+ 计划（不在 MVP）：**
 - [ ] ⏳ **强制立场一致性检查**：LLM-as-judge 打回重生成（详见 §4.3.2）
 - [ ] ⏳ **新意度检查**：Jaccard 相似度 > 60% 强制换角度（详见 §4.3.3）
-- [ ] ⏳ **300 字发言长度硬截断**：后端 `speakers[i].Content` 长度校验 + 重试（详见 §4.3.3）
+- [ ] ✅ **300 字发言长度硬截断**：v0.10.21 PR-B 落地，后端 `react_runner.go` applySpeakerLengthLimit + `truncateRunes` (按 rune 计, 中文友好) + Speaker 返回字段 `ContentTruncated` / `OriginalRunes` 透传前端 chip 提示（详见 §4.3.3）
 - [ ] ⏳ **"已反驳证据"集合跟踪**：禁止引用被反驳且未翻盘的证据（详见 §4.3.3）
 
 ### 10.2 第二阶段（2-3 个月后）
@@ -1162,7 +1162,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | **质证阶段轮次控制** | ✅ | `round.waiting_for_user` 事件 + `continue_cross_exam` action + 前端"开始第 N+1 轮"按钮（详见 `.trae/documents/质证阶段轮次控制修改计划.md`） |
 | **强制立场一致性检查** | ⏳ v0.7+ 计划 | LLM-as-judge 打回重生成未实装；当前 LLM 直接生成，立场漂移靠 Prompt 自约束（详见 §4.3.2 / §4.3.3）|
 | **新意度检查** | ⏳ v0.7+ 计划 | Jaccard 相似度计算未实装；重复发言靠 Prompt 自约束（详见 §4.3.3）|
-| **300 字发言长度硬截断** | ⏳ v0.7+ 计划 | 后端未做长度校验 + 重试；Prompt 自约束（详见 §4.3.3）|
+| **300 字发言长度硬截断** | ✅ v0.10.21 PR-B | 后端 `react_runner.go` applySpeakerLengthLimit 硬截断 + `truncateRunes` (rune 计) + Speaker.ContentTruncated/OriginalRunes 透传前端；prompt 200 → 300 字同步（详见 §4.3.3）|
 | **"已反驳证据"集合跟踪** | ⏳ v0.7+ 计划 | 未实装证据反驳状态机（详见 §4.3.3）|
 
 ### 15.3 明确不做（MVP 范围 / 决策日期 2026-07-01）

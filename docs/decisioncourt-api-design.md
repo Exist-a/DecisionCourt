@@ -899,6 +899,12 @@ Agent 发言事件。
 }
 ```
 
+> **v0.10.21 PR-B 新增字段**（可选，向后兼容）：
+> - `content_truncated` (bool): `true` 表示 `content` 已被后端 `react_runner.applySpeakerLengthLimit` 硬截断到 300 字以内（旧前端忽略此字段不影响渲染）。
+> - `original_runes` (int): 截断前的原始字符数（按 rune 计, 中文友好）。如果 `content_truncated=false`, 此字段省略。
+>
+> 触发场景：LLM 实际输出超过 300 字。后端先截断再 broadcast, 前端在发言气泡末尾 chip 显示 "已截断 (原 XXX 字)"。
+
 ---
 
 #### 4.3.2 evidence.added
