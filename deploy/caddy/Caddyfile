@@ -15,6 +15,17 @@
 {$DOMAIN} {
     encode zstd gzip
 
+    # v0.10.21 PR-E (P2-C2): access_log 落地（按 100MB 滚动保留 5 份）
+    # 触发: production-retrospective-2026-08-05.md §4 P2-1
+    # 当前完全看不到真实 HTTP 流量（只有 frontend 后端反代，没法审计外部 IP / 4xx / 慢请求）
+    # 卷挂载见 docker-compose.yml caddy 段：./logs/caddy:/data/caddy
+    access_log {
+        output file /data/caddy/access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+    }
+
     # WebSocket 端点 → backend (gin)
     @websocket {
         path /ws/*

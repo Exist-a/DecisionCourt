@@ -183,6 +183,10 @@ services:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      # v0.10.21 PR-E (P2-C2): access_log 落地（卷挂载 ./logs/caddy:/data/caddy）
+      # Caddyfile 配置 output file /data/caddy/access.log { roll_size 100mb roll_keep 5 }
+      # 触发: production-retrospective-2026-08-05.md §4 P2-1
+      - ./logs/caddy:/data/caddy
     depends_on:
       - backend
       - frontend
