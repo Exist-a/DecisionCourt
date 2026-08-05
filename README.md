@@ -307,7 +307,7 @@ v0.6 升级为**贝叶斯 log-odds + 锚定**，抗单条证据翻转；详见 [
 DecisionCourt/
 ├── docs/                          # 完整设计文档
 │   ├── README.md                  # 文档索引 + 实装状态矩阵
-│   ├── adr/                       # 9 份架构决策记录
+│   ├── adr/                       # 27 份架构决策记录（0001-0027）
 │   ├── archive/                   # 已完成的详细设计文档
 │   └── decisioncourt-*.md         # 8 份主项目文档
 │
@@ -483,8 +483,8 @@ POST /api/v1/courtrooms/{id}/start        → 200 phase=opening (同步)
 
 - **索引**：[`docs/README.md`](./docs/README.md) — 文档结构 + 实装状态矩阵
 - **8 份主文档**：[`docs/decisioncourt-prd.md`](./docs/decisioncourt-prd.md) · [`decisioncourt-tech-spec.md`](./docs/decisioncourt-tech-spec.md) · [`decisioncourt-agent-design.md`](./docs/decisioncourt-agent-design.md) · [`decisioncourt-api-design.md`](./docs/decisioncourt-api-design.md) · [`decisioncourt-db-design.md`](./docs/decisioncourt-db-design.md) · [`decisioncourt-roadmap.md`](./docs/decisioncourt-roadmap.md) · [`decisioncourt-ux-refinement.md`](./docs/decisioncourt-ux-refinement.md) · [`project-ideas.md`](./docs/project-ideas.md)
-- **9 份 ADR**：[`docs/adr/`](./docs/adr/) — 每个关键决策的"为什么"
-- **6 份归档**：[`docs/archive/`](./docs/archive/) — 已完成的详细设计文档
+- **27 份 ADR**（编号 0001-0027）：[`docs/adr/`](./docs/adr/) — 每个关键决策的"为什么"
+- **已完成的进行中设计文档**（含 ECS 终止记录 + 安全审计归档）：[`docs/archive/`](./docs/archive/) — 已完成的详细设计文档
 - **部署清单（含阿里云 Container Registry 操作手册）**：[`docs/deployment/CHECKLIST.md`](./docs/deployment/CHECKLIST.md)
 - **日常操作手册（dev + deploy + troubleshoot）**：[`docs/dev-deploy-workflow.md`](./docs/dev-deploy-workflow.md)
 
@@ -503,7 +503,9 @@ POST /api/v1/courtrooms/{id}/start        → 200 phase=opening (同步)
 - 极简白底法庭风格 UI + 凹陷输入框
 - MemoryAuditPanel（前端可审计）+ 幕后视角页
 - Agent Gateway v0.5+（白盒子集）+ v0.6（高级能力）+ v2（Smart + Reject）
-- 文档整合（8 份主文档 + 9 份 ADR + 6 份归档）
+- 文档整合（8 份主文档 + 27 份 ADR + 8 份归档）
+
+> **项目维护状态（2026-08-05 更新）**：v0.10.20（2026-07-12）为最后生产部署版本。2026-08-05 用户决策不续购 ECS `47.239.152.177`（基础设施终止），项目转为**个人长期本地开发模式**：代码 + 文档继续维护，欢迎后来者 fork / 部署到自有环境。详见 [`docs/archive/ecs-end-of-life-2026-08-05.md`](./docs/archive/ecs-end-of-life-2026-08-05.md)。
 
 ### 🚧 第二阶段（不在 MVP）
 
