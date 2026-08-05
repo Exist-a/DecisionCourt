@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/stretchr/testify/require"
@@ -124,4 +125,47 @@ func TestLawyerPrompt_InjectToolsBlock(t *testing.T) {
 		require.Contains(t, p, "investigator_search")
 		require.Contains(t, p, "reflect")
 	})
+}
+
+// v0.10.21 PR-B: truncateRunes 4 个单测
+// 覆盖字符数边界 (≤max / >max 边界) + 中英文混排 + 空字符串
+
+// 用 300 次"中"字构造 300 rune, 验证 ≤maxRunes 不截
+func TestTruncateRunes_ShortString(t *testing.T) {
+	s := strings.Repeat("中", 100)
+	require.Equal(t, s, truncateRunes(s, 300))
+}
+
+// 300 rune 边界 - 1: 不截
+func TestTruncateRunes_At300RunesBoundary(t *testing.T) {
+	s := strings.Repeat("中", 300)
+	require.Equal(t, s, truncateRunes(s, 300))
+}
+
+// 300 rune 边界 + 1: 截到 300 + "..." (实际字符串 301 字)
+func TestTruncateRunes_Above300RunesBoundary(t *testing.T) {
+	s := strings.Repeat("中", 301)
+	got := truncateRunes(s, 300)
+	require.Equal(t, 300+3, utf8.RuneCountInString(got)) // 300 chars + "..."
+	require.True(t, strings.HasSuffix(got, "..."))
+	require.Equal(t, strings.Repeat("中", 300), strings.TrimSuffix(got, "..."))
+}
+
+// 混合中英文: "Hello 你好世界" 共 10 rune (5 Latin + 1 空格 + 4 CJK), 不截
+func TestTruncateRunes_MixedCJK(t *testing.T) {
+	s := "Hello 你好世界"
+	require.Equal(t, 10, utf8.RuneCountInString(s))
+	require.Equal(t, s, truncateRunes(s, 10))
+	require.Equal(t, "Hello 你好世...", truncateRunes(s, 9))
+}
+
+// 空字符串: 直接返回
+func TestTruncateRunes_EmptyString(t *testing.T) {
+	require.Equal(t, "", truncateRunes("", 300))
+}
+
+// maxRunes 负数: 防御性, 返回原字符串
+func TestTruncateRunes_NegativeMaxReturnsOriginal(t *testing.T) {
+	s := "test"
+	require.Equal(t, s, truncateRunes(s, -1))
 }

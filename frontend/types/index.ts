@@ -107,6 +107,12 @@ export interface Message {
   cot_steps?: CotStep[];
   metadata?: Record<string, unknown>;
   created_at: string;
+  // v0.10.21 PR-B: 后端硬截断 300 字标记 + 原始字符数 (rune 计, 中文友好)
+  // 后端 react_runner.applySpeakerLengthLimit 截断时填这两个字段。
+  // 前端 MessageHistory 在气泡末尾 chip 显示 "已截断 (原 XXX 字)"。
+  // 向后兼容: 旧后端不传, 字段为 undefined, 不显示。
+  was_truncated?: boolean;
+  original_runes?: number;
 }
 
 export interface BeliefSnapshot {
@@ -208,6 +214,10 @@ export interface AgentSpeakEvent extends CourtEvent {
     evidence_refs?: string[];
     belief_a?: number;
     belief_b?: number;
+    // v0.10.21 PR-B: 后端硬截断 300 字标记 + 原始字符数 (rune 计, 中文友好)
+    // 旧后端不传, 字段为 undefined, 不影响渲染。
+    was_truncated?: boolean;
+    original_runes?: number;
   };
 }
 

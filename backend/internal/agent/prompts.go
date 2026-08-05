@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/model"
 )
@@ -16,7 +17,7 @@ func baseRules(toolsBlock string) string {
 	rules := `你是一名专业的决策顾问，正在参与一场结构化庭审辩论。
 
 ## 基本规则
-1. 每次发言最多 200 字。
+1. 每次发言最多 300 字。v0.10.21 PR-B 增加硬截断 (react_runner.applySpeakerLengthLimit) 兜底, Prompt 里实际软约束 + 后端硬截断双层防护。
 2. 如果当前有证据，你必须基于证据发言；如果没有证据，应基于背景信息、对方已表达的观点以及自身立场进行客观分析。
 3. 严禁每次只说"需要补充证据"——即使没有证据，你也要提出新的、实质性的论点或反驳。
 4. 如果你引用证据，必须明确说明证据 ID，且只能引用【当前证据】列表中出现的 ID。
@@ -44,7 +45,7 @@ func baseRules(toolsBlock string) string {
 {
   "action": "speak" 或 "tool_call" 或 "reflect",
   "reasoning": "你这一步的推理过程（50字以内），说明你为什么选择这个 action",
-  "content": "仅当 action=speak 时填，你的正式发言（最多200字）；其它 action 时填空串",
+  "content": "仅当 action=speak 时填，你的正式发言（最多300字）；其它 action 时填空串",
   "tool": "仅当 action=tool_call 时填，要调用的工具名（必须出现在上方工具清单）",
   "tool_input": {"query": "自然语言查询字符串"} ,
   "evidence_refs": ["E001"],
@@ -355,4 +356,19 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+// truncateRunes 按 rune (字符) 截断字符串, 末尾追加 "..."。
+// 与 truncate 的区别: truncate 用 len() 截字节, 中文 UTF-8 会被切半变成乱码;
+// truncateRunes 用 utf8.RuneCountInString + []rune 转换, 严格按字符数截断, 中英文混排均安全。
+// v0.10.21 PR-B: 用于 react_runner 300 字硬截断 (PRD §5.3 一致口径)。
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes < 0 {
+		return s
+	}
+	if utf8.RuneCountInString(s) <= maxRunes {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:maxRunes]) + "..."
 }

@@ -535,6 +535,9 @@ export function applyCourtEvent(event: CourtEvent) {
         round: number;
         content: string;
         evidence_refs?: string[];
+        // v0.10.21 PR-B: 透传后端硬截断标记 (was_truncated / original_runes)
+        was_truncated?: boolean;
+        original_runes?: number;
       };
       // 流式到 speak 结束：清掉 streamingContent，让 Avatar bubble 切到
       // 完整内容（来自 addMessage）。如果流式失败，这里也起到 fallback
@@ -552,6 +555,9 @@ export function applyCourtEvent(event: CourtEvent) {
         content: p.content,
         evidence_refs: p.evidence_refs ?? [],
         cot_steps: cotSteps.length > 0 ? cotSteps : undefined,
+        // v0.10.21 PR-B: 透传截断标记 (undefined 时不显示 chip)
+        was_truncated: p.was_truncated,
+        original_runes: p.original_runes,
         created_at: event.timestamp,
       });
       break;

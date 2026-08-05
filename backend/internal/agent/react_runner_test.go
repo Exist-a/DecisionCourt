@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
@@ -410,4 +411,61 @@ func TestReActRunner_ReflectDoesNotInvokeTools(t *testing.T) {
 	_, _, err := r.Run(context.Background(), nil)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(stub.Calls()), "reflect 不应触发 tool 调用")
+}
+
+// v0.10.21 PR-B: applySpeakerLengthLimit 单元测试
+// 覆盖: ≤300 / 边界 300 / >300 截断 / 中英文混排 / 已有标志的幂等性
+
+// 空字符串: 不截, 标志保持
+func TestApplySpeakerLengthLimit_Empty(t *testing.T) {
+	s := Speaker{Content: ""}
+	got := applySpeakerLengthLimit(s)
+	require.False(t, got.ContentTruncated)
+	require.Equal(t, 0, got.OriginalRunes)
+	require.Equal(t, "", got.Content)
+}
+
+// 100 字: 不截
+func TestApplySpeakerLengthLimit_ShortString(t *testing.T) {
+	s := Speaker{Content: strings.Repeat("中", 100)}
+	got := applySpeakerLengthLimit(s)
+	require.Equal(t, s.Content, got.Content)
+	require.False(t, got.ContentTruncated)
+	require.Equal(t, 0, got.OriginalRunes)
+}
+
+// 边界 300 字: 不截
+func TestApplySpeakerLengthLimit_At300RunesBoundary(t *testing.T) {
+	s := Speaker{Content: strings.Repeat("中", 300)}
+	got := applySpeakerLengthLimit(s)
+	require.Equal(t, 300, utf8.RuneCountInString(got.Content))
+	require.False(t, got.ContentTruncated)
+}
+
+// 边界 301 字: 截断, 标志 + 原始记录
+func TestApplySpeakerLengthLimit_Above300RunesBoundary(t *testing.T) {
+	s := Speaker{Content: strings.Repeat("中", 301)}
+	got := applySpeakerLengthLimit(s)
+	require.Equal(t, 300+3, utf8.RuneCountInString(got.Content)) // 300 + "..."
+	require.True(t, got.ContentTruncated)
+	require.Equal(t, 301, got.OriginalRunes)
+}
+
+// 500 字中英文混排: 截断, rune 数 = 500
+func TestApplySpeakerLengthLimit_MixedCJK500Runes(t *testing.T) {
+	s := Speaker{Content: strings.Repeat("Hello 你好世界", 50)} // 50 * 10 = 500 rune
+	require.Equal(t, 500, utf8.RuneCountInString(s.Content))
+	got := applySpeakerLengthLimit(s)
+	require.True(t, got.ContentTruncated)
+	require.Equal(t, 500, got.OriginalRunes)
+	require.Equal(t, 300+3, utf8.RuneCountInString(got.Content))
+}
+
+// 已有 ContentTruncated=true 的 Speaker: 仍按函数语义处理 (幂等性由 caller 保证, 函数自身不防止重复调用)
+func TestApplySpeakerLengthLimit_IdempotentOnAlreadyTruncated(t *testing.T) {
+	s := Speaker{Content: strings.Repeat("中", 301), ContentTruncated: true, OriginalRunes: 999}
+	got := applySpeakerLengthLimit(s)
+	// 函数不 nested-truncate: 301 > 300 仍会进入分枝, 但 OriginalRunes 会被覆盖成真实计数
+	require.True(t, got.ContentTruncated)
+	require.Equal(t, 301, got.OriginalRunes) // 重新测量, 覆盖旧值
 }

@@ -148,6 +148,19 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
                   </div>
                 )}
 
+                {/* v0.10.21 PR-B: 发言硬截断提示 (后端 react_runner.applySpeakerLengthLimit) */}
+                {msg.was_truncated && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <span
+                      className="text-[10px] font-data px-1.5 py-0.5 bg-amber-50 border border-amber-300 rounded-sm text-amber-800"
+                      title={`后端已硬截断到 300 字。原始 ${msg.original_runes ?? "?"} 字符 (按 rune 计, 中文友好)。`}
+                    >
+                      ✂ 已截断
+                      {msg.original_runes !== undefined && ` (原 ${msg.original_runes} 字)`}
+                    </span>
+                  </div>
+                )}
+
                 {/* ReAct 推理链：仅当本条发言携带 cot_steps 时渲染 */}
                 {msg.cot_steps && msg.cot_steps.length > 0 && (
                   <CotStepsPanel steps={msg.cot_steps} />

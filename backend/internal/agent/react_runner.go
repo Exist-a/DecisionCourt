@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/llm"
@@ -390,18 +391,18 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 					streamSucceeded = false
 					out.Content = "" // 清空,触发 retry 路径
 				} else {
-					step.ElapsedMs = time.Since(stepStart).Milliseconds()
-					steps = append(steps, step)
-					r.emitStep(step)
+				step.ElapsedMs = time.Since(stepStart).Milliseconds()
+				steps = append(steps, step)
+				r.emitStep(step)
 
-					return Speaker{
-						Content:      out.Content,
-						Reasoning:    out.Reasoning,
-						EvidenceRefs: out.EvidenceRefs,
-						Confidence:   out.Confidence,
-						Stance:       out.Stance,
-					}, steps, nil
-				}
+				return applySpeakerLengthLimit(Speaker{
+					Content:      out.Content,
+					Reasoning:    out.Reasoning,
+					EvidenceRefs: out.EvidenceRefs,
+					Confidence:   out.Confidence,
+					Stance:       out.Stance,
+				}), steps, nil
+			}
 			}
 			if err := validateSpeak(&out); err != nil {
 				// One retry with a correction hint, same pattern as parse
@@ -437,13 +438,13 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 			steps = append(steps, step)
 			r.emitStep(step)
 
-			return Speaker{
+			return applySpeakerLengthLimit(Speaker{
 				Content:      out.Content,
 				Reasoning:    out.Reasoning,
 				EvidenceRefs: out.EvidenceRefs,
 				Confidence:   out.Confidence,
 				Stance:       out.Stance,
-			}, steps, nil
+			}), steps, nil
 
 		default:
 			return Speaker{}, steps, fmt.Errorf("react iter %d: unknown action %q", iter, out.Action)
@@ -457,6 +458,29 @@ func (r *ReActRunner) emitStep(step Step) {
 	if r.stepHook != nil {
 		r.stepHook(step)
 	}
+}
+
+// speakerMaxRunes v0.10.21 PR-B: 发言长度硬截断上限 (PRD §5.3 / README §5.3 一致口径)
+// 按 rune (Unicode 字符) 计, 中文友好。300 字 ≈ 10-15 句中等长度发言。
+const speakerMaxRunes = 300
+
+// applySpeakerLengthLimit 对 Speaker.Content 强制应用 300 字硬截断。
+// 若原始字符数 > 300:
+//   - Content 改为 truncateRunes 截断后的字符串 (末尾追加 "...")
+//   - ContentTruncated = true
+//   - OriginalRunes = 原始字符数
+//
+// 调用点: Run() 全部正常 Speaker return 之前 (L397 / L440)。
+// 错误路径 (返回 Speaker{}) 不需要截断, 因为 caller 拿到的是 error 不会渲染。
+//
+// 不触及 §2.1 裁决: 纯字符数限制, 客观规则, 不涉及任何判断。
+func applySpeakerLengthLimit(s Speaker) Speaker {
+	if utf8.RuneCountInString(s.Content) > speakerMaxRunes {
+		s.OriginalRunes = utf8.RuneCountInString(s.Content)
+		s.Content = truncateRunes(s.Content, speakerMaxRunes)
+		s.ContentTruncated = true
+	}
+	return s
 }
 
 // streamSpeakContent 用 LLM 流式生成最终发言 content，返回拼接结果

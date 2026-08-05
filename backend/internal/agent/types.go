@@ -181,4 +181,9 @@ type Speaker struct {
 	EvidenceRefs []string
 	Confidence   float64
 	Stance       string
+	// v0.10.21 PR-B: 发言被硬截断标记 + 原始字符数 (中文友好, 按 rune 计)
+	// ContentTruncated=true 表示 Content 已被 truncateRunes 截到 300 字以内。
+	// OriginalRunes 记录截断前的字符数, 用于审计 / 前端 chip 显示。
+	ContentTruncated bool `json:"content_truncated,omitempty"`
+	OriginalRunes    int  `json:"original_runes,omitempty"`
 }
