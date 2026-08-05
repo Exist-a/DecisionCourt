@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/decisioncourt/backend/internal/llm"
@@ -407,6 +408,8 @@ func (g *Gateway) writeFileLog(ctx context.Context, tr Trace, model string, usag
 	}
 	if err := g.fileLogger.Write(entry); err != nil {
 		// 仅吞掉错误；避免日志失败拖死主流程
+		// v0.10.21 PR-A: 至少 slog.Warn，让 ops 知道 file logger 写失败（之前完全静默 24 天）
+		slog.Warn("agent_gateway: fileLogger.Write failed", "err", err)
 	}
 }
 
