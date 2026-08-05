@@ -4,7 +4,7 @@
 >
 > **外部 GitHub 访客请看仓库根目录的 [`README.md`](../README.md)。**
 >
-> 最后整理：2026-07-05（v0.9.1 部署就绪整合 + ADR 0015 防幻觉文档化）
+> 最后整理：2026-08-05（v0.10.20 最后生产部署 + ECS 基础设施终止 + ADR 编号补齐到 0027）
 
 ---
 
@@ -22,7 +22,7 @@
 进阶阅读：
 
 - [`decisioncourt-ux-refinement.md`](./decisioncourt-ux-refinement.md) — UX 决策与视觉细节
-- [`adr/`](./adr/) — 9 份关键架构决策记录（每个决策背后的"为什么"）
+- [`adr/`](./adr/) — 27 份关键架构决策记录（编号 0001-0027，每个决策背后的"为什么"）
 - [`archive/`](./archive/) — 已完成的详细设计文档（完整原文，不删）
 
 ---
@@ -44,7 +44,7 @@
 
 ## 3. 架构决策记录（ADR）
 
-[`adr/`](./adr/) 收录 9 份关键架构决策，每份 1 个文件。每份 ADR 包含：**背景 / 选项对比 / 决策 / 后果**。
+[`adr/`](./adr/) 收录 27 份关键架构决策（编号 0001-0027），每份 1 个文件。每份 ADR 包含：**背景 / 选项对比 / 决策 / 后果**。
 
 | # | 决策 | 关联代码 |
 |---|---|---|
@@ -59,9 +59,21 @@
 | [0009](./adr/0009-courtroom-vis-simplify.md) | 庭审页面可视化简化 | `frontend/components/courtroom/ArgumentMap.tsx` |
 | [0010](./adr/0010-whitebox-observability.md) | v0.8 后端白盒化（slog + Prometheus + OTel-Span + decision_events） | ✅ | `internal/observability/` |
 | [0011](./adr/0011-llm-probability-hard-clamp.md) | v0.8.4 LLM 输出概率值后端硬编码 Clamp（DeepSeek 抽风修复） | ✅ | `internal/agent/probability.go` |
+| [0012](./adr/0012-ha-and-concurrency.md) | v0.9 单机部署 HA 与并发防护（session 互斥 + Idempotency-Key + panic 兜底 + 启动恢复） | ✅ | `internal/courtroom/session_locks.go` + `internal/idempotency/` + `recovery.go` |
+| [0013](./adr/0013-llm-gateway-engineering.md) | v0.9 LLM Gateway 工程化（per-call Timeout + Response Cache + Circuit Breaker） | ✅ | `internal/agent_gateway/{timeout,cache,breaker}.go` |
+| [0014](./adr/0014-user-rate-limit.md) | v0.9 用户级 Trial 限流（滑动窗口） | ✅ | `internal/ratelimit/` + `handler.TrialRateLimiter` |
+| [0015](./adr/0015-evidence-fidelity-no-hallucination.md) | v0.9.1 证据真实性与 LLM 幻觉防御（无 evidence_id 不引用 + 不编造证据） | ✅ | `internal/agent/prompts.go` + `orchestrator.go` |
+| [0016](./adr/0016-deployment-lessons-learned.md) | v0.9.x ~ v0.10 部署踩坑汇总（健康检查时序 + 镜像 tag 策略 + volume 权限） | ✅ | `.github/workflows/` + `docker-compose.yml` |
+| [0017](./adr/0017-websocket-uuid-credential.md) | v0.9.3 WS session_uuid 房间钥匙 bug 修复（拆分 subprotocol token） | ✅ | `internal/api/websocket.go` |
+| [0018](./adr/0018-websocket-origincheck-init-timing.md) | v0.9.3 WS OriginCheck 初始化时序修复（避免启动失败但端口已开） | ✅ | `internal/api/websocket.go` + `cmd/server/main.go` |
+| [0020](./adr/0020-frontend-analytics-via-decision-events.md) | v0.10 前端埋点用 decision_events 后端审计（避免前端独立分析链路） | ✅ | `internal/observability/decision_events.go` + `frontend/lib/analytics.ts` |
+| [0021](./adr/0021-llm-hallucination-output-validator.md) | v0.10 LLM Output 验证（防幻觉正则扫描 + JSON 提取三层防御 + 64KB cap） | ✅ | `internal/agent_gateway/output_validator.go` + `frontend/lib/errorBus.ts` |
 | [0022](./adr/0022-github-actions-ci-cd.md) | v0.10.2 GitHub Actions CI/CD（test.yml + deploy.yml + tag-based deploy） | ✅ | `.github/workflows/` |
 | [0023](./adr/0023-github-actions-ci-pause.md) | v0.10.7~15 CI 暂停与恢复完整复盘（14 版迭代，✅ v0.10.15 端到端跑通） | ✅ | ADR 0023 §5 当前 dev 工作流 |
 | [0024](./adr/0024-silent-error-fix-pr1.md) | v0.10.17 静默错误全局修复 PR 1（后端 UserFacingError 类型 + 4 个静默错误点改造） | ✅ | `backend/internal/courtroom/errors.go` + `statemachine.go` + `service.go` + `api/handler.go` + `api/websocket.go` + `agent/react_runner.go` |
+| [0025](./adr/0025-security-p0-closeout.md) | v0.10.18 安全审计 P0 阶段收尾（JWT_SECRET fail-fast + UID 10001） | ✅ | `backend/internal/config/config.go` + `backend/Dockerfile` + `frontend/Dockerfile` + `docker-compose.yml` |
+| [0026](./adr/0026-viper-bindenv-fix.md) | v0.10.19 viper 1.21.0 BindEnv 显式绑定（修复 AutomaticEnv 自动小写化导致必须 env 找不到） | ✅ | `backend/internal/config/config.go` |
+| [0027](./adr/0027-rate-limit-defense-in-depth.md) | v0.10.20 4 层限流防御深度（L3 Per-IP + L2 Per-User + L1 Per-Session + L0 全局并发信号量） | ✅ | `internal/middleware/session_ratelimit.go` + `internal/courtroom/concurrency.go` |
 
 ### 5.5 v0.8+ 持续可观测性完善计划
 
@@ -90,10 +102,14 @@
 - `archive/庭审可视化简化计划.md` — 庭审页观点地图 + 立场曲线 简化方案
 - `archive/质证阶段轮次控制修改计划.md` — 质证阶段每轮用户触发的详细修改计划
 - `archive/refresh-and-reopen-fix-v0.8.3.md` — v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭" 5 个根因 + 修复方案 + 测试矩阵
+- `archive/ecs-end-of-life-2026-08-05.md` — ECS `47.239.152.177` 基础设施终止记录（项目继续个人长期维护）
+- `archive/security-audit-2026-07-03.md` — v0.8.3 OWASP Top 10 安全审计报告（所有 20 项 P0/P1/P2/P3 已修复）
 
 ---
 
-## 5. 实装状态矩阵（截至 2026-07-02）
+## 5. 实装状态矩阵（截至 2026-08-05）
+
+> **2026-08-05 更新说明**：v0.10.20（2026-07-12）为最后生产部署版本；用户决策不续购 ECS `47.239.152.177`，转入个人长期本地开发模式（详见 [`archive/ecs-end-of-life-2026-08-05.md`](./archive/ecs-end-of-life-2026-08-05.md)）。后续版本（v0.10.21 / v0.11.x）不再绑定"部署到 ECS"叙事，代码 + 文档继续维护。
 
 > **模块 × 状态 × 代码位置** 速查。**✅ = 已实装**，**⏳ = 计划中**。
 
