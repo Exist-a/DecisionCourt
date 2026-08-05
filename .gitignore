@@ -76,3 +76,6 @@ docs/dev-deploy-workflow.md
 docs/security-audit-v0.8.3.md
 docs/OBSERVABILITY.md
 docs/project-ideas.md
+# docs/archive/ 例外：以下历史决策归档对后来者有参考价值，需入库
+!docs/archive/ecs-end-of-life-2026-08-05.md
+!docs/archive/security-audit-2026-07-03.md
