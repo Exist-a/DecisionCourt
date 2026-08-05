@@ -235,6 +235,7 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 
 ## 10. ECS 连接信息更新记录
 
-| 日期 | ECS_HOST | 备注 |
-|---|---|---|
-| 2026-07-12 | _待 user 提供_ | v0.10.18 Deploy 失败时建立本节 |
+| 日期 | ECS_HOST | ECS_USER | SSH_KEY | 备注 |
+|---|---|---|---|---|
+| 2026-07-12 | _待 user 提供_ | — | — | v0.10.18 Deploy 失败时建立本节 |
+| 2026-08-05 | `47.239.152.177` | `admin` | `~/.ssh/id_rsa` | **本节正式填充**。ECS 过期前的 30 天沉淀 + 备份验证时发现：`id_ed25519` Permission denied，`id_rsa` 可用；同步修正 `secrets/ecs.env` + 加此行记录。配套：`docs/deployment/ACTION-ITEMS-ECS-EXPIRY-2026-08.md` + `production-retrospective-2026-08-05.md` |
