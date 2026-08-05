@@ -178,9 +178,24 @@ if ($NoLogin -or $BuildOnly) {
 Write-Step "构建 backend 镜像"
 # 显式 --builder default:避开 docker buildx 默认 builder 可能是 ECS 的坑
 # (docker context 和 docker buildx 是两套独立系统,context 切回 default 不影响 buildx)
-docker build --builder default -t "${BackendImage}:${Tag}" ./backend
+
+# PR-B: 注入 version ldflags（详见 production-retrospective-2026-08-05.md §4 P1-2）
+#   - 若 Tag 是 semver (vX.Y.Z)，直接用
+#   - 否则回退到 `git describe --tags --always` (例 v0.10.20-3-gcbbaf3d)
+#   - 都不是则 "dev"（保底）
+$VersionArg = $Tag
+if ($VersionArg -notmatch '^v\d+\.\d+\.\d+') {
+    try {
+        $gitDesc = (git describe --tags --always 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $gitDesc) { $VersionArg = $gitDesc }
+    } catch { }
+    if (-not $VersionArg) { $VersionArg = "dev" }
+}
+Write-Host "    version: $VersionArg" -ForegroundColor Gray
+
+docker build --builder default --build-arg "VERSION=$VersionArg" -t "${BackendImage}:${Tag}" ./backend
 if ($LASTEXITCODE -ne 0) { Write-Err "backend build 失败"; exit 1 }
-Write-OK "backend 镜像已构建"
+Write-OK "backend 镜像已构建 (version=$VersionArg)"
 
 # ============== 7. 构建 frontend ==============
 Write-Step "构建 frontend 镜像"

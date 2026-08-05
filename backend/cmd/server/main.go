@@ -33,6 +33,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// version 由 ldflags 在编译时注入，注入命令：
+//   go build -ldflags "-X main.version=$(git describe --tags --always)"
+// 默认 "dev" 用于 `go run` 等本地无 ldflags 场景。
+// 修复 v0.9.2 硬编码撒谎 24 天的 bug（详见 production-retrospective-2026-08-05.md §4 P1-2）。
+var version = "dev"
+
 func main() {
 	config.Load()
 
@@ -220,7 +226,7 @@ func main() {
 
 	slog.Info("DecisionCourt backend listening",
 		"port", port,
-		"version", "v0.9.2",
+		"version", version,
 		"whitebox", "enabled",
 	)
 	// v0.9 (ADR 0012 §决策 5): 启动恢复 active session 工作流。

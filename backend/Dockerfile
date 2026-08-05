@@ -27,7 +27,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
+
+# PR-B: version ldflags — 注入 main.version，避免启动日志撒谎 24 天
+# （详见 production-retrospective-2026-08-05.md §4 P1-2）
+# 默认 "dev" 用于 `docker build` 不传 --build-arg VERSION 的场景（本地调试）。
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build \
+        -ldflags "-X main.version=${VERSION}" \
+        -o /app/server ./cmd/server
 
 # ============= runtime stage =============
 FROM alpine:3.20
