@@ -32,7 +32,7 @@
 | 信念动态更新 | ✅ v0.6 | 贝叶斯 log-odds + 锚定（Bayesian Engine 2026 / ScioMind 2026）+ confirmation/contradiction sign + weaken 边，写入 `belief_diffs` 表 |
 | 智能收敛 | ✅ v0.6 | 四信号多信号收敛：推理震荡（PROCLAIM 2026 最高优）> 双方共识 > 信念稳定 > 最大轮次兜底，广播 `belief.convergence` 事件带结构化原因 |
 | 信念审计 trail | ✅ v0.6 | `belief_diffs` 表 + `GET /belief-diffs` REST + 前端 BeliefDiffCard + 离线可重放 |
-| 真实后端联调 | ⏳ | PostgreSQL 在跑，依赖真实 LLM API key |
+| 真实后端联调 | ✅ v0.10.17 | PostgreSQL + Redis + DeepSeek + Bocha 完整链路在 ECS 跑通 (v0.10.17 release notes, 2026-07-12) |
 | Docker 验证 | ✅ v0.8.3 | docker compose 五服务一键启动(postgres/redis/backend/frontend/caddy) |
 | Agent Gateway | ✅ v0.9 | 白盒子集 + v0.5+ 高级能力 + v0.9 三大新能力(per-call Timeout 90s / Response Cache / Circuit Breaker) |
 | 单机部署高可用(ADR 0012) | ✅ v0.9 | session 互斥补锁 + Idempotency-Key + panic 兜底 + 启动扫描恢复 5 子项全落地 |
@@ -71,8 +71,8 @@
 | 1.1 创建项目目录 | 创建 `decisioncourt/`，规划前后端、配置、文档结构 | 目录结构清晰，README 完整 | ✅ 已完成 |
 | 1.2 前端初始化 | Next.js 14 + TypeScript + Tailwind + shadcn/ui | `pnpm dev` 能跑，首页可访问 | ✅ 已完成 |
 | 1.3 后端初始化 | Go + Gin 基础项目结构 | `go run` 能跑，health check 通过 | ✅ 已完成 |
-| 1.4 Docker Compose | PostgreSQL + Redis + SearXNG + 前后端 | `docker-compose up -d` 全部启动 | ⏳ 配置已写，待 Docker 环境验证 |
-| 1.5 数据库迁移 | 创建所有表结构 | GORM 自动建表成功 | ⏳ 代码已就绪，待 PG 运行后验证 |
+| 1.4 Docker Compose | PostgreSQL + Redis + SearXNG + 前后端 | `docker-compose up -d` 全部启动 | ✅ v0.8.3 五服务 (postgres/redis/backend/frontend/caddy) 一键启动, ECS `47.239.152.177` 验证 |
+| 1.5 数据库迁移 | 创建所有表结构 | GORM 自动建表成功 | ✅ v0.8.3 GORM AutoMigrate + `searxng` schema 初始化已通过 |
 
 ### 第二阶段：前端核心页面（Week 2）
 
@@ -83,8 +83,8 @@
 | 2.1 首页/立案页 | 用户输入决策问题、选项、模式 | 表单校验通过，能提交 | ✅ 已完成 |
 | 2.2 庭审主界面 | 法庭场景布局、Agent 圆点、发言气泡、历史记录侧边栏、底部输入栏 | 页面结构符合 PRD | ✅ 已完成 |
 | 2.3 证据板 | 展示证据、提交证据、证据影响力 | 能增删查证据 | ✅ 基础版已完成 |
-| 2.4 观点地图 | React-Flow 展示 Agent 立场和证据关系 | 能随数据更新 | ⏳ 组件已写，未集成到庭审页 |
-| 2.5 立场变化曲线 | Recharts 绘制信念度变化 | 多轮数据可视化 | ⏳ 组件已写，未集成到庭审页 |
+| 2.4 观点地图 | React-Flow 展示 Agent 立场和证据关系 | 能随数据更新 | ✅ v0.5 集成到庭审页 (BeliefMap 组件绑定 session_uuid) |
+| 2.5 立场变化曲线 | Recharts 绘制信念度变化 | 多轮数据可视化 | ✅ v0.6 集成到 Verdict 页 (BeliefDiffCard + Recharts 时间序列) |
 | 2.6 判决书页 | 展示结构化判决书 | 能渲染 Markdown | ✅ 已完成 |
 | 2.7 WebSocket 客户端 | 连接、事件监听、断线重连 | 能接收 Mock 事件 | ✅ 已完成 |
 | 2.8 Mock API/WS | 用 Mock 数据模拟后端 | 完整庭审流程可跑通 | ✅ 已完成 |
@@ -98,7 +98,7 @@
 | 3.1 庭审管理 API | 创建、获取、开始、推进庭审 | 接口与 API 文档一致 | ✅ 已完成 |
 | 3.2 庭审状态机 | idle/opening/cross_exam/closing/deliberation/verdict | 阶段转换正确 | ✅ 已完成 |
 | 3.3 Agent 编排 | 4 个 Agent 的调用与上下文管理 | Agent 按顺序发言 | ✅ 已完成 |
-| 3.4 信念引擎 | 信念度初始化、更新、收敛判断 | 信念度变化符合规则 | ⏳ 初始化/snapshot 已做，动态更新待实现 |
+| 3.4 信念引擎 | 信念度初始化、更新、收敛判断 | 信念度变化符合规则 | ✅ v0.6 贝叶斯 log-odds + 锚定 + 四信号收敛 + `belief_diffs` 审计 |
 | 3.5 证据系统 | 证据提交、可采性、影响评估 | 证据进入后影响信念度 | ✅ 基础版已完成 |
 | 3.6 问题澄清与选项生成 | Agent 主动提问、生成候选选项 | 模糊问题能生成选项 | ❌ MVP 范围外，明确不做 |
 | 3.7 WebSocket 服务 | 实时广播庭审事件 | 前端能收到真实事件 | ✅ 代码已完成，待真实后端联调 |
@@ -114,8 +114,8 @@
 | 4.2 调查员 Agent | 调用搜索、写入 investigation_findings 表 | dispatch + search.started + ReportFinding + search.completed 链路 | ✅ 已实装 + 单条 entry 状态机 + 10 项测试 |
 | 4.3 书记员 Agent | 整理庭审、生成判决书 | 判决书结构正确 | ✅ 已完成 |
 | 4.4 判决书 API | 获取判决书、用户反馈 | 接口可用 | ✅ 已完成 |
-| 4.5 端到端测试 | 完整庭审流程 | 从立案到判决完整跑通 | ⏳ 依赖 PG 运行 |
-| 4.6 Docker 部署验证 | 全部服务 Docker 化 | 新环境能一键启动 | ⏳ 依赖 Docker 安装 |
+| 4.5 端到端测试 | 完整庭审流程 | 从立案到判决完整跑通 | ✅ v0.8.3 ECS 联调通过 (立案→opening→cross_exam→closing→verdict 完整链路)；v0.10 白盒化补 OTel span + decision_events 表 |
+| 4.6 Docker 部署验证 | 全部服务 Docker 化 | 新环境能一键启动 | ✅ v0.8.3 docker compose 五服务一键启动,在 ECS `47.239.152.177` 验证 (2026-07-08 ECS 终止前) |
 
 ### 第五阶段：优化与打磨（Week 5-6）
 
@@ -166,7 +166,7 @@ WebSearch + 判决书生成
 | **M1：前端流程跑通** | Week 2 结束 | 用 Mock 数据完成一次完整庭审 | ✅ 已完成 |
 | **M2：后端流程跑通** | Week 3 结束 | 后端 API 和状态机完整 | ✅ 已完成 |
 | **M3：端到端跑通** | Week 4 结束 | 真实 LLM + 搜索，生成判决书 | ✅ 已完成（Bocha + DeepSeek）|
-| **M4：MVP 完成** | Week 6 结束 | 稳定可用，可写进简历 | ⏳ 剩信念引擎动态更新 + 智能收敛 |
+| **M4：MVP 完成** | Week 6 结束 | 稳定可用，可写进简历 | ✅ v0.8 (2026-07-02 retrospective) 信念引擎动态更新 + 智能收敛 + 白盒化实装 |
 
 ---
 

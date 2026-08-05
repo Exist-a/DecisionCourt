@@ -77,9 +77,9 @@
 
 | # | 项 | 复杂度 | 备注 |
 |---|----|--------|------|
-| **L2-调查员** | 调查员 agent 失败时显示顶部 banner（不消失，可手动 retry） | 0.5 天 | 触发场景：search.completed 失败 → 调查员无法给证据 |
-| **Memory-hydrate** | Memory hydrate 失败时显示 toast + 降级到本地缓存 | 1 天 | 触发场景：GetVisibleMemory 返回空但前端不应静默 |
-| **LLM-FK 审计** | LLM 调用失败时检查 FK 约束，写 audit 防止脏数据 | 1 天 | 数据库完整性问题，调查定位耗时 |
+| **L2-调查员** | 调查员 agent 失败时显示顶部 banner（不消失，可手动 retry） | 0.5 天 | 触发场景：search.completed 失败 → 调查员无法给证据📎 实装参考：[silent-error-fix-plan.md v1.1 §9](../../.trae/documents/silent-error-fix-plan.md) |
+| **Memory-hydrate** | Memory hydrate 失败时显示 toast + 降级到本地缓存 | 1 天 | 触发场景：GetVisibleMemory 返回空但前端不应静默📎 实装参考：[silent-error-fix-plan.md v1.1 §9](../../.trae/documents/silent-error-fix-plan.md) |
+| **LLM-FK 审计** | LLM 调用失败时检查 FK 约束，写 audit 防止脏数据 | 1 天 | 数据库完整性问题，调查定位耗时📎 实装参考：[silent-error-fix-plan.md v1.1 §9](../../.trae/documents/silent-error-fix-plan.md) |
 
 **总工作量**：~2.5 天 / 1 人
 

@@ -114,7 +114,7 @@ Agent 需要熟悉以下核心文档：
 
 `.trae/` 目录被 `.gitignore` 排除，作为本地进行中设计稿存放区（不入仓）。当前活跃：
 
-- `silent-error-fix-plan.md` — 静默错误全局修复方案（v1.0，PR 1-5/7 已合入 v0.10.17，最终收尾状态待用户确认）
+- `silent-error-fix-plan.md` — 静默错误全局修复方案（v1.1, 2026-08-05 收尾：PR 1-5/7 已合入 v0.10.17, 剩余 3 项入 `docs/todo/deferred-items-2026-08-05.md` D2, 详见 ADR 0024）
 
 > **注意**：已完成的进行中设计文档（即 `docs/archive/` 下文件）的元数据在 AGENTS.md / README / 文档交叉引用中仍可能存在，但**实际文档位置**以本节为准。修改相关代码前应优先参考 `docs/` 主项目文档而非 archive 中的历史计划。
 
