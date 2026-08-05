@@ -1067,6 +1067,23 @@ func (s *Service) runCrossExamRound(ctx context.Context, session model.CourtSess
 	lock.Lock()
 	defer lock.Unlock()
 
+	// v0.10.21 PR-D (P2-C1): 埋 RunCrossExamRound span
+	// 触发依据: production-retrospective-2026-08-05.md §8 + Whitebox Roadmap Phase B.1
+	// Phase A 数据: cross_exam 阶段 P99 12.90s + 单 session 触发 5 次慢调用集中在此
+	// span 记录 session_uuid/round/phase + duration + status，落地 decision_events + /metrics
+	span := observability.TracerFromContext(ctx, s.metrics, s.recorder).StartSpan(observability.SpanRunCrossExamRound)
+	defer func() {
+		if err != nil {
+			span.SetError(err)
+		}
+		span.End()
+	}()
+	span.SetAttrs(map[string]interface{}{
+		"session_uuid": session.SessionUUID,
+		"round":        session.CurrentRound,
+		"phase":        string(session.CurrentPhase),
+	})
+
 	// v0.9 (ADR 0012 §决策 4): panic recovery 兜底。
 	// runCrossExamRound 内部多步 LLM 调用 + 状态更新,任一 panic 都会让
 	// trial 卡死(锁不解 + phase 不进 + 后续请求竞争同一把锁)。
