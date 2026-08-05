@@ -99,13 +99,24 @@ Agent 需要熟悉以下核心文档：
 - `decisioncourt-ux-refinement.md` - UX 细节规范
 - `project-ideas.md` - 项目灵感池
 
-### 6.2 进行中的设计文档（`.trae/documents/` 目录）
-- `memory-a2a-redesign.md` - **v0.5 记忆系统 + A2A 重设计**（Episodic Memory via A2A、ContextView 投影、前端 MemoryAuditPanel、SessionUUID 房间钥匙 bug 修复、MemoryEntry 结构化字段）。当前版本 v1.1（2026-06-30），所有 PR 已完成。
-- `todolist1-pr1-contextview.md` - PR 1 ContextView 投影详细规划
-- `庭审可视化简化计划.md` - 庭审页面视觉简化
-- `质证阶段轮次控制修改计划.md` - cross-exam 阶段轮次控制
+### 6.2 已完成的进行中设计文档（`docs/archive/` 目录）
 
-> **注意**：进行中的设计文档优先级不亚于主文档。修改相关代码前必须先读对应的 `.trae/documents/` 计划 —— 这些是已经过用户确认的执行方案，不是草稿。
+以下文档已完成实施并归档到 `docs/archive/`，作为历史决策记录：
+
+- `memory-a2a-redesign.md` — **v0.5 记忆系统 + A2A 重设计**（Episodic Memory via A2A、ContextView 投影、前端 MemoryAuditPanel、SessionUUID 房间钥匙 bug 修复、MemoryEntry 结构化字段）。最终归档版本 `memory-a2a-redesign-v1.2.md`（2026-07-01），所有 PR 已完成。
+- `todolist1-pr1-contextview.md` — PR 1 ContextView 投影详细规划
+- `庭审可视化简化计划.md` — 庭审页面视觉简化
+- `质证阶段轮次控制修改计划.md` — cross-exam 阶段轮次控制
+- `ecs-end-of-life-2026-08-05.md` — ECS 基础设施不续购决策（项目继续个人长期维护）
+- `security-audit-2026-07-03.md` — v0.8.3 OWASP Top 10 安全审计报告（所有 20 项 P0/P1/P2/P3 已修复）
+
+### 6.2b 当前进行中的设计文档（`.trae/documents/` 目录）
+
+`.trae/` 目录被 `.gitignore` 排除，作为本地进行中设计稿存放区（不入仓）。当前活跃：
+
+- `silent-error-fix-plan.md` — 静默错误全局修复方案（v1.0，PR 1-5/7 已合入 v0.10.17，最终收尾状态待用户确认）
+
+> **注意**：已完成的进行中设计文档（即 `docs/archive/` 下文件）的元数据在 AGENTS.md / README / 文档交叉引用中仍可能存在，但**实际文档位置**以本节为准。修改相关代码前应优先参考 `docs/` 主项目文档而非 archive 中的历史计划。
 
 ## 7. 禁止事项
 
@@ -175,7 +186,9 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 
 **根因**：AGENTS.md 没写这条能力 → Agent 每次遇到"线上问题"都默认 user 跑命令 → 浪费用户时间。
 
-### 9.2 ECS 连接信息（user 提供，2026-07-12 起）
+### 9.2 ECS 连接信息（user 提供，2026-07-12 起；2026-08-05 ECS 终止后作为历史参考保留）
+
+> **状态更新（2026-08-05）**：ECS `47.239.152.177` 已停止续购，到期后自动释放。本节 SSH 连接信息保留供将来部署到**自有云环境**时参考。§9.3 / §9.4 / §9.5 的 SSH 操作模板仍适用于任何 ECS 实例，仅 ECS_HOST / ECS_USER 需替换为新环境。
 
 **存储位置**：`secrets/ecs.env`（gitignored，仓库不追踪）
 
@@ -238,4 +251,4 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 | 日期 | ECS_HOST | ECS_USER | SSH_KEY | 备注 |
 |---|---|---|---|---|
 | 2026-07-12 | _待 user 提供_ | — | — | v0.10.18 Deploy 失败时建立本节 |
-| 2026-08-05 | `47.239.152.177` | `admin` | `~/.ssh/id_rsa` | **本节正式填充**。30 天生产沉淀 + 备份验证时发现：`id_ed25519` Permission denied，`id_rsa` 可用；同步修正 `secrets/ecs.env` + 加此行记录。配套：`docs/deployment/ACTION-ITEMS-ECS-EXPIRY-2026-08.md` + `production-retrospective-2026-08-05.md`。**后续 2026-08-05 同日用户决策不续购 ECS，本节为最终状态记录，无新 ECS 行** |
+| 2026-08-05 | `47.239.152.177` | `admin` | `~/.ssh/id_rsa` | **本节正式填充**。30 天生产沉淀 + 备份验证时发现：`id_ed25519` Permission denied，`id_rsa` 可用；同步修正 `secrets/ecs.env` + 加此行记录。配套：[`docs/archive/ecs-end-of-life-2026-08-05.md`](docs/archive/ecs-end-of-life-2026-08-05.md) + [`docs/deployment/_archived/production-retrospective-2026-08-05.md`](docs/deployment/_archived/production-retrospective-2026-08-05.md)。**2026-08-05 用户决策不续购 ECS，但 SSH_KEY 信息保留供将来部署到自有云时复用；本表无新增行** |
