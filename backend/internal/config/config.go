@@ -2,9 +2,9 @@ package config
 
 import (
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -90,135 +90,119 @@ type Config struct {
 var AppConfig Config
 
 func Load() {
-	// Try to read .env file from project root
+	// 1. 读 .env (导出到 process env, 然后 os.Getenv 即可读到)
+	// v0.10.21 PR-C: 不再用 viper.Get/Set/Unmarshal 读 env, 改用 envOrDefault
+	// 直接读 process env。viper 在这里只承担 "export .env 到 process env" 的角色。
 	envPath := filepath.Join(getProjectRoot(), ".env")
 	if _, err := os.Stat(envPath); err == nil {
 		viper.SetConfigFile(envPath)
 		if err := viper.ReadInConfig(); err != nil {
-			log.Printf("warning: failed to read .env file: %v", err)
-		}
-	}
-
-	viper.SetDefault("PORT", "8080")
-	viper.SetDefault("DATABASE_URL", "")
-	viper.SetDefault("REDIS_URL", "")
-	viper.SetDefault("LLM_PROVIDER", "deepseek")
-	viper.SetDefault("LLM_API_KEY", "")
-	// Default to DeepSeek; set LLM_BASE_URL to https://api.moonshot.cn/v1 for Kimi
-	viper.SetDefault("LLM_BASE_URL", "https://api.deepseek.com/v1")
-	viper.SetDefault("LLM_MODEL_V3", "deepseek-chat")
-	viper.SetDefault("LLM_MODEL_R1", "deepseek-reasoner")
-	viper.SetDefault("SEARCH_PROVIDER", "searxng")
-	viper.SetDefault("SEARXNG_URL", "http://searxng:8080")
-	viper.SetDefault("TAVILY_API_KEY", "")
-	viper.SetDefault("BOCHA_API_KEY", "")
-	// P0-2 安全(v0.10.18)：删除 JWT_SECRET 默认值。
-	// 之前设了默认 "decisioncourt-secret",会让 Load() 的 mustEnvs fail-fast
-	// 检查看到非空值就放行,等于绕过 fail-fast 保护 — 用户即使忘了设
-	// JWT_SECRET,程序也照常启动,所有 JWT 都用公开仓库能读到的密钥签发。
-	// 任何后续添加 jwt.Parse() 的代码会直接踩坑。
-	// 修复:不设 default,缺失时由 Load() 的 mustEnvs log.Fatalf 阻断启动。
-
-	viper.SetDefault("AGENT_GATEWAY_ENABLED", false)
-	viper.SetDefault("AGENT_GATEWAY_PROMPT_COMPRESSION", false)
-	viper.SetDefault("AGENT_GATEWAY_TOKEN_BUDGET", false)
-	viper.SetDefault("AGENT_GATEWAY_THROTTLING", false)
-	viper.SetDefault("AGENT_GATEWAY_FALLBACK", false)
-	viper.SetDefault("AGENT_GATEWAY_FILE_LOGGER", false)
-	viper.SetDefault("AGENT_GATEWAY_BUDGET_PER_SESSION", 20000)
-	viper.SetDefault("AGENT_GATEWAY_COMPRESSION_THRESHOLD", 0.7)
-	viper.SetDefault("AGENT_GATEWAY_THROTTLING_THRESHOLD", 0.8)
-	viper.SetDefault("AGENT_GATEWAY_LOG_DIR", "logs")
-
-	// v2 defaults
-	// 2026-07-01 变更：默认从 false 改为 true。之前的 false 默认会让
-	// budget 撞 100% 后 inner LLM 仍被调用、计费继续累加（审计看到
-	// budget_ratio=1.46 但 status=success 的"隐性超额"）。改为 true 后，
-	// gateway 在 budget 耗尽时直接返回 ErrBudgetExhausted 并写一条
-	// status=error 的审计行。GatewayConfig.IsRejectWhenExhaustedEnabled
-	// 也加了 child-default 同步逻辑，保持只设 ENABLED=true 也能开。
-	viper.SetDefault("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", true)
-	viper.SetDefault("AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC", 300)
-	viper.SetDefault("AGENT_GATEWAY_SMART_COMPRESSION", false)
-	viper.SetDefault("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3)
-	viper.SetDefault("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 5)
-	viper.SetDefault("AGENT_GATEWAY_SCORE_THRESHOLD", 0.3)
-
-	// v0.9 LLM Gateway 工程化 (ADR 0013)
-	viper.SetDefault("AGENT_GATEWAY_LLM_TIMEOUT_SEC", 90)
-	viper.SetDefault("AGENT_GATEWAY_CACHE_ENABLED", false)
-	viper.SetDefault("AGENT_GATEWAY_CACHE_TTL_SEC", 300)
-	viper.SetDefault("AGENT_GATEWAY_CACHE_MAX_ENTRIES", 10000)
-	viper.SetDefault("AGENT_GATEWAY_BREAKER_ENABLED", false)
-	viper.SetDefault("AGENT_GATEWAY_BREAKER_FAILURE_RATIO", 0.5)
-	viper.SetDefault("AGENT_GATEWAY_BREAKER_MIN_REQUESTS", 10)
-	viper.SetDefault("AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC", 30)
-	viper.SetDefault("AGENT_GATEWAY_BREAKER_HALF_OPEN_MAX_REQUESTS", 1)
-
-	// v0.9 用户级 Trial 限流 (ADR 0014):默认 5 次/24h,0 禁用。
-	viper.SetDefault("USER_TRIAL_LIMIT", 5)
-
-	viper.SetEnvPrefix("")
-	viper.AutomaticEnv()
-
-	// v0.10.19 修复 (P0-2 副作用): viper 1.21.0 AutomaticEnv() 对 UPPERCASE
-	// env var (e.g. JWT_SECRET) 默认转 lowercase 查找 (jwt_secret), 找不到。
-	// 之前 SetDefault("JWT_SECRET", "decisioncourt-secret") 让 viper 不查 env
-	// 也能拿到值, bug 被掩盖。v0.10.18 删除 default 后 bug 暴露: backend 启动
-	// 报 FATAL JWT_SECRET is empty, 即使容器 env 实际有 JWT_SECRET。
-	//
-	// 修复: 显式 BindEnv 把 viper key 锁定到真实 env var 名 (uppercase),
-	// 跳过 viper 内部的 lowercase 转换。对 5 个关键 env 做强制绑定:
-	//   - JWT_SECRET      (P0-2 fail-fast)
-	//   - DATABASE_URL    (P0-4 mustEnvs)
-	//   - LLM_API_KEY     (业务关键, 即使没值也允许 warning)
-	//   - BOCHA_API_KEY   (搜索 provider)
-	//   - ALLOWED_ORIGINS (WS CheckOrigin 白名单, v0.9.3 单值 split bug)
-	//
-	// 其他 env 继续走 AutomaticEnv (lowercase 查找), 但因为 SetDefault 有值,
-	// 不会因为 bug 启动失败 —— 只是拿默认值, 而不是真实 env 值 (这是另一个 bug,
-	// 但范围小, 不在本次修复)。
-	for _, key := range []string{"JWT_SECRET", "DATABASE_URL", "LLM_API_KEY", "BOCHA_API_KEY", "ALLOWED_ORIGINS"} {
-		_ = viper.BindEnv(key, key) // 显式绑定到同名 env var (跳过 lowercase 转换)
-	}
-
-	if err := viper.Unmarshal(&AppConfig); err != nil {
-		log.Fatalf("failed to load config: %v", err)
-	}
-
-	// v0.9.3 修复：viper.Unmarshal 对 []string 字段 + 单值 env var
-	// (e.g. ALLOWED_ORIGINS=https://decisioncourt.cn,无逗号)不会自动
-	// split,导致 AppConfig.AllowedOrigins 是 nil —— 进而触发
-	// websocket.go / main.go 的 localhost:3000 fallback,生产环境 Origin
-	// 不在白名单,gorilla/websocket 返回 403,所有 WS 握手失败。
-	//
-	// 手动 split 一次:逗号分隔 + 去空格 + 去空元素。兼容单值 / 多值 /
-	// 带尾逗号三种写法(.env.example 是逗号分隔,生产 .env 是单值,都能解析)。
-	if raw := viper.GetString("ALLOWED_ORIGINS"); raw != "" {
-		parts := strings.Split(raw, ",")
-		out := make([]string, 0, len(parts))
-		for _, p := range parts {
-			if p = strings.TrimSpace(p); p != "" {
-				out = append(out, p)
+			slog.Warn("config: failed to read .env file", "err", err)
+		} else {
+			// viper 1.21.0: ReadInConfig 把 .env 内容 set 到 viper 内部 store,
+			// 但不会自动 export 到 process env (viper.AutomaticEnv 默认 disable 这是 bug)。
+			// 这里手动 export, 让 envOrDefault 后续能读到。失败不致命, 直接走 process env。
+			viper.AutomaticEnv() // 触发 env key replacer setup
+			for _, key := range viper.AllKeys() {
+				val := viper.GetString(key)
+				if val != "" {
+					_ = os.Setenv(key, val)
+				}
 			}
 		}
-		if len(out) > 0 {
-			AppConfig.AllowedOrigins = out
-		}
 	}
 
-	// P0-2 / P0-4 安全：关键密钥 / 连接串必须存在,缺失则 fail-fast。
-	// 不要在这里给"软警告"——生产部署一旦用错密钥,所有用户都会受影响。
+	// 2. 完全抛弃 viper env lookup, 改用 envOrDefault 直接读 env
+	// v0.10.21 PR-C: 33 env 全部走 envOrDefault (含 v0.10.19 修过的 5 个关键 env,
+	// 因为现在所有 env 走同一条路径, 没必要单独 BindEnv 了)。
+	// P0-2 安全: JWT_SECRET / DATABASE_URL 不设 default, 缺失由 mustEnvs fail-fast。
+	AppConfig = Config{
+		Port:           envOrDefaultString("PORT", "8080"),
+		DatabaseURL:    envOrDefaultString("DATABASE_URL", ""),
+		RedisURL:       envOrDefaultString("REDIS_URL", ""),
+
+		LLMProvider:    envOrDefaultString("LLM_PROVIDER", "deepseek"),
+		LLMAPIKey:      envOrDefaultString("LLM_API_KEY", ""),
+		// Default to DeepSeek; set LLM_BASE_URL to https://api.moonshot.cn/v1 for Kimi
+		LLMBaseURL:     envOrDefaultString("LLM_BASE_URL", "https://api.deepseek.com/v1"),
+		LLMModelV3:     envOrDefaultString("LLM_MODEL_V3", "deepseek-chat"),
+		LLMModelR1:     envOrDefaultString("LLM_MODEL_R1", "deepseek-reasoner"),
+
+		SearchProvider: envOrDefaultString("SEARCH_PROVIDER", "searxng"),
+		TavilyAPIKey:   envOrDefaultString("TAVILY_API_KEY", ""),
+		BochaAPIKey:    envOrDefaultString("BOCHA_API_KEY", ""),
+		// SEARXNG_URL: dead config (无 mapstructure tag, 无人用 viper.Get), 跳。
+
+		// JWT 关键配置
+		JWTSecret:      envOrDefaultString("JWT_SECRET", ""),
+		JWTExpiryHours: envOrDefaultInt("JWT_EXPIRY_HOURS", 168),
+		CookieSecure:   envOrDefaultBool("COOKIE_SECURE", true),
+		CookieSameSite: envOrDefaultString("COOKIE_SAME_SITE", "lax"),
+		CookieDomain:   envOrDefaultString("COOKIE_DOMAIN", ""),
+
+		// v0.9.3 修复: ALLOWED_ORIGINS 单值字符串, envOrDefaultStringSlice 内部 split。
+		// 当 .env / env 都未设时, 退到 ["http://localhost:3000"] (dev fallback)。
+		AllowedOrigins: envOrDefaultStringSlice("ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
+
+		// v0.9 用户限流 (ADR 0014): 0 → 禁用限流
+		UserTrialLimit: envOrDefaultInt("USER_TRIAL_LIMIT", 5),
+
+		// Agent Gateway 22 个 env
+		AgentGateway: AgentGatewayConfig{
+			Enabled:              envOrDefaultBool("AGENT_GATEWAY_ENABLED", false),
+			PromptCompression:    envOrDefaultBool("AGENT_GATEWAY_PROMPT_COMPRESSION", false),
+			TokenBudget:          envOrDefaultBool("AGENT_GATEWAY_TOKEN_BUDGET", false),
+			Throttling:           envOrDefaultBool("AGENT_GATEWAY_THROTTLING", false),
+			Fallback:             envOrDefaultBool("AGENT_GATEWAY_FALLBACK", false),
+			FileLogger:           envOrDefaultBool("AGENT_GATEWAY_FILE_LOGGER", false),
+			BudgetPerSession:     envOrDefaultInt("AGENT_GATEWAY_BUDGET_PER_SESSION", 20000),
+			CompressionThreshold: envOrDefaultFloat("AGENT_GATEWAY_COMPRESSION_THRESHOLD", 0.7),
+			ThrottlingThreshold:  envOrDefaultFloat("AGENT_GATEWAY_THROTTLING_THRESHOLD", 0.8),
+			LogDir:               envOrDefaultString("AGENT_GATEWAY_LOG_DIR", "logs"),
+
+			// Token Budget v2 — REJECT_WHEN_EXHAUSTED 默认 true (v0.10.18 改)
+			RejectWhenExhausted:    envOrDefaultBool("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", true),
+			BudgetSlidingWindowSec:  envOrDefaultInt("AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC", 300),
+
+			// Prompt Compression v2
+			SmartCompression:       envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION", false),
+			KeepRecentForcedN:      envOrDefaultInt("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3),
+			SummaryInsertThreshold: envOrDefaultInt("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 5),
+			ScoreThreshold:         envOrDefaultFloat("AGENT_GATEWAY_SCORE_THRESHOLD", 0.3),
+
+			// v0.9 三大新能力 (ADR 0013)
+			LLMTimeoutSec:  envOrDefaultInt("AGENT_GATEWAY_LLM_TIMEOUT_SEC", 90),
+			CacheEnabled:   envOrDefaultBool("AGENT_GATEWAY_CACHE_ENABLED", false),
+			CacheTTLSec:    envOrDefaultInt("AGENT_GATEWAY_CACHE_TTL_SEC", 300),
+			CacheMaxEntries: envOrDefaultInt("AGENT_GATEWAY_CACHE_MAX_ENTRIES", 10000),
+
+			// Circuit Breaker
+			BreakerEnabled:             envOrDefaultBool("AGENT_GATEWAY_BREAKER_ENABLED", false),
+			BreakerFailureRatio:        envOrDefaultFloat("AGENT_GATEWAY_BREAKER_FAILURE_RATIO", 0.5),
+			BreakerMinRequests:         envOrDefaultInt("AGENT_GATEWAY_BREAKER_MIN_REQUESTS", 10),
+			BreakerOpenTimeoutSec:      envOrDefaultInt("AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC", 30),
+			BreakerHalfOpenMaxRequests: envOrDefaultInt("AGENT_GATEWAY_BREAKER_HALF_OPEN_MAX_REQUESTS", 1),
+		},
+	}
+
+	// 3. mustEnvs fail-fast (P0-2 / P0-4 安全)
+	jsonVal := func(k string) string {
+		if v, ok := os.LookupEnv(k); ok && v != "" {
+			return v
+		}
+		return ""
+	}
 	mustEnvs := []struct {
 		name  string
 		value string
 		help  string
 	}{
-		{"JWT_SECRET", AppConfig.JWTSecret, "generate with: openssl rand -base64 48"},
-		{"DATABASE_URL", AppConfig.DatabaseURL, "set in .env (e.g. postgres://user:pass@host:5432/db)"},
+		{"JWT_SECRET", jsonVal("JWT_SECRET"), "generate with: openssl rand -base64 48"},
+		{"DATABASE_URL", jsonVal("DATABASE_URL"), "set in .env (e.g. postgres://user:pass@host:5432/db)"},
 	}
 	for _, e := range mustEnvs {
 		if e.value == "" {
+			slog.Error("config: required config is empty", "key", e.name, "help", e.help)
 			log.Fatalf("FATAL: required config %s is empty — %s", e.name, e.help)
 		}
 	}
@@ -230,6 +214,40 @@ func Load() {
 	if AppConfig.SearchProvider == "tavily" && AppConfig.TavilyAPIKey == "" {
 		log.Fatalf("FATAL: SEARCH_PROVIDER=tavily requires TAVILY_API_KEY")
 	}
+
+	// 4. 末尾输出 summary (v0.10.21 PR-C: 诊断配置生效情况)
+	// 统计 "实际从 env 读到" 的 key 数量, 排查 .env 没生效常见问题。
+	fromEnv := 0
+	for _, key := range []string{
+		"PORT", "DATABASE_URL", "REDIS_URL",
+		"LLM_PROVIDER", "LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL_V3", "LLM_MODEL_R1",
+		"SEARCH_PROVIDER", "TAVILY_API_KEY", "BOCHA_API_KEY",
+		"JWT_SECRET", "JWT_EXPIRY_HOURS", "COOKIE_SECURE", "COOKIE_SAME_SITE", "COOKIE_DOMAIN",
+		"ALLOWED_ORIGINS", "USER_TRIAL_LIMIT",
+		"AGENT_GATEWAY_ENABLED", "AGENT_GATEWAY_PROMPT_COMPRESSION", "AGENT_GATEWAY_TOKEN_BUDGET",
+		"AGENT_GATEWAY_THROTTLING", "AGENT_GATEWAY_FALLBACK", "AGENT_GATEWAY_FILE_LOGGER",
+		"AGENT_GATEWAY_BUDGET_PER_SESSION", "AGENT_GATEWAY_COMPRESSION_THRESHOLD",
+		"AGENT_GATEWAY_THROTTLING_THRESHOLD", "AGENT_GATEWAY_LOG_DIR",
+		"AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", "AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC",
+		"AGENT_GATEWAY_SMART_COMPRESSION", "AGENT_GATEWAY_KEEP_RECENT_FORCED_N",
+		"AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", "AGENT_GATEWAY_SCORE_THRESHOLD",
+		"AGENT_GATEWAY_LLM_TIMEOUT_SEC", "AGENT_GATEWAY_CACHE_ENABLED",
+		"AGENT_GATEWAY_CACHE_TTL_SEC", "AGENT_GATEWAY_CACHE_MAX_ENTRIES",
+		"AGENT_GATEWAY_BREAKER_ENABLED", "AGENT_GATEWAY_BREAKER_FAILURE_RATIO",
+		"AGENT_GATEWAY_BREAKER_MIN_REQUESTS", "AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC",
+		"AGENT_GATEWAY_BREAKER_HALF_OPEN_MAX_REQUESTS",
+	} {
+		if _, ok := os.LookupEnv(key); ok {
+			fromEnv++
+		}
+	}
+	loadSummary(fromEnv, 43)
+}
+
+// envOrDefaultString 是 envOrDefault 的 thin wrapper, 保留返回 string 单值签名以简化 Load() 写法。
+func envOrDefaultString(key, defaultVal string) string {
+	v, _ := envOrDefault(key, defaultVal)
+	return v
 }
 
 // getProjectRoot returns the project root directory (parent of backend/)
