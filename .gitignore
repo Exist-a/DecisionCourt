@@ -62,6 +62,9 @@ secrets/
 # Agent 内部 spec / 工作区（不属于项目代码）
 .trae/
 
+# ZCode CLI session workspace（不属于项目代码）
+.zcode/
+
 # docs 内部材料（不暴露给外部贡献者）
 # —— 保留:adr / architecture / deployment/CHECKLIST / roadmap / decisioncourt-*.md(架构设计 + README 指向)
 # —— 忽略:interview(面试)/ archive(已归档旧计划)/ observability(白盒化案例含生产流程)
