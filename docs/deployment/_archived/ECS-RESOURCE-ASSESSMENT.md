@@ -1,5 +1,14 @@
 # ECS 资源评估（2026-08-05）
 
+> **📦 归档说明（2026-08-05）**：本文件已失效。用户决策"不升配 + 不续购 ECS"。评估结论"不升配 4C4G，建议加 2GB swap"仅适用于旧 ECS `47.239.152.177`，新环境如有需求可参考重做评估。本文件归档至 [`_archived/ECS-RESOURCE-ASSESSMENT.md`](./ECS-RESOURCE-ASSESSMENT.md) 作为历史决策记录保留。
+
+| | |
+|---|---|
+| **原位置** | `docs/deployment/ECS-RESOURCE-ASSESSMENT.md`（已迁移至 `_archived/`）|
+| **失效原因** | ECS 不续购，无新 ECS 可升配 |
+
+---
+
 | | |
 |---|---|
 | **版本** | v1.0 |

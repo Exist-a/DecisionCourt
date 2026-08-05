@@ -1,5 +1,14 @@
 # Production Retrospective — ECS 30 天运行沉淀
 
+> **📦 归档说明（2026-08-05）**：本文件已迁至 [`_archived/production-retrospective-2026-08-05.md`](./production-retrospective-2026-08-05.md)。作为 2026-07-06 ~ 2026-08-05 期间 ECS `47.239.152.177` 真实生产数据的最终沉淀保留，**仍然有参考价值**（部署踩坑 / 真实庭审数据 / 资源使用基线）。后续部署到任何新环境时可作为基准对比。
+
+| | |
+|---|---|
+| **原位置** | `docs/deployment/production-retrospective-2026-08-05.md`（已迁移至 `_archived/`）|
+| **状态** | 历史沉淀，永久有效 |
+
+---
+
 | 字段 | 值 |
 |---|---|
 | **生成日期** | 2026-08-05 |

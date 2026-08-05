@@ -1,5 +1,14 @@
 # ECS 迁移 Checklist（PR-F · 2026-08-05）
 
+> **📦 归档说明（2026-08-05）**：本文件已失效。用户决策"不续购 ECS"，A4 迁移取消。本文件随其余 ECS 相关文档归档至 [`_archived/ECS-MIGRATION-CHECKLIST.md`](./_archived/ECS-MIGRATION-CHECKLIST.md)，作为历史决策记录保留。如未来需要迁移到新 ECS，可参考本文件 + [decisioncourt-tech-spec.md §9](../decisioncourt-tech-spec.md) 第 9 节。
+
+| | |
+|---|---|
+| **原位置** | `docs/deployment/ECS-MIGRATION-CHECKLIST.md`（已迁移至 `_archived/`）|
+| **失效原因** | ECS 不续购，无新 ECS 可迁 |
+
+---
+
 | | |
 |---|---|
 | **版本** | v1.0 |
