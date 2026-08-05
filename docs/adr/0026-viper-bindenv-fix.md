@@ -306,7 +306,7 @@ go build ./...  ✅
 
 | 维度 | 风险 | 缓解 |
 |------|------|------|
-| **其他 25+ env 仍受 viper lowercase bug** | ECS .env 设了 env 但 backend 仍拿默认值 | v0.11+ 重写 Load() 用 `envOrFatal()` helper 绕过 viper |
+| **其他 25+ env 仍受 viper lowercase bug** | ECS .env 设了 env 但 backend 仍拿默认值 | ✅ 2026-08-05 v0.10.21 PR-C 完成, 见 [ADR 0028](./0028-env-or-default-helper.md) |
 | **secrets/ecs.env 文件** | 误 commit 到 repo → ECS IP 公开 | `.gitignore` 已有 `secrets/`，`git status --short secrets/` 已验证 ignore 生效 |
 | **force push 修改 main** | 多人协作时会被覆盖 | 本项目单 user 私有 repo，可接受；多人协作时改用 revert + 新 commit |
 
@@ -382,12 +382,12 @@ git revert bd47599 -- backend/internal/config/config.go
 | 优先级 | 事项 | 文档 |
 |--------|------|------|
 | 🟢 1 天 | 写 [release-notes/v0.10.19.md](../release-notes/v0.10.19.md) 详细发布说明 | — |
-| 🟢 1 周 | **修其他 25+ env 的 viper lowercase bug**（重写 Load() 用 `envOrFatal()` helper）| — |
+| 🟢 1 周 | **修其他 25+ env 的 viper lowercase bug**（重写 Load() 用 `envOrFatal()` helper）| ✅ 2026-08-05 v0.10.21 PR-C 完成, 见 [ADR 0028](./0028-env-or-default-helper.md) |
 | 🟢 1 周 | 启动 **安全 P1 阶段** (CSRF / 限流 / 输入校验 / 日志脱敏 / 依赖固定) | security-audit-2026-07-03.md §3 |
 | ⏸ Phase A | 真实庭审数据采集 1-2 周 | decisioncourt-roadmap.md §5 |
 
-### 8.1 ADR 0027 候选主题
+### 8.1 ADR 后续主题
 
-1. **envOrFatal helper 全面修复 viper env lookup**（v0.11+）
-2. **AGENTS.md §9.3 补充"SSH 连接断开自动重试"** 模式
+1. ✅ **envOrDefault helper 全面修复 viper env lookup** — 2026-08-05 v0.10.21 PR-C 完成, 见 [ADR 0028](./0028-env-or-default-helper.md)
+2. **AGENTS.md §9.3 补充"SSH 连接断开自动重试"** 模式（注：2026-08-05 ECS 终止后本次模式推迟, 仅作知识沉淀）
 3. **Caddy HTTPS 证书问题**（本次发现 caddy HTTPS `tlsv1 alert internal error`，原因待查）|
