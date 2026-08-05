@@ -98,9 +98,20 @@
 ## D3. P0-A4 新 ECS 信息
 
 ### 状态
-⏸ **Blocked** — 等待用户提供
+⛔ **Cancelled** — 用户 2026-08-05 决策不续购 ECS
 
-### 阻塞内容
+### 用户决策记录
+2026-08-05 用户明确表态："不打算续购（ECS）"。
+详见 [docs/decommission/ecs-end-of-life-2026-08-05.md](../../decommission/ecs-end-of-life-2026-08-05.md)。
+
+### 后果
+- A4 迁移到新 ECS 取消（**不是 deferred**）
+- ECS-MIGRATION-CHECKLIST.md + ECS-RESOURCE-ASSESSMENT.md **废弃**（文档保留作为知识沉淀）
+- 11 commit 不 push 到 origin（避免触发废弃 ECS 的 deploy workflow）
+- 旧 ECS `47.239.152.177` 到期后自然释放
+- 本地 secrets/ 3 个备份保留（最后生产快照）
+
+### 原计划（已废弃，仅留档参考）
 - 新 IP / hostname
 - 新 SSH 端口（默认 22）
 - 新 SSH 密钥（同源 ed25519 推荐，与 GitHub Secrets `ECS_SSH_KEY` 同源）
@@ -108,21 +119,10 @@
 - 新规格 ≥ 2C2G / 4GB RAM / **加 swap 2GB**（按 [ECS-RESOURCE-ASSESSMENT.md](../deployment/ECS-RESOURCE-ASSESSMENT.md) 建议）
 - 新系统盘 ≥ 40GB
 
-### 启动后执行
-按 [ECS-MIGRATION-CHECKLIST.md §3-§4](../deployment/ECS-MIGRATION-CHECKLIST.md) 操作：
-1. 准备 SSH 通道
-2. 初始化新 ECS（docker + docker compose）
-3. 恢复数据卷（pg_dump + docker volume）
-4. 部署应用（push ACR + deploy workflow）
-5. 验证 V1-V10（10 项）
-6. 旧 ECS 释放（R1-R5）
-
-预计工作量：半天
-
 ### 关联文档
-- [ECS-MIGRATION-CHECKLIST.md](../deployment/ECS-MIGRATION-CHECKLIST.md) — 完整 checklist
-- [ECS-RESOURCE-ASSESSMENT.md](../deployment/ECS-RESOURCE-ASSESSMENT.md) — 规格 / swap 建议
-- [AGENTS.md §10](../../AGENTS.md) — ECS 连接信息更新记录
+- [ecs-end-of-life-2026-08-05.md](../../decommission/ecs-end-of-life-2026-08-05.md) — 用户决策与项目最终形态
+- [ECS-MIGRATION-CHECKLIST.md](../deployment/ECS-MIGRATION-CHECKLIST.md) — 已废弃（保留作知识沉淀）
+- [ECS-RESOURCE-ASSESSMENT.md](../deployment/ECS-RESOURCE-ASSESSMENT.md) — 已废弃（保留作知识沉淀）
 
 ---
 
@@ -133,7 +133,7 @@
 | 已完成（v0.10.21 本轮 11 commit） | 15 项 | ✅ |
 | Deferred（D1 安全审计 14 项） | 14 项 | ⏸ Deferred |
 | Deferred（D2 silent-error 3 项） | 3 项 | ⏸ Deferred |
-| Blocked（D3 A4 新 ECS 信息） | 1 项 | ⏸ Blocked on user |
+| Cancelled（D3 A4 新 ECS 信息） | 1 项 | ⛔ Cancelled（用户 2026-08-05 决策不续购 ECS）|
 
 **总 33 项**（原始 18 项 + 安全审计 14 项 + silent-error 3 项 = 35 项；其中 1 项 A4 既是原始 18 项的一部分、又是 D3 的扩展说明）。
 
