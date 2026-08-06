@@ -154,7 +154,7 @@ func Load() {
 			TokenBudget:          envOrDefaultBool("AGENT_GATEWAY_TOKEN_BUDGET", false),
 			Throttling:           envOrDefaultBool("AGENT_GATEWAY_THROTTLING", false),
 			Fallback:             envOrDefaultBool("AGENT_GATEWAY_FALLBACK", false),
-			FileLogger:           envOrDefaultBool("AGENT_GATEWAY_FILE_LOGGER", false),
+			FileLogger:           envOrDefaultBool("AGENT_GATEWAY_FILE_LOGGER", true),
 			BudgetPerSession:     envOrDefaultInt("AGENT_GATEWAY_BUDGET_PER_SESSION", 20000),
 			CompressionThreshold: envOrDefaultFloat("AGENT_GATEWAY_COMPRESSION_THRESHOLD", 0.7),
 			ThrottlingThreshold:  envOrDefaultFloat("AGENT_GATEWAY_THROTTLING_THRESHOLD", 0.8),
