@@ -407,7 +407,7 @@ cd backend
 go test ./internal/... -v
 ```
 
-**当前状态**：167 项测试全部通过，覆盖：
+**当前状态**：198 项测试全部通过 (v0.10.21 新增 31 sub-test: 12 PR-B + 26 PR-C, 含 26 sub-test 中的 16 bool 大小写变体), 覆盖：
 
 - `internal/a2a`：12 项（Bus 路由 + ContextView 投影 + SessionUUID 房间钥匙回归测试）
 - `internal/private_memory`：9 项（隔离性 + Orchestrator 集成）
@@ -514,7 +514,7 @@ POST /api/v1/courtrooms/{id}/start        → 200 phase=opening (同步)
 - 并发防护（同一 session 互斥 / 用户快速点击幂等 / LLM 超时与重试 / agent 死锁检测）
 - Agent Gateway 模型路由 / 响应缓存
 - 强制立场一致性检查（LLM-as-judge 打回重生成）
-- 新意度检查 / 发言长度硬截断 / 已反驳证据集合跟踪
+- ✅ 发言长度硬截断 300 字 (v0.10.21 PR-B) / 新意度检查 / 已反驳证据集合跟踪
 - 专家证人 / 陪审团 / 历史庭审 / PDF 导出
 - 预设决策模板库
 

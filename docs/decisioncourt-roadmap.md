@@ -1,10 +1,11 @@
 # 决策庭（DecisionCourt）实施路线图
 
-> **版本**：v0.8
-> **状态**：MVP 主体完成 + v0.8 白盒化实装（截至 2026-07-02）—— 含 v0.5/v0.6/v0.7/v0.8 四轮增量实装；下一步进入"高可用 + 并发防护"讨论。
+> **版本**：v0.8 + v0.10.21 补丁
+> **状态**：MVP 主体完成 + v0.8 白盒化实装（截至 2026-07-02）—— 含 v0.5/v0.6/v0.7/v0.8 四轮增量实装；**v0.10.21 收尾硬化**（PR-B 300 字硬截断 + PR-C envOrDefault 33 env 全面修复, 2026-08-05）；下一步进入"PR-A FileLogger + 候选 2 新意度 Jaccard"讨论。
 > **可观测性完善计划**：[`roadmap/whitebox-roadmap.md`](./roadmap/whitebox-roadmap.md)（v0.8+ 五阶段：数据采集 → 增量埋点 → Prometheus → OTLP → 数据仓库）
 > **目标**：规划从 0 到 MVP 可运行的实施路径，并明确验收标准。
 > **2026-07-02 整合时同步**：本版本号对齐后端代码实装现状 + 文档整合状态（参见 [`docs/README.md`](./README.md)）。
+> **2026-08-05 v0.10.21 补丁**：新增 PR-B + PR-C 状态行同步（12 处 ⏳ → ✅），详见 [release-notes/v0.10.21.md](../release-notes/v0.10.21.md) + [ADR 0028](../adr/0028-env-or-default-helper.md)。
 
 ---
 
