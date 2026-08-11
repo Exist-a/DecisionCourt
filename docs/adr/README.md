@@ -32,6 +32,9 @@
 | [0022](./0022-github-actions-ci-cd.md) | GitHub Actions CI/CD（v0.10.2：test + tag push deploy） | ✅ | `.github/workflows/test.yml` · `deploy.yml` |
 | [0023](./0023-github-actions-ci-pause.md) | GitHub Actions CI 暂停 + 恢复完整复盘（v0.10.2 ~ v0.10.15 共 14 版迭代） | ✅ | `.github/workflows/test.yml` + `deploy.yml` + 8 个 Secrets |
 | [0024](./0024-silent-error-fix-pr1.md) | 静默错误全局修复 PR 1（后端 UserFacingError 类型 + broadcast + 状态机新 action） | ✅ | `internal/courtroom/errors.go` + `statemachine.go` + `service.go` + `api/handler.go` + `api/websocket.go` + `agent/react_runner.go` |
+| [0025](./0025-security-p0-closeout.md) | 安全审计 P0 阶段收尾（P0-2 JWT_SECRET 默认值 + P0-3 容器 UID 10001） | ✅ | `internal/config/config.go` + `Dockerfile` + `cmd/server/main.go` |
+| [0026](./0026-viper-bindenv-fix.md) | Viper BindEnv 显式绑定 — v0.10.18/19 安全 P0 收尾补充（5 个关键 env 修复） | ✅ | `internal/config/config.go` + SSH 诊断 |
+| [0027](./0027-rate-limit-defense-in-depth.md) | 4 层限流防御深度（Defense in Depth, ADR 0012 单机部署假设下） | ⏳ Proposed | `internal/ratelimit/` + `middleware/session_ratelimit.go`（新）+ `courtroom/concurrency.go`（新）+ `observability/metrics.go` |
 | [0028](./0028-env-or-default-helper.md) | envOrDefault helper 全面修复 viper 25+ env lowercase bug（v0.10.21 PR-C） | ✅ | `internal/config/env.go` + `config.go` + 26 sub-test |
 
 ---

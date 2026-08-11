@@ -3,7 +3,7 @@
 > **让 AI 像法庭一样帮你把复杂决策看全、看透、看出可执行结论。**
 
 [![MVP Status](https://img.shields.io/badge/status-MVP%20Complete-brightgreen)](./docs/README.md)
-[![Backend Tests](https://img.shields.io/badge/backend%20tests-167%2B%20passing-success)](./backend)
+[![Backend Tests](https://img.shields.io/badge/backend%20tests-200%2B%20passing-success)](./backend)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](#许可证)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org)
 [![Go](https://img.shields.io/badge/Go-1.22-00ADD8)](https://go.dev)
@@ -407,7 +407,7 @@ cd backend
 go test ./internal/... -v
 ```
 
-**当前状态**：198 项测试全部通过 (v0.10.21 新增 31 sub-test: 12 PR-B + 26 PR-C, 含 26 sub-test 中的 16 bool 大小写变体), 覆盖：
+**当前状态**：200 项测试全部通过 (v0.10.21 新增 31 sub-test + v0.10.22 新增 2 sub-test: TestFileLogger_BasicWrite + TestFileLogger_DirectoryCreate), 覆盖：
 
 - `internal/a2a`：12 项（Bus 路由 + ContextView 投影 + SessionUUID 房间钥匙回归测试）
 - `internal/private_memory`：9 项（隔离性 + Orchestrator 集成）

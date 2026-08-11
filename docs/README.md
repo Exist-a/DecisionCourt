@@ -179,6 +179,8 @@
 | LLM Output 验证（防幻觉正则扫） | ⏳ | ADR 0015 决策暂不做，留待 v1.x |
 | 专家证人 / 陪审团 / 历史庭审 / PDF 导出 | ❌ | 商业化前不启动 |
 
+**v0.10.22 PR-A 收尾（2026-08-06）**：FileLogger 默认启用（`config.go` L157 / compose / `.env.example` 三处一致）+ 3 处文档错位修复（`.jsonl` → `.log` / 35 → 38 字段 / 路径）+ 2 个新测试（`TestFileLogger_BasicWrite` + `TestFileLogger_DirectoryCreate`）。24 天静默教训彻底收尾。详见 [release-notes/v0.10.22.md](./release-notes/v0.10.22.md)。
+
 ### 5.4 明确不做（决策日期 2026-07-01）
 
 - ❌ 问题澄清与选项生成（用户只给模糊问题时）
