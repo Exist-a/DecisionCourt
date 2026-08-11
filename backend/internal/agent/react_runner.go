@@ -145,6 +145,15 @@ type RunnerConfig struct {
 	// 新意度 Jaccard 检查: 本次新发言 vs 自己历史任一条 jaccard > 0.6 → reject +
 	// retry hint 强制换角度。Nil = 跳过检查 (向后兼容 + 测试用)。
 	SpeakerHistory []model.Message
+	// SpeakerBeliefA (v0.10.24 候选 1), 是当前 speaker 的 belief_A 数值。
+	// runner 用它做 stance judge 触发条件 (老 isStanceConsistent 阈值 0.45/0.55)。
+	// 0 是合法 belief 值, runner 用 SpeakerAgent 是否为零值判断是否启用。
+	SpeakerBeliefA float64
+	// SpeakerAgent (v0.10.24 候选 1), 是当前 speaker 的完整 agent 结构。
+	// judge prompt 需要 AgentType (model.AgentProsecutor / AgentDefender)；
+	// 老 isStanceConsistent 也需 AgentType 区分控辩。
+	// RunnerConfig 按值复制 model.Agent (无指针, 安全)。
+	SpeakerAgent model.Agent
 }
 
 // ReActRunner runs a Thought→Action→Observation loop on top of an LLM
@@ -409,6 +418,7 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 					Confidence:   out.Confidence,
 					Stance:       out.Stance,
 				}
+				speaker, _ = applySpeakerStanceJudge(speaker, r, ctx, messages)
 				speaker, _ = applySpeakerNoveltyRetryLoop(speaker, r, ctx, messages)
 				return applySpeakerLengthLimit(speaker), steps, nil
 			}
@@ -455,6 +465,7 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 				Confidence:   out.Confidence,
 				Stance:       out.Stance,
 			}
+			speaker, _ = applySpeakerStanceJudge(speaker, r, ctx, messages)
 			speaker, _ = applySpeakerNoveltyRetryLoop(speaker, r, ctx, messages)
 			return applySpeakerLengthLimit(speaker), steps, nil
 
@@ -482,6 +493,15 @@ const speakerMaxRunes = 300
 const (
 	noveltyThreshold  = 0.6
 	noveltyMaxRetries = 2
+)
+
+// v0.10.24 候选 1: LLM-as-judge stance 一致性常量
+//   - stanceJudgeMaxRetries: judge false 后 retry LLM 的最大次数 (用户拍板 2 次, 与 novelty 同构)
+//   - stanceJudgeTemperature: 0.2 低温让 judge 稳定 (与 JudgeAssess L613 同温度)
+const (
+	stanceJudgeMaxRetries    = 2
+	stanceJudgeTemperature   = 0.2
+	stanceJudgeMaxTokens     = 200
 )
 
 // applySpeakerLengthLimit 对 Speaker.Content 强制应用 300 字硬截断。
@@ -636,6 +656,177 @@ func applySpeakerNoveltyRetryLoop(
 	out.NoveltyRejected = finalRejected
 	out.NoveltyJaccard = finalJaccard
 	return out, messages
+}
+
+// applySpeakerStanceJudge v0.10.24 候选 1: LLM-as-judge stance 一致性 retry 主循环
+//
+// 触发条件: 老 isStanceConsistent(agent, out.Stance) == false 才调 judge
+// (省 90% token — 一致时直接 pass)。
+//
+// 复用 validateSpeak retry 模式 (仿 applySpeakerNoveltyRetryLoop):
+//   - judge 提示词: StanceJudgePrompt(agentType, beliefA, content)
+//   - judge 输出 JSON: {is_consistent: bool, reason: string}
+//   - false → 注入 hint 强制 LLM 换内容重生成 (不限制 stance 字段, 让 LLM 自然修正)
+//   - 最多 stanceJudgeMaxRetries (2) 次 retry, 失败 fallback Speaker.StanceRejected=true
+//     + StanceJudgeReason=最后一次 judge reason
+//
+// 注意: SpeakerAgent 字段类型为 model.Agent (按值复制), 不修改外部。
+// 与 novelty 顺序: stance judge → novelty → length limit (stance 打回重生成 content,
+// 必须在 novelty 之前; length limit 永远最后)。
+//
+// 触及 §2.1 (中度): LLM 主观判定。但用户已拍板 4 个标准 (judge prompt / 触发时机 / 失败动作 / token 成本),
+// 本次按拍板实装, 不重新讨论。
+func applySpeakerStanceJudge(
+	out Speaker,
+	r *ReActRunner,
+	ctx context.Context,
+	messages []llm.Message,
+) (Speaker, []llm.Message) {
+	// 1. fast filter: 老 isStanceConsistent 一致时跳过 judge (省 token)
+	if isStanceConsistent(r.cfg.SpeakerAgent, out.Stance) {
+		return out, messages
+	}
+
+	// 2. judge LLM 调用 + 2 次 retry
+	for retryIdx := 0; retryIdx < stanceJudgeMaxRetries; retryIdx++ {
+		// 调 judge LLM
+		judgePrompt := StanceJudgePrompt(r.cfg.SpeakerAgent.AgentType, r.cfg.SpeakerBeliefA, out.Content)
+		judgeMessages := []llm.Message{
+			{Role: "system", Content: judgePrompt},
+		}
+		judgeContent, _, judgeErr := r.llm.Complete(
+			r.injectGatewayTrace(ctx, "react_stance_judge"),
+			r.systemBase,
+			judgeMessages,
+			llm.CompletionOptions{
+				Model:       "",
+				Temperature: stanceJudgeTemperature,
+				MaxTokens:   stanceJudgeMaxTokens,
+				JSONMode:    true,
+			},
+		)
+		if judgeErr != nil {
+			// judge LLM 失败 → 标记 fallback
+			out.StanceRejected = true
+			out.StanceJudgeReason = "judge LLM 调用失败: " + judgeErr.Error()
+			return out, messages
+		}
+
+		// 3. 解析 judge 输出
+		var judgeResult struct {
+			IsConsistent bool   `json:"is_consistent"`
+			Reason       string `json:"reason"`
+		}
+		if err := json.Unmarshal([]byte(judgeContent), &judgeResult); err != nil {
+			// 解析失败 → 标记 fallback (保守放行 Speaker)
+			out.StanceRejected = true
+			out.StanceJudgeReason = "judge 输出非 JSON: " + truncate(judgeContent, 50)
+			return out, messages
+		}
+
+		if judgeResult.IsConsistent {
+			// judge 判定一致 → pass
+			return out, messages
+		}
+
+		// 4. judge 判定不一致 → 注入 hint 让 LLM 换内容重生成
+		hint := llm.Message{
+			Role: "system",
+			Content: fmt.Sprintf(
+				"你刚才的发言被 LLM 裁判判定为与当前信念度不一致 (原因: %s)。\n"+
+					"请重新生成 action=\"speak\"，确保发言方向与你的信念度 %s 一致。\n"+
+					"(本次是第 %d/%d 次 stance 重试)",
+				judgeResult.Reason,
+				beliefDirectionStr(r.cfg.SpeakerBeliefA),
+				retryIdx+1, stanceJudgeMaxRetries,
+			),
+		}
+		retryMsgs := append(append([]llm.Message{}, messages...), hint)
+		retryContent, _, retryErr := r.llm.Complete(
+			r.injectGatewayTrace(ctx, "react_stance_retry"),
+			r.systemBase,
+			retryMsgs,
+			llm.CompletionOptions{
+				Model:       "",
+				Temperature: 0.5,
+				MaxTokens:   500,
+				JSONMode:    true,
+			},
+		)
+		if retryErr != nil {
+			out.StanceRejected = true
+			out.StanceJudgeReason = judgeResult.Reason
+			return out, retryMsgs
+		}
+		var retryOut AgentOutput
+		if err := json.Unmarshal([]byte(retryContent), &retryOut); err != nil {
+			out.StanceRejected = true
+			out.StanceJudgeReason = judgeResult.Reason
+			return out, retryMsgs
+		}
+		retryOut.NormalizeAction()
+		if retryOut.Action != ActionSpeak || retryOut.Content == "" {
+			out.StanceRejected = true
+			out.StanceJudgeReason = judgeResult.Reason
+			return out, retryMsgs
+		}
+		// 5. 更新 out + messages, 下一轮循环再 judge
+		out = Speaker{
+			Content:      retryOut.Content,
+			Reasoning:    retryOut.Reasoning,
+			EvidenceRefs: retryOut.EvidenceRefs,
+			Confidence:   retryOut.Confidence,
+			Stance:       retryOut.Stance,
+		}
+		messages = retryMsgs
+	}
+
+	// 6. 2 次 retry 后仍 judge false → 标记 StanceRejected fallback
+	out.StanceRejected = true
+	// 重做一次 judge 拿最新 reason (上面循环最后一次 judge 已保存, 重新调 1 次拿 reason)
+	finalReason := judgeStanceOnce(r, ctx, r.cfg.SpeakerAgent.AgentType, r.cfg.SpeakerBeliefA, out.Content)
+	out.StanceJudgeReason = finalReason
+	return out, messages
+}
+
+// judgeStanceOnce 单次调 judge LLM, 用于 applySpeakerStanceJudge 最后 fallback 拿 reason
+func judgeStanceOnce(r *ReActRunner, ctx context.Context, agentType model.AgentType, beliefA float64, content string) string {
+	judgePrompt := StanceJudgePrompt(agentType, beliefA, content)
+	judgeMessages := []llm.Message{{Role: "system", Content: judgePrompt}}
+	judgeContent, _, err := r.llm.Complete(
+		r.injectGatewayTrace(ctx, "react_stance_judge_final"),
+		r.systemBase,
+		judgeMessages,
+		llm.CompletionOptions{
+			Model:       "",
+			Temperature: stanceJudgeTemperature,
+			MaxTokens:   stanceJudgeMaxTokens,
+			JSONMode:    true,
+		},
+	)
+	if err != nil {
+		return "judge LLM 失败: " + err.Error()
+	}
+	var result struct {
+		IsConsistent bool   `json:"is_consistent"`
+		Reason       string `json:"reason"`
+	}
+	if jerr := json.Unmarshal([]byte(judgeContent), &result); jerr != nil {
+		return "judge 输出非 JSON"
+	}
+	return result.Reason
+}
+
+// beliefDirectionStr 把 belief_A 数值翻译成中文方向字符串 (用于 hint 文案)
+func beliefDirectionStr(beliefA float64) string {
+	switch {
+	case beliefA > 0.55:
+		return "支持选项 A (>0.55)"
+	case beliefA < 0.45:
+		return "支持选项 B (<0.45)"
+	default:
+		return "中性 (0.45-0.55, challenge 或 neutral 都允许)"
+	}
 }
 
 // streamSpeakContent 用 LLM 流式生成最终发言 content，返回拼接结果

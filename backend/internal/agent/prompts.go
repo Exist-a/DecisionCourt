@@ -270,6 +270,44 @@ func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, me
 	return b.String()
 }
 
+// StanceJudgePrompt v0.10.24 候选 1: LLM-as-judge stance 一致性 prompt
+// 输入: agent 类型 + 当前 belief_A + 发言 content
+// 输出 JSON: { is_consistent: bool, reason: string }
+//
+// 与 JudgePrompt (判 judge belief 漂移) 不同, 本 prompt 判 lawyer 发言与
+// 信念度方向是否一致。复用同一 LLM client, 但 taskType="react_stance_judge"
+// 区别审计。
+//
+// 设计要点:
+//   - 判 content 语义 (PRD §4.3.2 字面), 不是 stance 枚举字段
+//   - 输出 schema 极简, MaxTokens=200 (低成本)
+//   - 配合老 isStanceConsistent 阈值 0.45/0.55 做 fast filter, 仅在
+//     stance 枚举不一致时才调 judge (省 90% token)
+func StanceJudgePrompt(agentType model.AgentType, beliefA float64, content string) string {
+	return fmt.Sprintf(`你是公正的 stance 裁判。
+
+## Agent 信息
+- 类型：%s
+- 当前对选项 A 的信念度：%.2f (取值范围 0-1)
+
+## Agent 发言内容
+%s
+
+## 判定标准
+判定上面这段发言是否在支持选项 A / B / 中立。
+- belief_A > 0.55 时，发言应该支持选项 A (否则不一致)
+- belief_A < 0.45 时，发言应该反对 A / 支持 B (否则不一致)
+- belief_A 在 0.45-0.55 之间时，发言可以支持 A 或 B 或中立 (均一致)
+
+## 输出 (严格 JSON)
+{
+  "is_consistent": true 或 false,
+  "reason": "一句话解释判定理由 (≤50 字)"
+}`,
+		agentType, beliefA, content,
+	)
+}
+
 // ClerkPromptWithJudgeDecision用于书记员基于法官裁决撰写判决书。
 func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.Evidence, messages []model.Message, judgeDecision JudgeDecision) string {
 	var b strings.Builder

@@ -193,4 +193,11 @@ type Speaker struct {
 	// JSON omitempty 向后兼容: 旧后端 / 旧前端不会显示这两个字段。
 	NoveltyRejected bool    `json:"novelty_rejected,omitempty"`
 	NoveltyJaccard   float64 `json:"novelty_jaccard,omitempty"`
+	// v0.10.24 候选 1: LLM-as-judge stance 一致性 reject 标记 + 实际理由
+	// StanceRejected=true 表示本发言触发了"stance judge 打回" (2 次 retry 后仍 false),
+	// 即最终返回的 Speaker 仍然与其当前 belief 方向不一致 (LLM judge 主观判定)。
+	// StanceJudgeReason 记录 judge LLM 最后输出的 reason (≤50 字), 用于审计 + 前端 chip tooltip。
+	// JSON omitempty 向后兼容: 旧后端 / 旧前端不会显示这两个字段。
+	StanceRejected   bool   `json:"stance_rejected,omitempty"`
+	StanceJudgeReason string `json:"stance_judge_reason,omitempty"`
 }

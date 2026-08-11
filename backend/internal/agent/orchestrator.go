@@ -247,6 +247,10 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		WeakenHook: o.makeWeakenHook(),
 		// v0.10.23 候选 2: 注入历史发言, runner 做新意度 Jaccard 检查
 		SpeakerHistory: speakerHistory,
+		// v0.10.24 候选 1: 注入 belief_A + agent, runner 做 LLM-as-judge stance 一致性
+		// (老 isStanceConsistent 阈值 0.45/0.55 fast filter + LLM judge 语义判定)
+		SpeakerBeliefA: agent.BeliefA,
+		SpeakerAgent:   agent,
 	})
 	runner.SetStepHook(stepHook)
 
