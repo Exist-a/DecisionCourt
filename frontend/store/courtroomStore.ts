@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { flushSync } from "react-dom";
+import { toastFatal } from "@/lib/errorBus";
+import { globalWsRef } from "@/lib/wsHolder";
 import type {
   Agent,
   AgentType,
@@ -626,6 +628,7 @@ export function applyCourtEvent(event: CourtEvent) {
         success?: boolean;
         raw_results?: string[];
         summary?: string;
+        error?: string; // v0.10.17 / D2-L2: 失败时附带错误信息
       };
       store.setActiveInvestigation(null);
       // 升级唯一对应的 dispatch 行；找不到则 append 新 report（兜底）。
@@ -658,6 +661,31 @@ export function applyCourtEvent(event: CourtEvent) {
           summary: p.summary,
           createdAt: event.timestamp,
         });
+      }
+
+      // D2-L2 (v0.10.x D2 silent-error-fix 收尾): 调查员失败时显示顶部 banner + retry 按钮
+      // 复用 errorBus.ts toastFatal BANNER_ 机制, 顶层 ToastContainer 自动渲染。
+      // Retry 按钮触发 "restart_opening" user action (后端 LLM ReAct 重做开口陈述,
+      // 律师会重新调 investigator_search tool)。模块级 wsRef (wsHolder.ts) 让
+      // store 在非 React 上下文能调 ws.send。
+      if (p.success === false) {
+        toastFatal(
+          `调查员搜索失败: ${p.query.slice(0, 30)}${p.query.length > 30 ? "…" : ""}`,
+          {
+            code: "BANNER_INVESTIGATOR_FAILED",
+            actions: [
+              {
+                type: "investigator_retry",
+                label: "继续庭审 (重试)",
+                onClick: () => {
+                  // 触发 continue_cross_exam, 后端进入下一轮 (或允许重做当前轮),
+                  // lawyer 重新调 investigator_search tool。
+                  globalWsRef()?.send({ action: "continue_cross_exam" });
+                },
+              },
+            ],
+          },
+        );
       }
       break;
     }

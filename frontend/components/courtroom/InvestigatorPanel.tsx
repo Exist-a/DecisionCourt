@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useCourtroomStore } from "@/store/courtroomStore";
 import type { InvestigationEvent } from "@/store/courtroomStore";
+import { globalWsRef } from "@/lib/wsHolder";
 
 /**
  * InvestigatorPanel 是庭审页右侧（或顶部折叠 Tab）的「调查活动」面板：
@@ -126,6 +127,19 @@ function EventRow({ event }: EventRowProps) {
         {isFailed && (
           <div className="mt-0.5 text-[10px] text-seal-ink text-display">
             搜索失败，请稍后再试
+            <button
+              type="button"
+              data-investigator-retry-button="true"
+              onClick={() => {
+                // D2-L2: 内部 retry 链接 (与 banner 共享 globalWsRef 入口)。
+                // 触发 "continue_cross_exam" user action: 后端进入下一轮 (或允许重做当前轮),
+                // lawyer 重新调 investigator_search tool (同一 dispatch 路径)。
+                globalWsRef()?.send({ action: "continue_cross_exam" });
+              }}
+              className="ml-1.5 text-prosecution-ink hover:underline font-data"
+            >
+              [重试]
+            </button>
           </div>
         )}
         <div className="mt-0.5 text-[9px] text-inkFaint font-data">

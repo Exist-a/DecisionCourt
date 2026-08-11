@@ -5,7 +5,14 @@ import { useRouter } from "next/navigation";
 import { useCourtroomStore, applyCourtEvent } from "@/store/courtroomStore";
 import { api } from "@/lib/api";
 import { createCourtWebSocket, type CourtEventHandler } from "@/lib/websocket";
-import type { Agent, EvidenceType, UserActionRequest } from "@/types";
+import { setGlobalWsRef } from "@/lib/wsHolder";
+import { saveMemoryCache, loadMemoryCache } from "@/lib/memoryCache";
+import type {
+  Agent,
+  EvidenceType,
+  MemoryEntry,
+  UserActionRequest,
+} from "@/types";
 import { usePhaseUI } from "@/hooks/usePhaseUI";
 // v0.10.17 silent-error-fix PR 3: 错误反馈接入。
 // 之前 7 个 try/catch 全部 console.error 后静默,用户看不到任何反馈。
@@ -201,6 +208,10 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
       // 成功时把每条 private memory 作为 `a2a.message` 事件回灌 store，
       // 复用 applyCourtEvent 的同一条 parser 路径 —— 不再单独写一份
       // 还原逻辑。这是 v0.8.3 修复"刷新后策略笔记 Tab 全空"的关键。
+      //
+      // D2-Memory (v0.10.x D2 silent-error-fix 收尾): 失败时降级到 localStorage 缓存,
+      // 并 toastWarning 提示用户。缓存来自上次成功拉到的 memory (按 session_uuid 隔离),
+      // 跨刷新仍可用。
       try {
         const memRes = await api.getVisibleMemory(sessionId);
         if (!mounted) return;
@@ -212,9 +223,30 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
               timestamp: row.created_at || new Date().toISOString(),
             });
           }
+          // 成功拉取 → 保存到 localStorage 备用
+          const memory = useCourtroomStore.getState().memoryEntries;
+          saveMemoryCache(sessionId, memory);
         }
       } catch (err) {
-        console.warn("[Courtroom] failed to load memory (endpoint may be missing):", err);
+        // fetchJson 失败 (5xx / 网络): 5xx 已 toastFatal (后端返回 envelope),
+        // 这里做"降级到 localStorage 缓存"补救
+        const cached = loadMemoryCache(sessionId);
+        if (cached) {
+          for (const entry of cached.entries) {
+            applyCourtEvent({
+              type: "a2a.message",
+              payload: entryToA2aPayload(entry),
+              timestamp: entry.createdAt,
+            });
+          }
+          toastWarning(
+            `Memory 服务异常, 已降级到本地缓存 (${cached.entries.length} 条, 来自 ${cached.savedAt.slice(0, 16)})`,
+            "MEMORY_DEGRADED",
+          );
+        } else {
+          // 无缓存 + 失败 = 真没数据 (或首次访问)
+          console.warn("[Courtroom] failed to load memory (no cache fallback):", err);
+        }
       }
     }
 
@@ -248,6 +280,9 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     });
     setWs(socket);
     wsRef.current = socket;
+    // D2-L2: 把 ws 注册到 module-level wsHolder, 让 store 调
+    // globalWsRef()?.send({action: ...}) 触发现有 ws (BANNER_ retry 按钮)。
+    setGlobalWsRef(socket);
 
     const handler: CourtEventHandler = (event) => {
       // v0.10.17 silent-error-fix PR 3: 后端 BroadcastUserFacingError
@@ -978,4 +1013,29 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
       </Dialog>
     </div>
   );
+}
+
+// D2-Memory (v0.10.x D2 silent-error-fix 收尾): 把 localStorage 缓存的
+// MemoryEntry 反向映射成 a2a.message payload, 走 applyCourtEvent 同样的
+// 解析路径, 让 store 重新 hydrate memoryEntries。
+// 字段对齐 store/courtroomStore.ts L748-758 期望的 a2a.message payload 形状。
+function entryToA2aPayload(entry: MemoryEntry) {
+  return {
+    id: entry.id,
+    message_uuid: entry.id,
+    round: entry.round,
+    phase: entry.phase,
+    from: entry.agentType,
+    to: "all",
+    message_type: entry.kind,
+    visibility: "private",
+    payload: {
+      content: entry.content,
+      linked_evidence_ids: entry.linkedEvidenceIds,
+      stance: entry.stance,
+      confidence: entry.confidence,
+      reasoning: entry.reasoning,
+    },
+    created_at: entry.createdAt,
+  };
 }
