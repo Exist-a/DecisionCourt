@@ -161,7 +161,7 @@ new_p          = sigmoid(logit(p)_{t+1}), clamp 到 [0.05, 0.95]
 
 - ✅ **v0.10.21 PR-B**：限制每轮发言长度（最多 300 字）—— 后端 `react_runner.go` applySpeakerLengthLimit 硬截断 + Speaker 结构体 + `truncateRunes` 工具函数 (中文友好按 rune 计)；返回字段 `ContentTruncated` + `OriginalRunes` 透传前端做 chip 提示。`prompts.go` baseRules 同步 200 → 300 字。
 - ⏳ **v0.7+ 计划**：禁止引用已经被反驳且未翻盘的证据 —— MVP 阶段 LLM 自由引用，未做"已反驳证据"集合跟踪。
-- ⏳ **v0.7+ 计划**：引入"新意度"检查：如果 Agent 本轮发言与之前轮次重复度超过 60%，要求其更换角度 —— MVP 阶段未实装 Jaccard 相似度计算，重复发言靠 Prompt 自约束。
+- ✅ **v0.10.23 候选 2**：引入"新意度"检查：与同 agent 历史发言 Jaccard > 0.6 触发 `applySpeakerNoveltyCheck` + 2 次 retry hint 强制换角度 (复用 `validateSpeak` retry 模式); 失败 fallback 返回 `Speaker.NoveltyRejected=true` + `NoveltyJaccard=实际值`; 前端 `MessageHistory` 显示 `⚠ 重复度 75%` chip. `bagOfWords` / `JaccardSimilarity` 抽到 `internal/util/bagofwords.go` 与 `belief.convergence.go` 共享.
 
 ### 4.4 Agent 通信协议（A2A）
 
@@ -1032,7 +1032,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 
 **v0.7+ 计划（不在 MVP）：**
 - [ ] ⏳ **强制立场一致性检查**：LLM-as-judge 打回重生成（详见 §4.3.2）
-- [ ] ⏳ **新意度检查**：Jaccard 相似度 > 60% 强制换角度（详见 §4.3.3）
+- [ ] ✅ **新意度检查**：v0.10.23 候选 2 落地, 与同 agent 历史 Jaccard > 0.6 触发 applySpeakerNoveltyCheck + 2 次 retry hint 强制换角度; 失败 fallback (详见 §4.3.3)
 - [ ] ✅ **300 字发言长度硬截断**：v0.10.21 PR-B 落地，后端 `react_runner.go` applySpeakerLengthLimit + `truncateRunes` (按 rune 计, 中文友好) + Speaker 返回字段 `ContentTruncated` / `OriginalRunes` 透传前端 chip 提示（详见 §4.3.3）
 - [ ] ⏳ **"已反驳证据"集合跟踪**：禁止引用被反驳且未翻盘的证据（详见 §4.3.3）
 
@@ -1161,7 +1161,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | **Verdict 页面 trial_summary + 导出（JSON + PDF）** | ✅ | `ClerkPromptWithJudgeDecision` 输出 trial_summary；`GET /export` 端点 + Content-Disposition；前端 `window.print()` + `@media print` |
 | **质证阶段轮次控制** | ✅ | `round.waiting_for_user` 事件 + `continue_cross_exam` action + 前端"开始第 N+1 轮"按钮（详见 `.trae/documents/质证阶段轮次控制修改计划.md`） |
 | **强制立场一致性检查** | ⏳ v0.7+ 计划 | LLM-as-judge 打回重生成未实装；当前 LLM 直接生成，立场漂移靠 Prompt 自约束（详见 §4.3.2 / §4.3.3）|
-| **新意度检查** | ⏳ v0.7+ 计划 | Jaccard 相似度计算未实装；重复发言靠 Prompt 自约束（详见 §4.3.3）|
+| **新意度检查** | ✅ v0.10.23 候选 2 | 与同 agent 历史 Jaccard > 0.6 触发 applySpeakerNoveltyCheck + 2 次 retry hint; 失败 fallback NoveltyRejected=true; 前端 chip `⚠ 重复度 X%` (详见 §4.3.3) |
 | **300 字发言长度硬截断** | ✅ v0.10.21 PR-B | 后端 `react_runner.go` applySpeakerLengthLimit 硬截断 + `truncateRunes` (rune 计) + Speaker.ContentTruncated/OriginalRunes 透传前端；prompt 200 → 300 字同步（详见 §4.3.3）|
 | **"已反驳证据"集合跟踪** | ⏳ v0.7+ 计划 | 未实装证据反驳状态机（详见 §4.3.3）|
 

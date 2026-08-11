@@ -113,6 +113,12 @@ export interface Message {
   // 向后兼容: 旧后端不传, 字段为 undefined, 不显示。
   was_truncated?: boolean;
   original_runes?: number;
+  // v0.10.23 候选 2: 后端新意度 Jaccard 检查 reject 标记 + 实际 jaccard 值
+  // (novelty_rejected=true 表示本次发言触发了"换角度 retry" 2 次后仍重复)。
+  // 前端 MessageHistory 在气泡末尾 chip 显示 "⚠ 重复度 75% (重试 2 次仍相似)"。
+  // 向后兼容: 旧后端不传, 字段为 undefined, 不显示。
+  novelty_rejected?: boolean;
+  novelty_jaccard?: number;
 }
 
 export interface BeliefSnapshot {
@@ -218,6 +224,9 @@ export interface AgentSpeakEvent extends CourtEvent {
     // 旧后端不传, 字段为 undefined, 不影响渲染。
     was_truncated?: boolean;
     original_runes?: number;
+    // v0.10.23 候选 2: 后端新意度 Jaccard 检查 reject 标记
+    novelty_rejected?: boolean;
+    novelty_jaccard?: number;
   };
 }
 

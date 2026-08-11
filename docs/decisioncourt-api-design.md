@@ -905,6 +905,12 @@ Agent 发言事件。
 >
 > 触发场景：LLM 实际输出超过 300 字。后端先截断再 broadcast, 前端在发言气泡末尾 chip 显示 "已截断 (原 XXX 字)"。
 
+> **v0.10.23 候选 2 新增字段**（可选，向后兼容）：
+> - `novelty_rejected` (bool): `true` 表示本发言触发了"换角度 retry" (2 次 retry 后仍 > 0.6)，最终返回的 Speaker 仍然与自己历史发言重复。
+> - `novelty_jaccard` (float64): 触发时的实际 jaccard 值 (0-1)。如果 `novelty_rejected=false`, 此字段省略。
+>
+> 触发场景：与同 agent 历史发言 jaccard > 0.6。后端 `applySpeakerNoveltyRetryLoop` 注入 hint 强制换角度 2 次, 仍重复则标记 rejected fallback 返回。前端 chip 显示 `⚠ 重复度 75%`。
+
 ---
 
 #### 4.3.2 evidence.added

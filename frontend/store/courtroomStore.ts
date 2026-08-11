@@ -538,6 +538,9 @@ export function applyCourtEvent(event: CourtEvent) {
         // v0.10.21 PR-B: 透传后端硬截断标记 (was_truncated / original_runes)
         was_truncated?: boolean;
         original_runes?: number;
+        // v0.10.23 候选 2: 透传后端新意度 Jaccard reject 标记
+        novelty_rejected?: boolean;
+        novelty_jaccard?: number;
       };
       // 流式到 speak 结束：清掉 streamingContent，让 Avatar bubble 切到
       // 完整内容（来自 addMessage）。如果流式失败，这里也起到 fallback
@@ -558,6 +561,9 @@ export function applyCourtEvent(event: CourtEvent) {
         // v0.10.21 PR-B: 透传截断标记 (undefined 时不显示 chip)
         was_truncated: p.was_truncated,
         original_runes: p.original_runes,
+        // v0.10.23 候选 2: 透传
+        novelty_rejected: p.novelty_rejected,
+        novelty_jaccard: p.novelty_jaccard,
         created_at: event.timestamp,
       });
       break;

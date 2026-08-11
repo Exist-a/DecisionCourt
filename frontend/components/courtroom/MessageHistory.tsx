@@ -161,6 +161,18 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
                   </div>
                 )}
 
+                {/* v0.10.23 候选 2: 新意度 Jaccard 检查 reject 提示 (后端 applySpeakerNoveltyCheck + 2 次 retry) */}
+                {msg.novelty_rejected && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <span
+                      className="text-[10px] font-data px-1.5 py-0.5 bg-rose-50 border border-rose-300 rounded-sm text-rose-800"
+                      title={`后端新意度 Jaccard=${(msg.novelty_jaccard ?? 0).toFixed(2)} (>0.6)，与同 agent 历史发言重复度过高。LLM 已按 "换角度" 重试 2 次仍相似，最终返回本次发言。`}
+                    >
+                      ⚠ 重复度 {((msg.novelty_jaccard ?? 0) * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                )}
+
                 {/* ReAct 推理链：仅当本条发言携带 cot_steps 时渲染 */}
                 {msg.cot_steps && msg.cot_steps.length > 0 && (
                   <CotStepsPanel steps={msg.cot_steps} />
