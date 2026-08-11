@@ -119,6 +119,12 @@ export interface Message {
   // 向后兼容: 旧后端不传, 字段为 undefined, 不显示。
   novelty_rejected?: boolean;
   novelty_jaccard?: number;
+  // v0.10.24 候选 1: 后端 LLM-as-judge stance 检查 reject 标记 + 实际理由
+  // (stance_rejected=true 表示本次发言被 LLM 裁判判定为与当前 belief 方向不一致, 2 次 retry 后仍 judge false)。
+  // 前端 MessageHistory 在气泡末尾 chip 显示 "🛡 stance 违规 (原因: <reason>)"。
+  // 向后兼容: 旧后端不传, 字段为 undefined, 不显示。
+  stance_rejected?: boolean;
+  stance_judge_reason?: string;
 }
 
 export interface BeliefSnapshot {
@@ -227,6 +233,9 @@ export interface AgentSpeakEvent extends CourtEvent {
     // v0.10.23 候选 2: 后端新意度 Jaccard 检查 reject 标记
     novelty_rejected?: boolean;
     novelty_jaccard?: number;
+    // v0.10.24 候选 1: 后端 LLM-as-judge stance 检查 reject 标记
+    stance_rejected?: boolean;
+    stance_judge_reason?: string;
   };
 }
 

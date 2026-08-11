@@ -173,6 +173,18 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
                   </div>
                 )}
 
+                {/* v0.10.24 候选 1: LLM-as-judge stance 一致性 reject 提示 (后端 applySpeakerStanceJudge + 2 次 retry) */}
+                {msg.stance_rejected && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <span
+                      className="text-[10px] font-data px-1.5 py-0.5 bg-amber-50 border border-amber-300 rounded-sm text-amber-800"
+                      title={`后端 LLM 裁判判定本次发言与当前信念度方向不一致${msg.stance_judge_reason ? ` (原因: ${msg.stance_judge_reason})` : ''}。LLM 已按 "换方向" 重试 2 次仍 judge false，最终返回本次发言。`}
+                    >
+                      🛡 stance 违规{msg.stance_judge_reason ? ` (${msg.stance_judge_reason})` : ''}
+                    </span>
+                  </div>
+                )}
+
                 {/* ReAct 推理链：仅当本条发言携带 cot_steps 时渲染 */}
                 {msg.cot_steps && msg.cot_steps.length > 0 && (
                   <CotStepsPanel steps={msg.cot_steps} />

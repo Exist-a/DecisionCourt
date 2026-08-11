@@ -154,7 +154,7 @@ new_p          = sigmoid(logit(p)_{t+1}), clamp 到 [0.05, 0.95]
 
 **强制立场一致性**：
 - Agent 生成发言前，系统先检查其当前信念度。
-- ⏳ **v0.7+ 计划**：如果发言内容与信念度方向不一致（例如控方在 `belief_A < 0.5` 时仍在支持 option A），LLM-as-judge 会打回重生成。MVP 阶段 LLM 直接生成，未做反向校验；观测上若发现立场漂移，再启用打回重生成。
+- ✅ **v0.10.24 候选 1**：如果发言内容与信念度方向不一致（例如控方在 `belief_A = 0.46` 时显式支持 B，或 `belief_A = 0.44` 时显式支持 A），LLM-as-judge 会打回重生成。MVP 阶段 LLM 直接生成，未做反向校验；本次 v0.10.24 候选 1 实装。后端 `react_runner.go` 新增 `applySpeakerStanceJudge` (低温 0.2 + taskType="react_stance_judge") + 老 `isStanceConsistent` 阈值 fast filter (pro_a 拒绝 belief < 0.45, pro_b 拒绝 belief > 0.45, 严格 > / < 非 >=) + 2 次 retry + 失败 fallback Speaker.StanceRejected + StanceJudgeReason; 前端 chip `🛡 stance 违规`; 仅 stance 枚举不一致时调 judge LLM。**注**: PRD 原文写 0.5 阈值, 实际代码老 isStanceConsistent 用 0.45 (老实现是双边界: pro_a 拒绝 < 0.45 + pro_b 拒绝 > 0.45, 中间地带 [0.45, 0.55] 任何 stance 都一致作为逃逸口), PRD 此处同步对齐代码。
 - ✅ 发言中必须引用至少一条证据，不能空泛表态（`speaker.EvidenceRefs` 在 Orchestrator `recordSideEffects` 阶段 + Prompt 模板双重约束）。
 
 #### 4.3.3 防止诡辩与重复
@@ -1031,7 +1031,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 - [x] ❌ **不做**：v0.5 数据迁移 Phase 1-3 —— 项目处于开发期，数据无保留价值；`private_memory` ↔ `a2a_messages` 双写不做正式切换。决策 2026-07-01。
 
 **v0.7+ 计划（不在 MVP）：**
-- [ ] ⏳ **强制立场一致性检查**：LLM-as-judge 打回重生成（详见 §4.3.2）
+- [ ] ✅ **强制立场一致性检查**：v0.10.24 候选 1 落地, LLM-as-judge 打回重生成 + 2 次 retry + 老 isStanceConsistent 阈值 fast filter (pro_a < 0.45, pro_b > 0.45, 严格 > / <) (详见 §4.3.2)
 - [ ] ✅ **新意度检查**：v0.10.23 候选 2 落地, 与同 agent 历史 Jaccard > 0.6 触发 applySpeakerNoveltyCheck + 2 次 retry hint 强制换角度; 失败 fallback (详见 §4.3.3)
 - [ ] ✅ **300 字发言长度硬截断**：v0.10.21 PR-B 落地，后端 `react_runner.go` applySpeakerLengthLimit + `truncateRunes` (按 rune 计, 中文友好) + Speaker 返回字段 `ContentTruncated` / `OriginalRunes` 透传前端 chip 提示（详见 §4.3.3）
 - [ ] ⏳ **"已反驳证据"集合跟踪**：禁止引用被反驳且未翻盘的证据（详见 §4.3.3）
@@ -1160,7 +1160,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | **v0.6 BeliefTrajectoryTab + ConvergenceBadge + BeliefDiffCard** | ✅ | 信念审计 trail 完整实装 |
 | **Verdict 页面 trial_summary + 导出（JSON + PDF）** | ✅ | `ClerkPromptWithJudgeDecision` 输出 trial_summary；`GET /export` 端点 + Content-Disposition；前端 `window.print()` + `@media print` |
 | **质证阶段轮次控制** | ✅ | `round.waiting_for_user` 事件 + `continue_cross_exam` action + 前端"开始第 N+1 轮"按钮（详见 `.trae/documents/质证阶段轮次控制修改计划.md`） |
-| **强制立场一致性检查** | ⏳ v0.7+ 计划 | LLM-as-judge 打回重生成未实装；当前 LLM 直接生成，立场漂移靠 Prompt 自约束（详见 §4.3.2 / §4.3.3）|
+| **强制立场一致性检查** | ✅ v0.10.24 候选 1 | LLM-as-judge 打回重生成实装；老 isStanceConsistent 阈值 fast filter (pro_a < 0.45, pro_b > 0.45, 严格 > / <) + 2 次 retry + 失败 fallback StanceRejected + StanceJudgeReason; 前端 chip `🛡 stance 违规`; 仅 stance 枚举不一致时调 judge LLM (省 90% token, 详见 §4.3.2 / §4.3.3) |
 | **新意度检查** | ✅ v0.10.23 候选 2 | 与同 agent 历史 Jaccard > 0.6 触发 applySpeakerNoveltyCheck + 2 次 retry hint; 失败 fallback NoveltyRejected=true; 前端 chip `⚠ 重复度 X%` (详见 §4.3.3) |
 | **300 字发言长度硬截断** | ✅ v0.10.21 PR-B | 后端 `react_runner.go` applySpeakerLengthLimit 硬截断 + `truncateRunes` (rune 计) + Speaker.ContentTruncated/OriginalRunes 透传前端；prompt 200 → 300 字同步（详见 §4.3.3）|
 | **"已反驳证据"集合跟踪** | ⏳ v0.7+ 计划 | 未实装证据反驳状态机（详见 §4.3.3）|

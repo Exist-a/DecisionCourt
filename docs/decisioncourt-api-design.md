@@ -911,6 +911,12 @@ Agent 发言事件。
 >
 > 触发场景：与同 agent 历史发言 jaccard > 0.6。后端 `applySpeakerNoveltyRetryLoop` 注入 hint 强制换角度 2 次, 仍重复则标记 rejected fallback 返回。前端 chip 显示 `⚠ 重复度 75%`。
 
+> **v0.10.24 候选 1 新增字段**（可选，向后兼容）：
+> - `stance_rejected` (bool): `true` 表示本发言触发了"stance judge 打回" (2 次 retry 后仍 judge false), 即最终返回的 Speaker 仍然与其当前 belief 方向不一致 (LLM judge 主观判定)。
+> - `stance_judge_reason` (string): judge LLM 最后输出的 reason (≤50 字), 用于审计 + 前端 chip tooltip。
+>
+> 触发场景: 老 `isStanceConsistent` 阈值 0.45/0.55 fast filter 通过, 后端 `applySpeakerStanceJudge` 调 LLM judge (低温 0.2 + taskType="react_stance_judge") 判定发言 content 语义, false 注入 hint 2 次 retry, 仍 false 标记 rejected fallback 返回。前端 chip 显示 `🛡 stance 违规 (原因: ...)`。
+
 ---
 
 #### 4.3.2 evidence.added

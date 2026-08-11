@@ -168,7 +168,7 @@
 |---|---|---|
 | Agent Gateway 模型路由 | ⏳ | 当前手工选 V3/R1 |
 | Agent Gateway 多实例 Token Budget 持久化 | ⏳ | 现仅内存 |
-| 强制立场一致性检查（LLM-as-judge 打回重生成） | ⏳ | 现靠 Prompt 自约束 |
+| 强制立场一致性检查（LLM-as-judge 打回重生成） | ✅ v0.10.24 候选 1 | 与当前 belief 方向不一致 (老 isStanceConsistent 阈值 0.45/0.55 fast filter) 触发 `applySpeakerStanceJudge` (低温 0.2 judge) + 2 次 retry hint; 失败 fallback StanceRejected=true + StanceJudgeReason; 前端 chip `🛡 stance 违规` |
 | 新意度检查（Jaccard 相似度 > 60% 强制换角度） | ✅ v0.10.23 候选 2 | 与同 agent 历史发言 Jaccard > 0.6 触发 `applySpeakerNoveltyCheck` + 2 次 retry hint; 失败 fallback NoveltyRejected=true; 前端 chip `⚠ 重复度 X%` |
 | 发言长度硬截断（300 字 + 重试） | ✅ v0.10.21 PR-B | 后端 `react_runner.go` applySpeakerLengthLimit 硬截断 + `truncateRunes` (rune 计, 中文友好) + Speaker.ContentTruncated/OriginalRunes 透传前端 chip；prompt 200 → 300 字同步 |
 | "已反驳证据"集合跟踪 | ⏳ | 未实装状态机 |
@@ -229,7 +229,7 @@ v0.9 全部决策已落地,代码 + 测试 + 文档三向对齐,准备部署到�
 
 - 多实例 backend + Redis Pub/Sub + LLM 异步化 + DB 主从
 - Agent Gateway 模型路由 / 多 provider fail-over
-- 强制立场一致性检查 / 新意度检查 ✅ v0.10.23 候选 2 / 300 字硬截断 ✅ v0.10.21 / "已反驳证据"集合跟踪
+- 强制立场一致性检查 ✅ v0.10.24 候选 1 / 新意度检查 ✅ v0.10.23 候选 2 / 300 字硬截断 ✅ v0.10.21 / "已反驳证据"集合跟踪
 - LLM Output 正则扫(ADR 0015 暂缓方案)
 - 专家证人 / 陪审团 / 历史庭审 / PDF 导出 / 商业化
 
