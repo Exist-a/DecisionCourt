@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -24,6 +25,24 @@ type Orchestrator struct {
 	memoryRepo  private_memory.Repository
 	weakenRepo  belief.WeakenRepository
 	evidenceLkp EvidenceResolver
+	// historyProvider (v0.10.23 候选 2), if non-nil, 让 orchestrator
+	// 拉同 agent 历史 speak messages 用于新意度 Jaccard 检查。
+	// Nil = 跳过新意度检查 (向后兼容 + 测试 mock 用)。
+	historyProvider HistoryProvider
+}
+
+// HistoryProvider v0.10.23 候选 2: 抽象接口, 让 service 层注入 history 拉取逻辑
+// (orchestrator 自身不直接依赖 DB)。实现要求:
+//   - 返回指定 session + agent 的历史 speak messages (按 created_at 倒序 LIMIT n)
+//   - 不包含本次新发言 (caller 负责加进去)
+//   - 返回 nil / 空 slice 都是合法 (orchestrator 跳过检查)
+type HistoryProvider interface {
+	LoadAgentHistory(ctx context.Context, sessionID uuid.UUID, agentType model.AgentType, limit int) ([]model.Message, error)
+}
+
+// SetHistoryProvider v0.10.23 候选 2: 注入 history provider
+func (o *Orchestrator) SetHistoryProvider(hp HistoryProvider) {
+	o.historyProvider = hp
 }
 
 // NewOrchestrator wires the orchestrator with an A2A bus (for message
@@ -178,6 +197,20 @@ func (o *Orchestrator) lawyerSpeakReAct(
 	// empty string here simply means "no prior memory yet".
 	systemPrompt = systemPrompt + o.buildEpisodicMemoryBlock(ctx, session.ID, string(self))
 
+	// v0.10.23 候选 2: 拉同 agent 历史发言 (用于新意度 Jaccard 检查)。
+	// 失败 = best-effort, 不阻断 trial。Service 层注入 HistoryProvider
+	// (见 SetHistoryProvider); 未注入 → 跳过新意度检查 (向后兼容)。
+	var speakerHistory []model.Message
+	if o.historyProvider != nil {
+		hist, err := o.historyProvider.LoadAgentHistory(ctx, session.ID, self, 5)
+		if err != nil {
+			slog.Warn("orchestrator: LoadAgentHistory failed (skip novelty check)",
+				"session_uuid", session.SessionUUID, "agent_type", string(self), "err", err)
+		} else {
+			speakerHistory = hist
+		}
+	}
+
 	runner := NewReActRunner(o.llmClient, systemPrompt, toolMap, RunnerConfig{
 		MaxIterations: 4,
 		Timeout:       30 * 1_000_000_000, // 30s; using ns to avoid time import here
@@ -212,6 +245,8 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		// drop weaken declarations instead of crashing. (Most pre-v0.6
 		// callers don't supply either, so this stays a no-op.)
 		WeakenHook: o.makeWeakenHook(),
+		// v0.10.23 候选 2: 注入历史发言, runner 做新意度 Jaccard 检查
+		SpeakerHistory: speakerHistory,
 	})
 	runner.SetStepHook(stepHook)
 

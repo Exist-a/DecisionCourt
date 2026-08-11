@@ -195,19 +195,6 @@ func TestCheckConvergence_NoRecentMessagesDegradesOscillation(t *testing.T) {
 	}
 }
 
-// TestBagOfWords_ChineseAndEnglish mixes CJK + ASCII tokens to make sure
-// the tokenizer handles both. Jaccard must work across scripts.
-func TestBagOfWords_ChineseAndEnglish(t *testing.T) {
-	a := bagOfWords("Hello world 你好世界")
-	b := bagOfWords("Hello world 完全不同")
-	if len(a) == 0 || len(b) == 0 {
-		t.Fatalf("bagOfWords returned empty: a=%v b=%v", a, b)
-	}
-	// Sanity: at least one common Latin token.
-	if _, ok := a["hello"]; !ok {
-		t.Fatalf("expected 'hello' token in a: %v", a)
-	}
-	if _, ok := b["hello"]; !ok {
-		t.Fatalf("expected 'hello' token in b: %v", b)
-	}
-}
+// TestBagOfWords_ChineseAndEnglish v0.10.23: bagOfWords 已抽到 internal/util/bagofwords.go,
+// 单元测试也搬到 internal/util/bagofwords_test.go (TestBagOfWords_MixedCJKAndEnglish
+// 等 13 个 case)。本文件保留空位避免后续 PR 误改。

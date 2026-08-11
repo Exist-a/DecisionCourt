@@ -186,4 +186,11 @@ type Speaker struct {
 	// OriginalRunes 记录截断前的字符数, 用于审计 / 前端 chip 显示。
 	ContentTruncated bool `json:"content_truncated,omitempty"`
 	OriginalRunes    int  `json:"original_runes,omitempty"`
+	// v0.10.23 候选 2: 新意度 Jaccard 检查 reject 标记 + 实际 jaccard 值
+	// NoveltyRejected=true 表示本发言触发了"换角度 retry" (2 次 retry 后仍 > 0.6),
+	// 即最终返回的 Speaker 仍然与自己历史发言重复。
+	// NoveltyJaccard 记录触发时的实际 jaccard 值 (0-1), 用于前端 chip + 审计。
+	// JSON omitempty 向后兼容: 旧后端 / 旧前端不会显示这两个字段。
+	NoveltyRejected bool    `json:"novelty_rejected,omitempty"`
+	NoveltyJaccard   float64 `json:"novelty_jaccard,omitempty"`
 }

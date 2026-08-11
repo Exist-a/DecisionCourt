@@ -117,6 +117,61 @@ func NewService(
 	}
 }
 
+// InjectHistoryProvider v0.10.23 候选 2: 把 service 自身注入到 orchestrator
+// 作为 HistoryProvider。需要 NewService 之后调一次 (不能在构造时注入, 因为
+// orchestrator 还没看到 service)。
+//
+// caller 模式:
+//   svc := courtroom.NewService(...)
+//   svc.orchestrator.SetHistoryProvider(svc)
+//
+// 不强制: 不调也能跑 (orchestrator 跳过新意度检查, 向后兼容)。
+func (s *Service) InjectHistoryProvider() {
+	if s.orchestrator != nil {
+		s.orchestrator.SetHistoryProvider(s)
+	}
+}
+
+// LoadAgentHistory v0.10.23 候选 2: 实现 agent.HistoryProvider 接口
+// 让 orchestrator 在 speak 之前拉同 agent 的历史发言 (用于新意度 Jaccard 检查)。
+//
+// 实现细节:
+//   - 查 messages 表: session_id = ? AND agent_type = ? AND action_type = 'speak'
+//   - 按 created_at DESC 排序, LIMIT N (默认 5)
+//   - 返回按时间正序 (orchestrator 自己会 reverse)
+func (s *Service) LoadAgentHistory(ctx context.Context, sessionID uuid.UUID, agentType model.AgentType, limit int) ([]model.Message, error) {
+	if s.db == nil {
+		return nil, nil // dev mode / 测试 fixture, 跳过
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+	// agentType → agent_id 转换需要 JOIN agents, 这里简化为直接查 agent_type 字符串
+	// (model.Message 不直接存 agent_type, 但 Evidence 可比对)。
+	// 当前 model.Message schema: SessionID, AgentID (uuid, pointer), ActionType, Content
+	// 没有 AgentType 字段, 需要 JOIN agents 表。
+	// v0.10.23 候选 2 实现: 用 JOIN agents 取 AgentType, 然后过滤。
+	var rows []model.Message
+	err := s.db.Raw(`
+		SELECT m.* FROM messages m
+		JOIN agents a ON m.agent_id = a.id
+		WHERE m.session_id = ? AND a.agent_type = ? AND m.action_type = 'speak'
+		ORDER BY m.created_at DESC
+		LIMIT ?
+	`, sessionID, string(agentType), limit).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	// reverse 成时间正序 (orchestrator 用 BagOfWords 比对需要正序)
+	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
+		rows[i], rows[j] = rows[j], rows[i]
+	}
+	return rows, nil
+}
+
+// 编译期接口断言: *Service 必须实现 agent.HistoryProvider
+var _ agent.HistoryProvider = (*Service)(nil)
+
 func (s *Service) getSessionLock(sessionUUID string) *sync.Mutex {
 	s.locksMu.Lock()
 	defer s.locksMu.Unlock()

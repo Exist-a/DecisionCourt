@@ -12,6 +12,7 @@ import (
 	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
+	"github.com/decisioncourt/backend/internal/util"
 )
 
 // ErrReactMaxIterations is returned by ReActRunner.Run when the loop
@@ -139,6 +140,11 @@ type RunnerConfig struct {
 	// disables weaken persistence — useful for callers that don't yet
 	// integrate with belief v0.6.
 	WeakenHook WeakenHook
+	// SpeakerHistory (v0.10.23 候选 2), if non-nil, 是当前 speaker 同 agent
+	// 的历史 speak messages (跨 phase 跨 round, 但只看自己)。runner 用它做
+	// 新意度 Jaccard 检查: 本次新发言 vs 自己历史任一条 jaccard > 0.6 → reject +
+	// retry hint 强制换角度。Nil = 跳过检查 (向后兼容 + 测试用)。
+	SpeakerHistory []model.Message
 }
 
 // ReActRunner runs a Thought→Action→Observation loop on top of an LLM
@@ -395,13 +401,16 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 				steps = append(steps, step)
 				r.emitStep(step)
 
-				return applySpeakerLengthLimit(Speaker{
+				// v0.10.23 候选 2: 新意度 retry 通路 (先 novelty 后 length limit)
+				speaker := Speaker{
 					Content:      out.Content,
 					Reasoning:    out.Reasoning,
 					EvidenceRefs: out.EvidenceRefs,
 					Confidence:   out.Confidence,
 					Stance:       out.Stance,
-				}), steps, nil
+				}
+				speaker, _ = applySpeakerNoveltyRetryLoop(speaker, r, ctx, messages)
+				return applySpeakerLengthLimit(speaker), steps, nil
 			}
 			}
 			if err := validateSpeak(&out); err != nil {
@@ -438,13 +447,16 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 			steps = append(steps, step)
 			r.emitStep(step)
 
-			return applySpeakerLengthLimit(Speaker{
+			// v0.10.23 候选 2: 新意度 retry 通路 (先 novelty 后 length limit)
+			speaker := Speaker{
 				Content:      out.Content,
 				Reasoning:    out.Reasoning,
 				EvidenceRefs: out.EvidenceRefs,
 				Confidence:   out.Confidence,
 				Stance:       out.Stance,
-			}), steps, nil
+			}
+			speaker, _ = applySpeakerNoveltyRetryLoop(speaker, r, ctx, messages)
+			return applySpeakerLengthLimit(speaker), steps, nil
 
 		default:
 			return Speaker{}, steps, fmt.Errorf("react iter %d: unknown action %q", iter, out.Action)
@@ -464,6 +476,14 @@ func (r *ReActRunner) emitStep(step Step) {
 // 按 rune (Unicode 字符) 计, 中文友好。300 字 ≈ 10-15 句中等长度发言。
 const speakerMaxRunes = 300
 
+// v0.10.23 候选 2: 新意度 Jaccard 检查常量
+//   - noveltyThreshold: Jaccard > 该阈值触发 reject (PRD §4.3.3 规定 60% = 0.6)
+//   - noveltyMaxRetries: reject 后 retry LLM 强制换角度的最大次数 (用户拍板 2 次)
+const (
+	noveltyThreshold  = 0.6
+	noveltyMaxRetries = 2
+)
+
 // applySpeakerLengthLimit 对 Speaker.Content 强制应用 300 字硬截断。
 // 若原始字符数 > 300:
 //   - Content 改为 truncateRunes 截断后的字符串 (末尾追加 "...")
@@ -481,6 +501,141 @@ func applySpeakerLengthLimit(s Speaker) Speaker {
 		s.ContentTruncated = true
 	}
 	return s
+}
+
+// applySpeakerNoveltyCheck v0.10.23 候选 2: 新意度 Jaccard 检查 (纯算法, 不 reject)
+//
+// 输入: 当前 Speaker + 同 agent 历史发言 messages
+// 输出: rejected (bool), maxJaccard (float64)
+//
+// 算法: 与同 agent 历史每条 speak 算 Jaccard, 取最大值。
+//   - 复用 util.BagOfWords + util.JaccardSimilarity (与 belief.convergence.go 同源)
+//   - history 为空 / Speaker.Content 为空 → 返回 (false, 0) 不触发
+//   - 任一历史 jaccard > noveltyThreshold (0.6) → rejected=true, maxJaccard=最大值
+//
+// 不触及 §2.1 裁决 (轻度): Jaccard 阈值 0.6 是客观数学, retry 行为是用户拍板的
+// "2 次 retry, 失败 fallback" 设计。本次按用户授权实装, 不重新讨论。
+//
+// 调用点: applySpeakerNoveltyRetryLoop (Run() 内 ActionSpeak 分支, 仿 validateSpeak retry 模式)
+func applySpeakerNoveltyCheck(s Speaker, history []model.Message) (rejected bool, maxJaccard float64) {
+	if len(history) == 0 || s.Content == "" {
+		return false, 0
+	}
+	currentTokens := util.BagOfWords(s.Content)
+	if len(currentTokens) == 0 {
+		return false, 0
+	}
+	for i := range history {
+		h := &history[i]
+		if h.ActionType != "speak" {
+			continue
+		}
+		if h.Content == "" {
+			continue
+		}
+		historicalTokens := util.BagOfWords(h.Content)
+		j := util.JaccardSimilarity(currentTokens, historicalTokens)
+		if j > maxJaccard {
+			maxJaccard = j
+		}
+		if maxJaccard > noveltyThreshold {
+			return true, maxJaccard
+		}
+	}
+	return maxJaccard > noveltyThreshold, maxJaccard
+}
+
+// applySpeakerNoveltyRetryLoop v0.10.23 候选 2: 新意度 retry 主循环
+//
+// 复用 validateSpeak retry 模式 (L407-436): 用 system hint 注入 LLM,
+// 强制 LLM 换角度生成新发言。最多重试 noveltyMaxRetries (2) 次, 失败 fallback
+// 返回最终 Speaker (带 NoveltyRejected=true + NoveltyJaccard=实际值)。
+//
+// 输入:
+//   - out: 第一次 LLM 生成的 Speaker (含 Content)
+//   - r: ReActRunner (拿 llm client + systemBase)
+//   - ctx / messages: LLM 调用上下文
+//
+// 输出: 调整后的 Speaker + 调整后的 messages (含 retry hints), updated flag
+//
+// 调用点: Run() 内 ActionSpeak 分支的 streaming success path + validateSpeak retry path
+// (validateSpeak 失败后也会再次跑新意度检查, 因为 retry 后的输出可能仍重复)
+func applySpeakerNoveltyRetryLoop(
+	out Speaker,
+	r *ReActRunner,
+	ctx context.Context,
+	messages []llm.Message,
+) (Speaker, []llm.Message) {
+	// history 为 nil → 跳过检查 (向后兼容 + 测试用)
+	if r.cfg.SpeakerHistory == nil {
+		return out, messages
+	}
+
+	for retryIdx := 0; retryIdx < noveltyMaxRetries; retryIdx++ {
+		rejected, jaccard := applySpeakerNoveltyCheck(out, r.cfg.SpeakerHistory)
+		if !rejected {
+			return out, messages // 通过, 返回最终 out
+		}
+
+		// 失败: 注入 hint 让 LLM 换角度重生成
+		hint := llm.Message{
+			Role: "system",
+			Content: fmt.Sprintf(
+				"你刚才的发言与历史发言 Jaccard=%.2f (>0.6)，重复度过高。\n"+
+					"请换角度重新输出 action=\"speak\"：\n"+
+					"  - 引入新的证据 / 数字 / 反例\n"+
+					"  - 反驳对方具体论点（而不是重复自己的）\n"+
+					"  - 承认对方部分观点并重新立论\n"+
+					"(本次是第 %d/%d 次换角度重试)",
+				jaccard, retryIdx+1, noveltyMaxRetries,
+			),
+		}
+		retryMsgs := append(append([]llm.Message{}, messages...), hint)
+		retryContent, _, retryErr := r.llm.Complete(
+			r.injectGatewayTrace(ctx, "react_novelty_retry"),
+			r.systemBase,
+			retryMsgs,
+			llm.CompletionOptions{
+				Model:       "",
+				Temperature: 0.6, // 略高于 default 0.5, 鼓励换角度
+				MaxTokens:   500,
+				JSONMode:    true,
+			},
+		)
+		if retryErr != nil {
+			// LLM 调用失败, fallback 标记 rejected 返回
+			out.NoveltyRejected = true
+			out.NoveltyJaccard = jaccard
+			return out, retryMsgs
+		}
+		var retryOut AgentOutput
+		if err := json.Unmarshal([]byte(retryContent), &retryOut); err != nil {
+			out.NoveltyRejected = true
+			out.NoveltyJaccard = jaccard
+			return out, retryMsgs
+		}
+		retryOut.NormalizeAction()
+		if retryOut.Action != ActionSpeak || retryOut.Content == "" {
+			out.NoveltyRejected = true
+			out.NoveltyJaccard = jaccard
+			return out, retryMsgs
+		}
+		// 更新 out + messages, 下一轮循环再检查
+		out = Speaker{
+			Content:      retryOut.Content,
+			Reasoning:    retryOut.Reasoning,
+			EvidenceRefs: retryOut.EvidenceRefs,
+			Confidence:   retryOut.Confidence,
+			Stance:       retryOut.Stance,
+		}
+		messages = retryMsgs
+	}
+
+	// 2 次 retry 后仍重复, 标记 NoveltyRejected fallback 返回
+	finalRejected, finalJaccard := applySpeakerNoveltyCheck(out, r.cfg.SpeakerHistory)
+	out.NoveltyRejected = finalRejected
+	out.NoveltyJaccard = finalJaccard
+	return out, messages
 }
 
 // streamSpeakContent 用 LLM 流式生成最终发言 content，返回拼接结果

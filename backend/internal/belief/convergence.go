@@ -2,9 +2,9 @@ package belief
 
 import (
 	"math"
-	"strings"
 
 	"github.com/decisioncourt/backend/internal/model"
+	"github.com/decisioncourt/backend/internal/util"
 	"github.com/google/uuid"
 )
 
@@ -169,62 +169,15 @@ func signalsOscillation(recentMessages []model.Message, threshold float64) bool 
 	if latest == nil || prev == nil {
 		return false
 	}
-	a := bagOfWords(prev.Content)
-	b := bagOfWords(latest.Content)
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	intersection := 0
-	union := 0
-	for k := range a {
-		if _, ok := b[k]; ok {
-			intersection++
-		}
-		union++
-	}
-	for k := range b {
-		if _, ok := a[k]; !ok {
-			union++
-		}
-	}
-	if union == 0 {
-		return false
-	}
-	jaccard := float64(intersection) / float64(union)
+	a := util.BagOfWords(prev.Content)
+	b := util.BagOfWords(latest.Content)
+	jaccard := util.JaccardSimilarity(a, b)
 	return jaccard > threshold
 }
 
-// bagOfWords lower-cases the input, keeps only Chinese runs + Latin
-// word-characters, and returns a set of tokens. Cheap; ignores very rare
-// differences (punctuation, whitespace) that would tank the metric for
-// no signal gain.
-func bagOfWords(s string) map[string]struct{} {
-	out := map[string]struct{}{}
-	// Chinese tokenizer: each rune that is CJK is its own token. Latin
-	// runs split on non-letters. Whitespace is the only separator that
-	// matters here.
-	var b strings.Builder
-	flush := func() {
-		if b.Len() == 0 {
-			return
-		}
-		out[strings.ToLower(b.String())] = struct{}{}
-		b.Reset()
-	}
-	for _, r := range s {
-		switch {
-		case r >= 0x4e00 && r <= 0x9fff: // CJK Unified Ideographs
-			flush()
-			out[string(r)] = struct{}{}
-		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-		default:
-			flush()
-		}
-	}
-	flush()
-	return out
-}
+// bagOfWords / JaccardSimilarity v0.10.23 候选 2 已抽到 internal/util/bagofwords.go,
+// 让 agent/react_runner.go 复用同一份 token 化 + Jaccard 计算逻辑 (避免不同实现
+// 导致同一文本算出不同 Jaccard, 破坏 §2.1 裁决一致性)。
 
 // signalsConsensus returns true when prosecutor and defender sit at
 // "extreme" stances on the same side and the gap between them is

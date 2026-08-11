@@ -115,6 +115,10 @@ func main() {
 	searcher, _ := search.NewProvider(config.AppConfig.SearchProvider, config.AppConfig.BochaAPIKey)
 
 	courtroomSvc := courtroom.NewService(model.DB, orchestrator, evidenceSvc, searcher, bus, hub.Broadcast)
+	// v0.10.23 候选 2: 注入 HistoryProvider, 让 orchestrator 拉同 agent 历史发言
+	// 做新意度 Jaccard 检查。service 自身实现 agent.HistoryProvider 接口
+	// (见 courtroom/service.go LoadAgentHistory)。
+	courtroomSvc.InjectHistoryProvider()
 	// v0.6 belief engine: wire the diff + weaken repos so the courtroom
 	// service uses the Bayesian-log-odds engine + multi-signal convergence
 	// and emits belief.diff / belief.convergence events.
