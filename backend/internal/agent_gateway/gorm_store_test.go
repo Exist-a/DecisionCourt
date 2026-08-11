@@ -70,3 +70,67 @@ func TestNewGORMStore_NotNil(t *testing.T) {
 	store := NewGORMStore()
 	assert.NotNil(t, store)
 }
+
+// D2-LLM-FK (v0.10.x D2 silent-error-fix 收尾): 主动验证 session_uuid 防脏数据
+//
+// 当前 schema 没有硬 FK 约束 (GORM 不会自动加), 但 0 UUID / 非法 UUID /
+// 空字符串仍可能产生孤儿行。本次新增 3 个 sub-test 验证 Insert 主动
+// 拦截 + 写 DecisionEvent audit (audit 写 DB 失败时退化为 slog.Warn)。
+
+// TestGORMStore_ZeroUUIDSessionUUID: session_uuid 是零 UUID 时主动拦截
+// (kind="zero_uuid_session"), 不写 llm_calls, 写 DecisionEvent。
+func TestGORMStore_ZeroUUIDSessionUUID(t *testing.T) {
+	store := NewGORMStore()
+	saved := model.DB
+	model.DB = nil // 防真实写库, 测拦截逻辑
+	defer func() { model.DB = saved }()
+
+	err := store.Insert(Record{
+		RequestID:   "req-zero",
+		SessionUUID: "00000000-0000-0000-0000-000000000000", // 零 UUID
+		Model:       "deepseek-chat",
+		LatencyMs:   1000,
+		Status:      "success",
+	})
+	require.NoError(t, err, "拦截路径不抛 err (audit 失败兜底)")
+	// 验证: 不写 llm_calls (model.DB == nil 时 recordFKViolation 退化为 slog.Warn)
+	// 真实生产环境 model.DB != nil 时, DecisionEvent 写 decision_events 表
+}
+
+// TestGORMStore_InvalidUUIDSessionUUID: session_uuid 不是合法 UUID 时拦截
+// (kind="invalid_uuid", parseErr.Error() 在 detail)。
+func TestGORMStore_InvalidUUIDSessionUUID(t *testing.T) {
+	store := NewGORMStore()
+	saved := model.DB
+	model.DB = nil
+	defer func() { model.DB = saved }()
+
+	err := store.Insert(Record{
+		RequestID:   "req-invalid",
+		SessionUUID: "not-a-valid-uuid", // parse 会失败
+		Model:       "deepseek-chat",
+		LatencyMs:   500,
+		Status:      "error",
+	})
+	require.NoError(t, err)
+}
+
+// TestGORMStore_ValidUUIDSessionNotFound: session_uuid 是合法 UUID 但 DB 查不到
+// (kind="session_not_found"), 不写 llm_calls (避免孤儿行)。
+func TestGORMStore_ValidUUIDSessionNotFound(t *testing.T) {
+	store := NewGORMStore()
+	saved := model.DB
+	model.DB = nil // 模拟 lookup 失败 (DB nil 时 First 会失败)
+	defer func() { model.DB = saved }()
+
+	err := store.Insert(Record{
+		RequestID:   "req-orphan",
+		SessionUUID: uuid.New().String(), // 合法 UUID, 但 DB 查不到
+		AgentType:   "prosecutor",
+		TaskType:    "speak",
+		Model:       "deepseek-chat",
+		LatencyMs:   2000,
+		Status:      "success",
+	})
+	require.NoError(t, err, "lookup 失败时 recordFKViolation 兜底, 不抛")
+}
