@@ -73,15 +73,19 @@
 - ✅ Trial rate limit 429 加 user_facing_error envelope
 - ✅ 9 个黑洞 → 0，42 个新单测
 
-### Deferred（**本节正式登记**）
+### 状态: **✅ 全部完成 (2026-08-06)**
 
-| # | 项 | 复杂度 | 备注 |
-|---|----|--------|------|
-| **L2-调查员** | 调查员 agent 失败时显示顶部 banner（不消失，可手动 retry） | 0.5 天 | 触发场景：search.completed 失败 → 调查员无法给证据📎 实装参考：[silent-error-fix-plan.md v1.1 §9](../../.trae/documents/silent-error-fix-plan.md) |
-| **Memory-hydrate** | Memory hydrate 失败时显示 toast + 降级到本地缓存 | 1 天 | 触发场景：GetVisibleMemory 返回空但前端不应静默📎 实装参考：[silent-error-fix-plan.md v1.1 §9](../../.trae/documents/silent-error-fix-plan.md) |
-| **LLM-FK 审计** | LLM 调用失败时检查 FK 约束，写 audit 防止脏数据 | 1 天 | 数据库完整性问题，调查定位耗时📎 实装参考：[silent-error-fix-plan.md v1.1 §9](../../.trae/documents/silent-error-fix-plan.md) |
+| # | 项 | 复杂度 | 实装 commit | 备注 |
+|---|----|--------|---------|------|
+| **L2-调查员** | 顶部 BANNER_ + retry 按钮 (continue_cross_exam) | 0.5 天 | `079371d` | frontend/lib/wsHolder.ts (模块级 wsRef 共享) + courtroomStore.ts search.completed handler (toastFatal BANNER_) + InvestigatorPanel.tsx 失败行 [重试] 链接 |
+| **Memory-hydrate** | localStorage 缓存 (按 session_uuid 隔离) + toastWarning 降级提示 | 1 天 | `079371d` | frontend/lib/memoryCache.ts (saveMemoryCache / loadMemoryCache / clearMemoryCache) + CourtroomScene.tsx memory hydrate 段重写 (成功写缓存, 失败降级到缓存 + toastWarning) |
+| **LLM-FK 审计** | 主动验证 + DecisionEvent audit (event_type="llm_audit_fk_violation") | 0.5 天 | `c8d76dc` | backend/internal/agent_gateway/gorm_store.go Insert() 入口加 4 道主动验证 (空/零 UUID/非法 UUID/lookup 失败/insert 失败) + 3 个 sub-test |
 
-**总工作量**：~2.5 天 / 1 人
+**总工作量**：~2 天 / 1 人 (原计划 2.5 天, 实际少 0.5 天因为跳过 schema FK 约束 ALTER TABLE)
+
+**关联 commits**:
+- `c8d76dc` feat(agent_gateway): D2-LLM-FK 主动验证 + DecisionEvent audit
+- `079371d` feat(frontend): D2 silent-error-fix 收尾 (L2-调查员 + Memory-hydrate)
 
 ### 触发重新启动的条件
 1. 用户主动授权启动
@@ -132,7 +136,7 @@
 |------|------|------|
 | 已完成（v0.10.21 本轮 11 commit） | 15 项 | ✅ |
 | Deferred（D1 安全审计 14 项） | 14 项 | ⏸ Deferred |
-| Deferred（D2 silent-error 3 项） | 3 项 | ⏸ Deferred |
+| Deferred（D2 silent-error 3 项） | 3 项 | ✅ 已完成 (2026-08-06) |
 | Cancelled（D3 A4 新 ECS 信息） | 1 项 | ⛔ Cancelled（用户 2026-08-05 决策不续购 ECS）|
 
 **总 33 项**（原始 18 项 + 安全审计 14 项 + silent-error 3 项 = 35 项；其中 1 项 A4 既是原始 18 项的一部分、又是 D3 的扩展说明）。
