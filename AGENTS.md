@@ -114,9 +114,16 @@ Agent 需要熟悉以下核心文档：
 
 `.trae/` 目录被 `.gitignore` 排除，作为本地进行中设计稿存放区（不入仓）。当前活跃：
 
-- `silent-error-fix-plan.md` — 静默错误全局修复方案（v1.1, 2026-08-05 收尾：PR 1-5/7 已合入 v0.10.17, 剩余 3 项入 `docs/todo/deferred-items-2026-08-05.md` D2, 详见 ADR 0024）
+- `silent-error-fix-plan.md` — 静默错误全局修复方案（v1.1, 2026-08-05 收尾：PR 1-5/7 已合入 v0.10.17, 剩余 3 项入 `docs/todo/deferred-items-2026-08-05.md` D2, 详见 ADR 0024。**2026-08-20 v1.0.0 状态更新**：D2 全部 3 项已在 v0.10.25 (PR 079371d + c8d76dc) 完成，12/12 黑洞 100% 修复）
+- `security-audit-2026-07-03.md` — 安全审计 v1.0（2026-07-03 全部 20 项 P0/P1/P2/P3 已修复或 deferred，P0-1 ~ P0-6 在 v0.8.3 + v0.10.18 全部完成，P1-P3 14 项 deferred D1）
 
 > **注意**：已完成的进行中设计文档（即 `docs/archive/` 下文件）的元数据在 AGENTS.md / README / 文档交叉引用中仍可能存在，但**实际文档位置**以本节为准。修改相关代码前应优先参考 `docs/` 主项目文档而非 archive 中的历史计划。
+
+### 6.2c v1.0.0 发版文档（2026-08-20 新增）
+
+- `docs/release-notes/v1.0.0.md` — v1.0.0 发版说明（ECS 30 天沉淀收尾 + DeepSeek v4 迁移 + 8 问题专项回归测试护栏，14 章节模板）
+- `docs/V1-ROADMAP.md` — v1 → v2 路线图（M0 ✅ / M1 候选 4 / M2 商业化 / M3 安全 P1 / M4 v2.0）
+- `docs/adr/0029-deepseek-v4-migration.md` — DeepSeek v3→v4 模型硬迁移决策
 
 ## 7. 禁止事项
 

@@ -3,7 +3,8 @@
 > **让 AI 像法庭一样帮你把复杂决策看全、看透、看出可执行结论。**
 
 [![MVP Status](https://img.shields.io/badge/status-MVP%20Complete-brightgreen)](./docs/README.md)
-[![Backend Tests](https://img.shields.io/badge/backend%20tests-200%2B%20passing-success)](./backend)
+[![Current Version](https://img.shields.io/badge/version-v1.0.0-blue)](./docs/release-notes/v1.0.0.md)
+[![Backend Tests](https://img.shields.io/badge/backend%20tests-263%20passing-success)](./backend)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](#许可证)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org)
 [![Go](https://img.shields.io/badge/Go-1.22-00ADD8)](https://go.dev)
@@ -492,7 +493,7 @@ POST /api/v1/courtrooms/{id}/start        → 200 phase=opening (同步)
 
 ## 路线图
 
-### ✅ MVP 已完成
+### ✅ MVP 已完成 + v1.0.0 落地
 
 - 四 Agent 对抗辩论 + 信念引擎 + 智能收敛
 - A2A 消息总线 + ContextView 投影 + 私有通道
@@ -503,13 +504,27 @@ POST /api/v1/courtrooms/{id}/start        → 200 phase=opening (同步)
 - 极简白底法庭风格 UI + 凹陷输入框
 - MemoryAuditPanel（前端可审计）+ 幕后视角页
 - Agent Gateway v0.5+（白盒子集）+ v0.6（高级能力）+ v2（Smart + Reject）
-- 文档整合（8 份主文档 + 27 份 ADR + 8 份归档）
+- 文档整合（8 份主文档 + 29 份 ADR + 10 份归档）
 
-> **项目维护状态（2026-08-05 更新）**：v0.10.20（2026-07-12）为最后生产部署版本。2026-08-05 用户决策不续购 ECS `47.239.152.177`（基础设施终止），项目转为**个人长期本地开发模式**：代码 + 文档继续维护，欢迎后来者 fork / 部署到自有环境。详见 [`docs/archive/ecs-end-of-life-2026-08-05.md`](./docs/archive/ecs-end-of-life-2026-08-05.md)。
+### 🎯 v1.0.0（2026-08-20）— 从 MVP 到产品级稳定
 
-### 🚧 第二阶段（不在 MVP）
+- **ECS 30 天沉淀收尾**: 8 个问题 100% 修复（P1-1/2/3 + P2-1/2 + P3-1/2/3）
+- **DeepSeek v3→v4 模型硬迁移**（ADR 0029）
+- **8 问题专项回归测试护栏**（PR-3: 10 sub-test）
+- **263 sub-test**（v0.10.25 的 236 + v1.0.0 新增 27）
 
-- 后端白盒化（trace-id 串联 / 决策日志 / 性能指标）
+详见 [v1.0.0 release notes](./docs/release-notes/v1.0.0.md) · [V1-ROADMAP.md](./docs/V1-ROADMAP.md)
+
+> **项目维护状态（2026-08-20 更新）**：v0.10.20（2026-07-12 ECS 最后生产部署）→ **v1.0.0（2026-08-20 本地开发模式发版）**。2026-08-05 用户决策不续购 ECS `47.239.152.177`（基础设施终止），项目转为**个人长期本地开发模式**：代码 + 文档继续维护，欢迎后来者 fork / 部署到自有环境。详见 [`docs/archive/ecs-end-of-life-2026-08-05.md`](./docs/archive/ecs-end-of-life-2026-08-05.md)。
+
+### 🚧 V1.x 候选（M1 → M4）
+
+- **M1 v1.0.1**: 候选 4 已反驳证据集合跟踪（roadmap §0 下一步）
+- **M2 v1.1**: 商业化前置（用户系统 / 多租户 / 订阅）
+- **M3 v1.2**: 安全 P1 阶段（deferred D1，14 项）
+- **M4 v2.0**: 多模态 / 实时协作 / AI 法官
+
+详见 [V1-ROADMAP.md](./docs/V1-ROADMAP.md)
 - 后端高可用（多实例 + WS 分布式广播 + Redis Pub/Sub + LLM 异步化 + 数据库主从 + 熔断降级）
 - 并发防护（同一 session 互斥 / 用户快速点击幂等 / LLM 超时与重试 / agent 死锁检测）
 - Agent Gateway 模型路由 / 响应缓存

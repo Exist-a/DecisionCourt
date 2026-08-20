@@ -4,7 +4,7 @@
 >
 > **外部 GitHub 访客请看仓库根目录的 [`README.md`](../README.md)。**
 >
-> 最后整理：2026-08-05（v0.10.20 最后生产部署 + ECS 基础设施终止 + ADR 编号补齐到 0027）
+> 最后整理：2026-08-20（**v1.0.0 落地** + ECS 30 天沉淀收尾 + DeepSeek v4 迁移 + ADR 0029 + V1-ROADMAP.md 新建）
 
 ---
 
@@ -74,6 +74,8 @@
 | [0025](./adr/0025-security-p0-closeout.md) | v0.10.18 安全审计 P0 阶段收尾（JWT_SECRET fail-fast + UID 10001） | ✅ | `backend/internal/config/config.go` + `backend/Dockerfile` + `frontend/Dockerfile` + `docker-compose.yml` |
 | [0026](./adr/0026-viper-bindenv-fix.md) | v0.10.19 viper 1.21.0 BindEnv 显式绑定（修复 AutomaticEnv 自动小写化导致必须 env 找不到） | ✅ | `backend/internal/config/config.go` |
 | [0027](./adr/0027-rate-limit-defense-in-depth.md) | v0.10.20 4 层限流防御深度（L3 Per-IP + L2 Per-User + L1 Per-Session + L0 全局并发信号量） | ✅ | `internal/middleware/session_ratelimit.go` + `internal/courtroom/concurrency.go` |
+| [0028](./adr/0028-env-or-default-helper.md) | envOrDefault helper 全面修复 viper 25+ env lowercase bug（v0.10.21 PR-C） | ✅ | `internal/config/env.go` + `config.go` + 26 sub-test |
+| [0029](./adr/0029-deepseek-v4-migration.md) | **DeepSeek v3→v4 模型硬迁移（v1.0.0 P0-前置）** | ✅ | `internal/config/config.go` + `.env.example` + 8 个 mock test |
 
 ### 5.5 v0.8+ 持续可观测性完善计划
 
@@ -107,9 +109,9 @@
 
 ---
 
-## 5. 实装状态矩阵（截至 2026-08-05）
+## 5. 实装状态矩阵（截至 2026-08-20 v1.0.0）
 
-> **2026-08-05 更新说明**：v0.10.20（2026-07-12）为最后生产部署版本；用户决策不续购 ECS `47.239.152.177`，转入个人长期本地开发模式（详见 [`archive/ecs-end-of-life-2026-08-05.md`](./archive/ecs-end-of-life-2026-08-05.md)）。后续版本（v0.10.21 / v0.11.x）不再绑定"部署到 ECS"叙事，代码 + 文档继续维护。
+> **2026-08-20 v1.0.0 更新说明**：v0.10.20（2026-07-12）为最后生产部署版本；2026-08-05 用户决策不续购 ECS；2026-08-20 发布 **v1.0.0**（本地开发模式），完成 ECS 30 天 8 问题收尾 + DeepSeek v4 迁移 + 8 问题专项回归测试护栏。详见 [release-notes/v1.0.0.md](./release-notes/v1.0.0.md) + [V1-ROADMAP.md](./V1-ROADMAP.md)。后续版本（v1.0.x / v1.1+）以 v1.0.0 为 baseline，不再绑定"部署到 ECS"叙事，代码 + 文档继续维护。
 
 > **模块 × 状态 × 代码位置** 速查。**✅ = 已实装**，**⏳ = 计划中**。
 

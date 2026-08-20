@@ -1,7 +1,7 @@
 # 决策庭（DecisionCourt）实施路线图
 
-> **版本**：v0.8 + v0.10.21 + v0.10.22 + v0.10.23 + v0.10.24 补丁
-> **状态**：MVP 主体完成 + v0.8 白盒化实装（截至 2026-07-02）—— 含 v0.5/v0.6/v0.7/v0.8 四轮增量实装；**v0.10.21 收尾硬化**（PR-B 300 字硬截断 + PR-C envOrDefault 33 env 全面修复, 2026-08-05）+ **v0.10.22 PR-A 收尾**（FileLogger 默认启用 + 文档错位修复, 2026-08-06）+ **v0.10.23 候选 2 新意度 Jaccard**（与同 agent 历史 Jaccard > 0.6 触发 retry hint 强制换角度, 2026-08-06）+ **v0.10.24 候选 1 LLM-as-judge stance**（与当前 belief 方向不一致触发 2 次 retry hint, 2026-08-06）；下一步进入"候选 4 已反驳证据集合跟踪"讨论。
+> **版本**：v0.8 + v0.10.21 + v0.10.22 + v0.10.23 + v0.10.24 + **v1.0.0**
+> **状态**：MVP 主体完成 + v0.8 白盒化实装 + **v1.0.0 落地**（2026-08-20）—— 含 v0.5/v0.6/v0.7/v0.8 四轮增量实装；**v0.10.21 收尾硬化**（PR-B 300 字硬截断 + PR-C envOrDefault 33 env 全面修复, 2026-08-05）+ **v0.10.22 PR-A 收尾**（FileLogger 默认启用 + 文档错位修复, 2026-08-06）+ **v0.10.23 候选 2 新意度 Jaccard**（与同 agent 历史 Jaccard > 0.6 触发 retry hint 强制换角度, 2026-08-06）+ **v0.10.24 候选 1 LLM-as-judge stance**（与当前 belief 方向不一致触发 2 次 retry hint, 2026-08-06）+ **v1.0.0**（ECS 30 天沉淀 8 问题 100% 修复 + DeepSeek v4 模型硬迁移 + 8 问题专项回归测试护栏, 2026-08-20）；下一步进入"候选 4 已反驳证据集合跟踪"讨论（详见 [V1-ROADMAP.md](./V1-ROADMAP.md) M1）。
 > **可观测性完善计划**：[`roadmap/whitebox-roadmap.md`](./roadmap/whitebox-roadmap.md)（v0.8+ 五阶段：数据采集 → 增量埋点 → Prometheus → OTLP → 数据仓库）
 > **目标**：规划从 0 到 MVP 可运行的实施路径，并明确验收标准。
 > **2026-07-02 整合时同步**：本版本号对齐后端代码实装现状 + 文档整合状态（参见 [`docs/README.md`](./README.md)）。
@@ -9,6 +9,7 @@
 > **2026-08-06 v0.10.22 补丁**：FileLogger 默认启用（config.go / compose / .env.example 三处一致）+ 3 处文档错位修复（.jsonl→.log / 35→38 字段 / 路径）+ 2 个新测试（TestFileLogger_BasicWrite + DirectoryCreate），详见 [release-notes/v0.10.22.md](../release-notes/v0.10.22.md)。
 > **2026-08-06 v0.10.23 补丁**：新意度 Jaccard 强制换角度 (`applySpeakerNoveltyCheck` + 2 次 retry + Speaker 加 NoveltyRejected/NoveltyJaccard 字段 + 前端 chip + util/bagofwords 共享)。
 > **2026-08-06 v0.10.24 补丁**：LLM-as-judge stance 一致性 (`applySpeakerStanceJudge` + 老 isStanceConsistent 阈值 0.45/0.55 fast filter + 2 次 retry + Speaker 加 StanceRejected/StanceJudgeReason + 前端 chip + PRD §4.3.2 阈值 0.5 → 0.45/0.55 同步)。
+> **2026-08-20 v1.0.0 发版**：ECS 30 天沉淀 8 问题 100% 修复 + DeepSeek v3→v4 模型硬迁移（ADR 0029）+ 8 问题专项回归测试护栏（10 sub-test）+ 263 sub-test 累计。详见 [release-notes/v1.0.0.md](../release-notes/v1.0.0.md) + [V1-ROADMAP.md](./V1-ROADMAP.md)。v1 → v2 路线图见 V1-ROADMAP.md M1-M4。
 
 ---
 
