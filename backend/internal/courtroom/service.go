@@ -48,6 +48,10 @@ type Service struct {
 	beliefEngine     *belief.Engine
 	searcher         search.Provider
 	a2aBus           *a2a.Bus
+	// v1.0.2 候选 4: rebuttal 仓库 (本包 RebuttalRepository 接口, 提供完整
+	// CRUD 给 REST API;PR-3 的 agent.RebuttalRepository 窄接口通过
+	// AsAgentRebuttalRepository 适配注入到 orchestrator).
+	rebuttalRepo RebuttalRepository
 	broadcaster      func(sessionUUID string, event Event)
 	activeCalls      map[string]context.CancelFunc
 	callsMu          sync.Mutex
@@ -115,6 +119,35 @@ func NewService(
 		activeCalls:     make(map[string]context.CancelFunc),
 		sessionLocks:    make(map[string]*sync.Mutex),
 	}
+}
+
+// WithRebuttalRepository (v1.0.2 候选 4) 注入 rebuttal 仓库并自动 wire 到
+// orchestrator 的 read-side (agent.RebuttalRepository) + write-side
+// (agent.RebuttalSink via EmitRebuttalFromOutput 调用).
+//
+// caller 模式 (main.go 装配):
+//   NewService(...).WithRebuttalRepository(NewGormRebuttalRepository(db))
+//
+// Nil-safe: passing nil disables both hook (writes) and check (reads),
+// preserving pre-v1.0.2 behavior.
+func (s *Service) WithRebuttalRepository(repo RebuttalRepository) *Service {
+	s.rebuttalRepo = repo
+	if s.orchestrator != nil && repo != nil {
+		// Read-side: agent.RebuttalRepository for applySpeakerRebuttalCheck
+		s.orchestrator.SetRebuttalRepository(AsAgentRebuttalRepository(repo))
+		// Write-side: agent.RebuttalSink for RebuttalHook (Note: emit uses
+		// EmitRebuttalFromOutput directly, which accepts any RebuttalSink)
+		// — wrap our broad repo to fit the narrow sink contract.
+		s.orchestrator.SetRebuttalSink(rebuttalRepoAsSink(repo))
+	}
+	return s
+}
+
+// GetRebuttalRepository exposes the rebuttal repository so the API handler
+// can serve the GET /rebuttal-links endpoint without re-wiring. Returns nil
+// when not configured (older deployments or tests).
+func (s *Service) GetRebuttalRepository() RebuttalRepository {
+	return s.rebuttalRepo
 }
 
 // InjectHistoryProvider v0.10.23 候选 2: 把 service 自身注入到 orchestrator

@@ -299,6 +299,8 @@ func TestGateway_AddUsageMultiDim_WrittenToLog(t *testing.T) {
 		LogDir:               dir,
 	}.Normalize()
 	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	// v1.0.2 (PR-4 顺手): Windows TempDir cleanup 必须先关 fileLogger.
+	t.Cleanup(func() { _ = gw.fileLogger.Close() })
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "md-1", AgentType: "judge", TaskType: "verdict"})
 	_, _, err := gw.Complete(ctx, "sys", nil, llm.CompletionOptions{})

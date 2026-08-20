@@ -169,6 +169,9 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 	// v0.6 belief engine: structured belief-diff audit trail.
 	// Supports ?agent=prosecutor|defender|... and ?round=N filters.
 	api.GET("/courtrooms/:session_uuid/belief-diffs", h.GetBeliefDiffs)
+	// v1.0.2 候选 4: rebuttal 集合状态查询.
+	// Supports ?evidence_id=E001 filter (返回针对单条 evidence 的 rebuttal links).
+	api.GET("/courtrooms/:session_uuid/rebuttal-links", h.GetRebuttalLinks)
 	// v0.5 episodic-memory REST hydration. Frontend MemoryAuditPanel
 	// can rebuild the full strategy-note timeline on verdict page
 	// refresh / browser-back / court page reload. See
@@ -917,4 +920,79 @@ func sessionResponse(session model.CourtSession) gin.H {
 		"created_at":    session.CreatedAt,
 		"updated_at":    session.UpdatedAt,
 	}
+}
+
+// GetRebuttalLinks (v1.0.2 候选 4) 返回 session 的 rebuttal links.
+//
+// Query params:
+//   - evidence_id (optional): 仅返回针对该 evidence 的 rebuttal links (filter by rebutted_evidence_id UUID)
+//
+// Response:
+//   - 200 OK: {code: 0, data: {links: [...], count: N}}
+//   - 404: session 不存在
+//   - 200 empty: 未配置 rebut repo (pre-v1.0.2 部署兼容)
+//
+// 字段映射:
+//   - id / session_id / rebutted_evidence_id / aggressor_agent / status / strength / rationale / created_at
+//   - 不直接暴露 rebutting_evidence_id (PII 风险, 后续单独 endpoint 提供)
+//   - 不直接暴露 aggressor_msg_id (同 PII)
+func (h *Handler) GetRebuttalLinks(c *gin.Context) {
+	sessionUUID := c.Param("session_uuid")
+
+	session, ok := h.lookupSession(sessionUUID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"code": 1002, "message": "庭审不存在"})
+		return
+	}
+
+	if h.service == nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"links": []gin.H{}, "count": 0}})
+		return
+	}
+
+	repo := h.service.GetRebuttalRepository()
+	if repo == nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"links": []gin.H{}, "count": 0}})
+		return
+	}
+
+	rows, err := repo.ListBySession(c.Request.Context(), session.ID)
+	if err != nil {
+		slog.Error("list rebuttal links failed", "session_uuid", sessionUUID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1500, "message": "查询反驳链接失败"})
+		return
+	}
+
+	// Filter by evidence_id if provided (UUID 形式)
+	if evidenceID := c.Query("evidence_id"); evidenceID != "" {
+		evidenceUUID, parseErr := uuid.Parse(evidenceID)
+		if parseErr != nil {
+			// evidence_id 可能是 display_id (E001), PR-4 简化: 返回空,前端后续 PR 升级
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"links": []gin.H{}, "count": 0}})
+			return
+		}
+		filtered := make([]model.EvidenceRebuttalLink, 0)
+		for _, r := range rows {
+			if r.RebuttedEvidenceID == evidenceUUID {
+				filtered = append(filtered, r)
+			}
+		}
+		rows = filtered
+	}
+
+	items := make([]gin.H, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, gin.H{
+			"id":                   r.ID,
+			"session_id":           r.SessionID,
+			"rebutted_evidence_id": r.RebuttedEvidenceID,
+			"aggressor_agent":      r.AggressorAgent,
+			"status":               r.Status,
+			"strength":             r.Strength,
+			"rationale":            r.Rationale,
+			"created_at":           r.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"links": items, "count": len(items)}})
 }
