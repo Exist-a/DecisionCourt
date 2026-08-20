@@ -36,6 +36,7 @@
 | [0026](./0026-viper-bindenv-fix.md) | Viper BindEnv 显式绑定 — v0.10.18/19 安全 P0 收尾补充（5 个关键 env 修复） | ✅ | `internal/config/config.go` + SSH 诊断 |
 | [0027](./0027-rate-limit-defense-in-depth.md) | 4 层限流防御深度（Defense in Depth, ADR 0012 单机部署假设下） | ⏳ Proposed | `internal/ratelimit/` + `middleware/session_ratelimit.go`（新）+ `courtroom/concurrency.go`（新）+ `observability/metrics.go` |
 | [0028](./0028-env-or-default-helper.md) | envOrDefault helper 全面修复 viper 25+ env lowercase bug（v0.10.21 PR-C） | ✅ | `internal/config/env.go` + `config.go` + 26 sub-test |
+| [0029](./0029-deepseek-v4-migration.md) | DeepSeek v3→v4 模型硬迁移（v1.0.0 P0-前置）| ✅ | `internal/config/config.go` + `.env.example` + 8 个 mock test + 3 个 config test |
 
 ---
 

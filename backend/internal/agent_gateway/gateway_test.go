@@ -60,7 +60,7 @@ func TestGateway_Complete_Success(t *testing.T) {
 	store := newFakeStore()
 	rec := NewRecorder(RecorderConfig{Enabled: true, Provider: "deepseek"}, store)
 
-	gw := Wrap(inner, rec, "deepseek-chat")
+	gw := Wrap(inner, rec, "deepseek-v4-flash")
 	gwClient := gw.(llm.Client)
 
 	ctx := WithTrace(context.Background(), Trace{
@@ -68,7 +68,7 @@ func TestGateway_Complete_Success(t *testing.T) {
 		AgentType:   "prosecutor",
 		TaskType:    "speak",
 	})
-	content, usage, err := gwClient.Complete(ctx, "sys", nil, llm.CompletionOptions{Model: "deepseek-chat"})
+	content, usage, err := gwClient.Complete(ctx, "sys", nil, llm.CompletionOptions{Model: "deepseek-v4-flash"})
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestGateway_Complete_Success(t *testing.T) {
 	if row.Status != StatusSuccess {
 		t.Errorf("status: %q", row.Status)
 	}
-	if row.Model != "deepseek-chat" {
+	if row.Model != "deepseek-v4-flash" {
 		t.Errorf("model: %q", row.Model)
 	}
 	if row.PromptTokens != 7 || row.CompletionTokens != 11 {
@@ -108,9 +108,9 @@ func TestGateway_Complete_Error(t *testing.T) {
 	inner := &fakeLLM{completeErr: errors.New("upstream 502")}
 	store := newFakeStore()
 	rec := NewRecorder(RecorderConfig{Enabled: true, Provider: "deepseek"}, store)
-	gwClient := Wrap(inner, rec, "deepseek-chat").(llm.Client)
+	gwClient := Wrap(inner, rec, "deepseek-v4-flash").(llm.Client)
 
-	_, _, err := gwClient.Complete(context.Background(), "sys", nil, llm.CompletionOptions{Model: "deepseek-chat"})
+	_, _, err := gwClient.Complete(context.Background(), "sys", nil, llm.CompletionOptions{Model: "deepseek-v4-flash"})
 	if err == nil {
 		t.Fatal("expected err to bubble up")
 	}
@@ -134,9 +134,9 @@ func TestGateway_Complete_RecorderDisabled(t *testing.T) {
 	t.Parallel()
 	inner := &fakeLLM{completeContent: "ok"}
 	rec := NewRecorder(RecorderConfig{Enabled: false, Provider: "deepseek"}, nil)
-	gwClient := Wrap(inner, rec, "deepseek-chat").(llm.Client)
+	gwClient := Wrap(inner, rec, "deepseek-v4-flash").(llm.Client)
 
-	content, _, err := gwClient.Complete(context.Background(), "sys", nil, llm.CompletionOptions{Model: "deepseek-chat"})
+	content, _, err := gwClient.Complete(context.Background(), "sys", nil, llm.CompletionOptions{Model: "deepseek-v4-flash"})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -151,9 +151,9 @@ func TestGateway_StreamComplete_PassesThrough(t *testing.T) {
 	inner := &fakeLLM{streamChunks: []string{"a", "b", "c"}}
 	store := newFakeStore()
 	rec := NewRecorder(RecorderConfig{Enabled: true, Provider: "deepseek"}, store)
-	gwClient := Wrap(inner, rec, "deepseek-chat").(llm.Client)
+	gwClient := Wrap(inner, rec, "deepseek-v4-flash").(llm.Client)
 
-	ch := gwClient.StreamComplete(context.Background(), "sys", nil, llm.CompletionOptions{Model: "deepseek-chat"})
+	ch := gwClient.StreamComplete(context.Background(), "sys", nil, llm.CompletionOptions{Model: "deepseek-v4-flash"})
 	var got []string
 	for c := range ch {
 		got = append(got, c.Content)

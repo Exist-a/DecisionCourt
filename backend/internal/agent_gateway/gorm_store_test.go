@@ -22,7 +22,7 @@ func TestGORMStore_NilDBIsNoop(t *testing.T) {
 	err := store.Insert(Record{
 		RequestID:   "req-1",
 		SessionUUID: "sess-1",
-		Model:       "deepseek-chat",
+		Model:       "deepseek-v4-flash",
 	})
 	require.NoError(t, err)
 }
@@ -37,7 +37,7 @@ func TestGORMStore_EmptySessionUUID(t *testing.T) {
 	err := store.Insert(Record{
 		RequestID:   "req-1",
 		SessionUUID: "", // 空：不查表，不写库
-		Model:       "deepseek-chat",
+		Model:       "deepseek-v4-flash",
 	})
 	require.NoError(t, err)
 }
@@ -57,7 +57,7 @@ func TestGORMStore_SessionNotFoundSkipInsert(t *testing.T) {
 	err := store.Insert(Record{
 		RequestID:   "req-1",
 		SessionUUID: uuid.New().String(), // 随机 uuid 肯定查不到
-		Model:       "deepseek-chat",
+		Model:       "deepseek-v4-flash",
 		LatencyMs:   1000,
 		Status:      "success",
 	})
@@ -88,7 +88,7 @@ func TestGORMStore_ZeroUUIDSessionUUID(t *testing.T) {
 	err := store.Insert(Record{
 		RequestID:   "req-zero",
 		SessionUUID: "00000000-0000-0000-0000-000000000000", // 零 UUID
-		Model:       "deepseek-chat",
+		Model:       "deepseek-v4-flash",
 		LatencyMs:   1000,
 		Status:      "success",
 	})
@@ -108,7 +108,7 @@ func TestGORMStore_InvalidUUIDSessionUUID(t *testing.T) {
 	err := store.Insert(Record{
 		RequestID:   "req-invalid",
 		SessionUUID: "not-a-valid-uuid", // parse 会失败
-		Model:       "deepseek-chat",
+		Model:       "deepseek-v4-flash",
 		LatencyMs:   500,
 		Status:      "error",
 	})
@@ -128,7 +128,7 @@ func TestGORMStore_ValidUUIDSessionNotFound(t *testing.T) {
 		SessionUUID: uuid.New().String(), // 合法 UUID, 但 DB 查不到
 		AgentType:   "prosecutor",
 		TaskType:    "speak",
-		Model:       "deepseek-chat",
+		Model:       "deepseek-v4-flash",
 		LatencyMs:   2000,
 		Status:      "success",
 	})

@@ -71,7 +71,7 @@ func main() {
 	}, agent_gateway.NewGORMStore())
 	defaultModel := config.AppConfig.LLMModelV3
 	if defaultModel == "" {
-		defaultModel = "deepseek-chat"
+		defaultModel = "deepseek-v4-flash"
 	}
 	gatewayCfg := agent_gateway.GatewayConfig{
 		Enabled:              config.AppConfig.AgentGateway.Enabled,

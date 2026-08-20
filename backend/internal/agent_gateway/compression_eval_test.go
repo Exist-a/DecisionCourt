@@ -171,7 +171,7 @@ func TestCompressionEval_StrategyComparison(t *testing.T) {
 		cfg.LogDir = dir
 		cfg = cfg.Normalize()
 
-		gw := NewWithConfig(inner, rec, "deepseek-chat", cfg)
+		gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
 		// 让 budget 处于 throttle 档（使压缩生效，且 legacy 和 smart 行为都触发）
 		ctx := WithTrace(context.Background(), Trace{
 			SessionUUID: "eval-sess-" + sc.name,

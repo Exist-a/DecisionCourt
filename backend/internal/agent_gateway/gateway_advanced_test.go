@@ -51,7 +51,7 @@ func TestGateway_Advanced_BudgetCompressThrottleAndLog(t *testing.T) {
 		BudgetPerSession:  1000,
 		LogDir:            dir,
 	}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-chat", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "sess-1", AgentType: "prosecutor", TaskType: "speak"})
 	msgs := make([]llm.Message, 12)
@@ -114,7 +114,7 @@ func TestGateway_Advanced_FallbackRetry(t *testing.T) {
 		LogDir: dir,
 	}.Normalize()
 	// 用短退避加速测试
-	gw := NewWithConfig(inner, rec, "deepseek-chat", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
 	gw.retryer = NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond})
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "sess-2", AgentType: "judge", TaskType: "assess"})
@@ -139,7 +139,7 @@ func TestGateway_Advanced_FallbackExhausted(t *testing.T) {
 	inner := &fakeRetryLLM{failures: 10}
 	rec := NewRecorder(RecorderConfig{Enabled: false, Provider: "deepseek"}, nil)
 	cfg := GatewayConfig{Enabled: true, Fallback: true}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-chat", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
 	gw.retryer = NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond})
 
 	ctx := WithTrace(context.Background(), Trace{})
@@ -157,7 +157,7 @@ func TestGateway_Advanced_DisabledNoFileLog(t *testing.T) {
 	inner := &fakeBudgetLLM{usagePerCall: llm.Usage{TotalTokens: 10}}
 	rec := NewRecorder(RecorderConfig{Enabled: false, Provider: "deepseek"}, nil)
 	cfg := GatewayConfig{Enabled: false, FileLogger: true, LogDir: dir}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-chat", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "sess-3", AgentType: "clerk", TaskType: "summary"})
 	gw.Complete(ctx, "sys", nil, llm.CompletionOptions{})

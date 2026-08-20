@@ -152,3 +152,26 @@ func TestEnvOrDefault_KeyCasePreserved_OnLookup(t *testing.T) {
 	require.Equal(t, "deadbeef", v)
 	require.True(t, fromEnv)
 }
+
+// --- v1.0.0 (ADR 0029) DeepSeek v3→v4 模型硬迁移默认值验证 ---
+
+// TestEnvOrDefaultString_DeepSeekV4_Default_V3 验证未设 LLM_MODEL_V3 时
+// 默认值是 deepseek-v4-flash (ADR 0029 硬迁移;旧名 deepseek-chat 已不再默认)。
+func TestEnvOrDefaultString_DeepSeekV4_Default_V3(t *testing.T) {
+	_ = os.Unsetenv("LLM_MODEL_V3")
+	require.Equal(t, "deepseek-v4-flash", envOrDefaultString("LLM_MODEL_V3", "deepseek-v4-flash"))
+}
+
+// TestEnvOrDefaultString_DeepSeekV4_Default_R1 验证未设 LLM_MODEL_R1 时
+// 默认值是 deepseek-v4-pro (ADR 0029 硬迁移;旧名 deepseek-reasoner 已不再默认)。
+func TestEnvOrDefaultString_DeepSeekV4_Default_R1(t *testing.T) {
+	_ = os.Unsetenv("LLM_MODEL_R1")
+	require.Equal(t, "deepseek-v4-pro", envOrDefaultString("LLM_MODEL_R1", "deepseek-v4-pro"))
+}
+
+// TestEnvOrDefaultString_DeepSeekV3_OverrideStillWorks 验证 .env 仍可手动覆盖回
+// 旧名 (向后兼容窗口,但不推荐 — 旧名已不在 DeepSeek 官方文档)。
+func TestEnvOrDefaultString_DeepSeekV3_OverrideStillWorks(t *testing.T) {
+	t.Setenv("LLM_MODEL_V3", "deepseek-chat")
+	require.Equal(t, "deepseek-chat", envOrDefaultString("LLM_MODEL_V3", "deepseek-v4-flash"))
+}

@@ -35,7 +35,7 @@ func TestRecorder_Noop_Disabled(t *testing.T) {
 	r := NewRecorder(RecorderConfig{Enabled: false, Provider: "deepseek"}, store)
 	r.Record(CallInput{
 		Trace:    Trace{SessionUUID: "s1", AgentType: "prosecutor", TaskType: "speak", RequestID: "r1"},
-		Model:    "deepseek-chat",
+		Model:    "deepseek-v4-flash",
 		Usage:    Usage{PromptTokens: 10, CompletionTokens: 20, TotalTokens: 30},
 		Latency:  123 * time.Millisecond,
 		Status:   StatusSuccess,
@@ -51,7 +51,7 @@ func TestRecorder_BuildRecord_Fields(t *testing.T) {
 	r := NewRecorder(RecorderConfig{Enabled: true, Provider: "deepseek"}, nil)
 	in := CallInput{
 		Trace:   Trace{SessionUUID: "sess", AgentType: "prosecutor", TaskType: "speak", RequestID: "req"},
-		Model:   "deepseek-chat",
+		Model:   "deepseek-v4-flash",
 		Usage:   Usage{PromptTokens: 11, CompletionTokens: 22, TotalTokens: 33},
 		Latency: 250 * time.Millisecond,
 		Status:  StatusSuccess,
@@ -69,8 +69,8 @@ func TestRecorder_BuildRecord_Fields(t *testing.T) {
 	if rec.RequestID != "req" {
 		t.Errorf("RequestID: want req got %q", rec.RequestID)
 	}
-	if rec.Model != "deepseek-chat" {
-		t.Errorf("Model: want deepseek-chat got %q", rec.Model)
+	if rec.Model != "deepseek-v4-flash" {
+		t.Errorf("Model: want deepseek-v4-flash got %q", rec.Model)
 	}
 	if rec.Provider != "deepseek" {
 		t.Errorf("Provider: want deepseek got %q", rec.Provider)
@@ -124,7 +124,7 @@ func TestRecorder_Record_WritesToStore(t *testing.T) {
 	r := NewRecorder(RecorderConfig{Enabled: true, Provider: "deepseek"}, store)
 	r.Record(CallInput{
 		Trace:   Trace{SessionUUID: "s1", AgentType: "judge", TaskType: "assess", RequestID: "r1"},
-		Model:   "deepseek-reasoner",
+		Model:   "deepseek-v4-pro",
 		Usage:   Usage{PromptTokens: 5, CompletionTokens: 7, TotalTokens: 12},
 		Latency: 50 * time.Millisecond,
 		Status:  StatusSuccess,

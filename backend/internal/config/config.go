@@ -125,8 +125,11 @@ func Load() {
 		LLMAPIKey:      envOrDefaultString("LLM_API_KEY", ""),
 		// Default to DeepSeek; set LLM_BASE_URL to https://api.moonshot.cn/v1 for Kimi
 		LLMBaseURL:     envOrDefaultString("LLM_BASE_URL", "https://api.deepseek.com/v1"),
-		LLMModelV3:     envOrDefaultString("LLM_MODEL_V3", "deepseek-chat"),
-		LLMModelR1:     envOrDefaultString("LLM_MODEL_R1", "deepseek-reasoner"),
+		// v1.0.0 (ADR 0029): DeepSeek 官方文档 2026-08-20 仅列 deepseek-v4-flash / deepseek-v4-pro,
+		// 旧名 deepseek-chat / deepseek-reasoner 已不在文档;v4-flash 对应原 deepseek-chat 用法(常规对话),
+		// v4-pro 对应原 deepseek-reasoner 用法(深度推理)。.env 仍可手动覆盖回旧名(短时兼容),但不建议。
+		LLMModelV3:     envOrDefaultString("LLM_MODEL_V3", "deepseek-v4-flash"),
+		LLMModelR1:     envOrDefaultString("LLM_MODEL_R1", "deepseek-v4-pro"),
 
 		SearchProvider: envOrDefaultString("SEARCH_PROVIDER", "searxng"),
 		TavilyAPIKey:   envOrDefaultString("TAVILY_API_KEY", ""),

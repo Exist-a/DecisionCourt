@@ -23,7 +23,7 @@ func TestCache_GetPut_BasicHitMiss(t *testing.T) {
 	t.Parallel()
 	c := NewResponseCache(5*time.Minute, 100)
 
-	key := MakeCacheKey("deepseek-chat", "you are prosecutor", []llm.Message{{Role: "user", Content: "evidence A"}}, 0.7)
+	key := MakeCacheKey("deepseek-v4-flash", "you are prosecutor", []llm.Message{{Role: "user", Content: "evidence A"}}, 0.7)
 
 	// 第一次 Get:miss
 	if _, ok := c.Get(key, "session-1"); ok {

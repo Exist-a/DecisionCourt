@@ -20,7 +20,7 @@ func TestFileLogger_WritesJSON(t *testing.T) {
 		SessionUUID: "sess-1",
 		AgentType:   "prosecutor",
 		TaskType:    "speak",
-		Model:       "deepseek-chat",
+		Model:       "deepseek-v4-flash",
 		Provider:    "deepseek",
 		TotalTokens: 123,
 		Status:      StatusSuccess,
@@ -103,7 +103,7 @@ func TestFileLogger_BasicWrite(t *testing.T) {
 		RequestID:   "req-basic",
 		SessionUUID: "sess-basic",
 		AgentType:   "prosecutor",
-		Model:       "deepseek-chat",
+		Model:       "deepseek-v4-flash",
 		TotalTokens: 42,
 		Status:      StatusSuccess,
 	}
