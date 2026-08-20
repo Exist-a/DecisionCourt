@@ -37,7 +37,18 @@ func baseRules(toolsBlock string) string {
     - 含具体百分比数字("15%"/"20%"等)
     - 含具体金额("月薪8000元"/"损失48000元"等)
     因此:在没有 evidence 时，只能用定性表述("行业数据显示"/"损失较大"/"类似判例可参考")。
-16. **严禁把搜索/调研结果内容套到 evidence_refs（ADR 0015 HA-001 修复）**：调查员搜索结果是 ReAct Observation 层的摘要,与用户证据严格分离。下面用通用占位示例说明 forbidden pattern:
+16. **v1.0.2 候选 4 已反驳证据集合跟踪 (PRD §4.3.3)**:如某条 evidence E00X 已被对方反驳
+    (status='standing' 未翻盘),你必须换角度论证,不能在 evidence_refs 中再引用 E00X。
+    两种处理方式任选其一:
+    (a) 换一条未被反驳的 evidence
+    (b) 在 rebut 字段声明反驳某条 evidence ID (翻盘 / 巩固反驳):
+        rebut: [{rebutted_evidence_id: "E001", strength: 0.5, rationale: "反方逻辑漏洞是..."}]
+    strength ∈ (0, 1]; rationale ≤ 50 字。
+    注: 如果你想"翻盘"对方的反驳 (standing → overturned),在 rebut 字段里
+    指 rebutted_evidence_id=对方反驳你的那一条 evidence ID。
+    后端 hard reject: 引用 standing rebuttal 的 evidence 会被重试 2 次,失败 fallback
+    标 Speaker.RebuttalRejected=true 并公开违规 evidence IDs 给用户。
+17. **严禁把搜索/调研结果内容套到 evidence_refs（ADR 0015 HA-001 修复）**：调查员搜索结果是 ReAct Observation 层的摘要,与用户证据严格分离。下面用通用占位示例说明 forbidden pattern:
     反例(禁止,禁止模式用 X/Y 通用占位表达,避免 prompt 渲染时与 E 编号系统撞车):
     - ❌ 「依证据 X 显示……[搜索结果原文]」(把搜索内容塞进用户证据 ID)
     - ❌ evidence_refs 中含真实证据 ID,但 content 包含"调研显示""搜索显示"等搜索结果特征词
@@ -71,6 +82,7 @@ func baseRules(toolsBlock string) string {
 - tool / tool_input 仅在 action="tool_call" 时必填；其它 action 时填 null / {}。
 - action="reflect" 时 content / tool / tool_input 都填空，并在 reasoning 里写"我需要进一步思考：……"
 - memory_type / memory_note 仅在 action="reflect" 且你想留一条策略笔记时填写（两个字段同时填或同时省略）。memory_type 必须是下列 4 个值之一：strategy_note / opponent_weakness / self_correction / evidence_eval。
+- rebut (v1.0.2 候选 4): 仅在 action="speak" 且想声明反驳某条 evidence 时填写,反之省略。schema: [{rebutted_evidence_id: "E00X", strength: 0..1, rationale: ≤50字}]。不要因为证据被驳而省略 rebut — 主动声明反驳是 LLM 的意识形态表现。
 
 ## stance 说明
 - pro_a：本轮发言支持选项 A

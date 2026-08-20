@@ -72,6 +72,8 @@ export const mockAgents: Agent[] = [
 
 export const mockEvidences: Evidence[] = [
   {
+    // v1.0.2 候选 4: mock data 也需要 id (UUID) 字段供 RebuttalLink join 用
+    id: "mock-evidence-001",
     evidence_id: "E001",
     type: "fact",
     source: "user",
@@ -85,6 +87,7 @@ export const mockEvidences: Evidence[] = [
     created_at: new Date().toISOString(),
   },
   {
+    id: "mock-evidence-002",
     evidence_id: "E002",
     type: "data",
     source: "web_search",
@@ -99,6 +102,7 @@ export const mockEvidences: Evidence[] = [
     created_at: new Date().toISOString(),
   },
   {
+    id: "mock-evidence-003",
     evidence_id: "E003",
     type: "constraint",
     source: "user",

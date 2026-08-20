@@ -809,6 +809,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
           <EvidenceBoard
             evidences={evidences}
             onSubmit={handleSubmitEvidence}
+            sessionId={sessionId}
           />
         </div>
 

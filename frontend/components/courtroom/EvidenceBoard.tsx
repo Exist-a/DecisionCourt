@@ -14,10 +14,14 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Plus, AlertTriangle, FolderOpen } from "lucide-react";
+// v1.0.2 候选 4: rebuttal 反驳计数 chip
+import { useRebuttalCounts } from "@/lib/rebuttal";
 
 interface EvidenceBoardProps {
   evidences: Evidence[];
   onSubmit: (content: string, type: EvidenceType) => void;
+  // v1.0.2 候选 4: 传 sessionId 用于拉 rebuttal chip 计数 (PRD §4.3.3)
+  sessionId: string;
 }
 
 const evidenceTypeLabels: Record<EvidenceType, string> = {
@@ -41,10 +45,12 @@ const sourceColors: Record<string, { tab: string; ink: string }> = {
   clarification_answer: { tab: "#A89F8E", ink: "#5C564F" },
 };
 
-export function EvidenceBoard({ evidences, onSubmit }: EvidenceBoardProps) {
+export function EvidenceBoard({ evidences, onSubmit, sessionId }: EvidenceBoardProps) {
   const [content, setContent] = useState("");
   const [type, setType] = useState<EvidenceType>("fact");
   const [expanded, setExpanded] = useState(false);
+  // v1.0.2 候选 4: 拉每条 evidence 的 standing 状态 rebuttal 计数
+  const rebuttalCounts = useRebuttalCounts(sessionId, evidences);
 
   const handleSubmit = () => {
     if (!content.trim()) return;
@@ -94,9 +100,21 @@ export function EvidenceBoard({ evidences, onSubmit }: EvidenceBoardProps) {
                     >
                       {formatEvidenceID(evidence.evidence_id)}
                     </span>
-                    <span className="text-[10px] uppercase tracking-wider text-inkFaint font-data px-1.5 py-0.5 border border-rule rounded-sm">
-                      {evidenceTypeLabels[evidence.type]}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      {/* v1.0.2 候选 4: standing rebuttal 计数 chip */}
+                      {(rebuttalCounts.get(evidence.evidence_id) ?? 0) > 0 && (
+                        <span
+                          className="text-[10px] uppercase tracking-wider text-inkFaint font-data px-1.5 py-0.5 border border-amber-700 bg-amber-50 rounded-sm"
+                          title="已被对方反驳 (standing 状态, 后端 hard reject 引用)"
+                          data-testid="rebuttal-count-chip"
+                        >
+                          ⚔ 已反驳 {rebuttalCounts.get(evidence.evidence_id)}
+                        </span>
+                      )}
+                      <span className="text-[10px] uppercase tracking-wider text-inkFaint font-data px-1.5 py-0.5 border border-rule rounded-sm">
+                        {evidenceTypeLabels[evidence.type]}
+                      </span>
+                    </div>
                   </div>
 
                   {/* 证据内容 */}

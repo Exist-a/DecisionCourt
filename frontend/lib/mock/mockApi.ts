@@ -117,6 +117,8 @@ export const mockApi = {
   ): Promise<{ code: number; data: Evidence }> {
     await delay(500);
     const evidence: Evidence = {
+      // v1.0.2 候选 4: mock 模式也要有 id (UUID) 字段供 RebuttalLink join
+      id: `mock-evidence-${String(mockEvidences.length + 1).padStart(3, "0")}`,
       evidence_id: `E${String(mockEvidences.length + 1).padStart(3, "0")}`,
       type: req.type || "fact",
       source: req.source || "user",

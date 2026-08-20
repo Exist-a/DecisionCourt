@@ -59,7 +59,8 @@ export interface Agent {
 }
 
 export interface Evidence {
-  evidence_id: string;
+  id: string; // v1.0.2 候选 4: backend DB UUID (用于 join rebuttal_links)
+  evidence_id: string; // display_id (E001 等)
   type: EvidenceType;
   source: EvidenceSource;
   content: string;
@@ -393,6 +394,30 @@ export interface A2AMessageEvent extends CourtEvent {
 // 详见 .trae/documents/belief-engine-v06.md（待写）。
 export type BeliefDiffSource = "evidence" | "weaken" | "anchor_pull";
 export type BeliefDirection = "supports_a" | "supports_b" | "neutral";
+
+/**
+ * RebuttalLink v1.0.2 候选 4: 已反驳证据集合跟踪的状态机 row.
+ *
+ * 后端 evidence_rebuttal_links 表 (GORM) → /api/v1/courtrooms/:uuid/rebuttal-links REST
+ * → frontend EvidenceBoard 显示"已反驳 X 次"chip.
+ *
+ * 状态机 (PRD §4.3.3 + ADR 0030):
+ *   - standing: 未翻盘, 后端 hard reject 引用 (PR-3)
+ *   - overturned: 被翻盘, 恢复正常引用
+ *   - withdrawn: 撤回 (LLM 自己撤回 rebut)
+ */
+export type RebuttalStatus = "standing" | "overturned" | "withdrawn";
+
+export interface RebuttalLink {
+  id: string;
+  session_id: string;
+  rebutted_evidence_id: string; // UUID (不是 display_id)
+  aggressor_agent: string; // "prosecutor" | "defender"
+  status: RebuttalStatus;
+  strength: number; // 0..1
+  rationale: string;
+  created_at: string;
+}
 
 /**
  * BeliefDiff is the frontend-friendly projection of one row in
