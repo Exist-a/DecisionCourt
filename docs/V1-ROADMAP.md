@@ -57,8 +57,24 @@
 - ✅ PR-2 DeepSeek v3→v4 硬迁移(`1900813`)+ ADR 0029
 - ✅ PR-3 ECS 8 问题专项回归测试(`f34051a`)
 - ✅ PR-4 v1.0.0 release notes(本文件 [release-notes/v1.0.0.md](./release-notes/v1.0.0.md))
+- ✅ PR-5 v1.0.0 tag + push(commit `6b35e92`)
 
-**下次行动**: PR-5 打 v1.0.0 tag + push(待用户授权)
+### M0.5:v1.0.1 收尾 ✅ (2026-08-20)
+
+**目标**: 修掉 v1.0.0 release notes ⏸ 已知遗留的 4 类预存在测试失败(用户授权:"在 1.0 开始之前得把错误都修了")
+
+**已完成**:
+- ✅ baseRules 第 16 条 (HA-001 调查发现 vs 用户证据混淆)
+- ✅ buildInvestigationContext + ProsecutorPrompt / DefenderPrompt 接入
+- ✅ FileLogger.Close() 改进(置 nil + lazy reopen)避免 Windows file lock
+- ✅ 8 个 ReActRunner 测试 stale 断言同步到 v0.10.23/24 实际 call 数
+- ✅ TranscriptContextInjected onCall 改为 per-call 切片数组
+- ✅ v1.0.1 release notes ([release-notes/v1.0.1.md](./release-notes/v1.0.1.md))
+- ✅ `go test ./...` 100% PASS
+
+**Commit**: `ae7a464`(5 files, +91/-20)
+
+**下次行动**: 打 v1.0.1 tag + push(待用户授权)
 
 ---
 
