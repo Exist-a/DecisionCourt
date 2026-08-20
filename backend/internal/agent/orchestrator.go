@@ -24,6 +24,7 @@ type Orchestrator struct {
 	a2aBus      *a2a.Bus
 	memoryRepo  private_memory.Repository
 	weakenRepo  belief.WeakenRepository
+	rebutRepo   RebuttalSink         // v1.0.2 候选 4: 持久化 rebuttal 声明
 	evidenceLkp EvidenceResolver
 	// historyProvider (v0.10.23 候选 2), if non-nil, 让 orchestrator
 	// 拉同 agent 历史 speak messages 用于新意度 Jaccard 检查。
@@ -77,6 +78,13 @@ func NewOrchestrator(client llm.Client, bus *a2a.Bus, memRepo private_memory.Rep
 // Marked Deprecated in the godoc so new wiring uses the 5-arg form.
 func NewOrchestratorLegacy(client llm.Client, bus *a2a.Bus, memRepo private_memory.Repository) *Orchestrator {
 	return NewOrchestrator(client, bus, memRepo, nil, nil)
+}
+
+// SetRebuttalSink (v1.0.2 候选 4) injects the RebuttalSink after construction.
+// Symmetric to WithBeliefRepositories (which wires weakenRepo after creation).
+// Nil-safe: passing nil disables RebuttalHook emission (pre-v1.0.2 behavior).
+func (o *Orchestrator) SetRebuttalSink(repo RebuttalSink) {
+	o.rebutRepo = repo
 }
 
 func (o *Orchestrator) ProsecutorSpeak(
@@ -245,6 +253,11 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		// drop weaken declarations instead of crashing. (Most pre-v0.6
 		// callers don't supply either, so this stays a no-op.)
 		WeakenHook: o.makeWeakenHook(),
+		// v1.0.2 候选 4: rebuttal hook. Mirror of WeakenHook but writes
+		// evidence_rebuttal_links (status='standing' default). Nil-safe
+		// when no RebuttalRepository is wired (PR-4 在 courtroom.Service
+		// 注入 RebuttalRepository)。Pre-v1.0.2 callers 不受影响。
+		RebuttalHook: o.makeRebuttalHook(),
 		// v0.10.23 候选 2: 注入历史发言, runner 做新意度 Jaccard 检查
 		SpeakerHistory: speakerHistory,
 		// v0.10.24 候选 1: 注入 belief_A + agent, runner 做 LLM-as-judge stance 一致性
@@ -310,6 +323,28 @@ func (o *Orchestrator) makeWeakenHook() WeakenHook {
 		defer writeCancel()
 		if err := EmitWeakenFromOutput(writeCtx, MapToWeakenRepository(o.weakenRepo), o.evidenceLkp, meta, out); err != nil {
 			log.Printf("[orchestrator] weaken emit failed for %s: %v", meta.AgentType, err)
+			return err
+		}
+		return nil
+	}
+}
+
+// makeRebuttalHook (v1.0.2 候选 4) returns a RebuttalHook closure that
+// persists AgentOutput rebuttal declarations to the RebuttalSink (wired by
+// PR-4 via SetRebuttalSink). Returns a no-op when either the sink or the
+// evidence resolver is nil so pre-v1.0.2 callers keep functioning unchanged.
+//
+// Failure isolation mirrors makeWeakenHook: a write error is logged but
+// never returned — persist failures never abort the trial.
+func (o *Orchestrator) makeRebuttalHook() RebuttalHook {
+	return func(ctx context.Context, out AgentOutput, meta MemoryMeta) error {
+		if o.rebutRepo == nil || o.evidenceLkp == nil {
+			return nil
+		}
+		writeCtx, writeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer writeCancel()
+		if err := EmitRebuttalFromOutput(writeCtx, o.rebutRepo, o.evidenceLkp, meta, out); err != nil {
+			log.Printf("[orchestrator] rebuttal emit failed for %s: %v", meta.AgentType, err)
 			return err
 		}
 		return nil

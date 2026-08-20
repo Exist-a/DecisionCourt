@@ -140,6 +140,14 @@ type RunnerConfig struct {
 	// disables weaken persistence — useful for callers that don't yet
 	// integrate with belief v0.6.
 	WeakenHook WeakenHook
+	// RebuttalHook (v1.0.2 候选 4), if non-nil, fires whenever a speak step's
+	// AgentOutput carries ≥1 valid RebuttalDeclaration (HasRebuttal()).
+	// The orchestrator wires this to EmitRebuttalFromOutput to persist the
+	// declaration as a row in evidence_rebuttal_links (default status='standing').
+	// Subsequent applySpeakerRebuttalCheck (PR-3) hard-rejects speakers that
+	// reference 'standing' rebuttal evidence. Nil is safe and disables
+	// rebuttal persistence — useful for pre-v1.0.2 callers.
+	RebuttalHook RebuttalHook
 	// SpeakerHistory (v0.10.23 候选 2), if non-nil, 是当前 speaker 同 agent
 	// 的历史 speak messages (跨 phase 跨 round, 但只看自己)。runner 用它做
 	// 新意度 Jaccard 检查: 本次新发言 vs 自己历史任一条 jaccard > 0.6 → reject +
@@ -410,6 +418,16 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 				steps = append(steps, step)
 				r.emitStep(step)
 
+				// v1.0.2 候选 4: 持久化 rebuttal 声明 (在 novelty/stance judge 之后)
+				// streamSucceeded 路径只触发 fire;后续 applySpeakerRebuttalCheck
+				// (PR-3) 在 validateSpeak 阶段硬拒引用 standing rebuttal evidence。
+				if r.cfg.RebuttalHook != nil && out.HasRebuttal() {
+					if err := r.cfg.RebuttalHook(ctx, out, r.cfg.MemoryMeta); err != nil {
+						// 同 MemoryHook/WeakenHook 失败隔离: log 不 fail
+						_ = err
+					}
+				}
+
 				// v0.10.23 候选 2: 新意度 retry 通路 (先 novelty 后 length limit)
 				speaker := Speaker{
 					Content:      out.Content,
@@ -456,6 +474,13 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 			step.ElapsedMs = time.Since(stepStart).Milliseconds()
 			steps = append(steps, step)
 			r.emitStep(step)
+
+			// v1.0.2 候选 4: 持久化 rebuttal 声明 (validateSpeak retry 路径)
+			if r.cfg.RebuttalHook != nil && out.HasRebuttal() {
+				if err := r.cfg.RebuttalHook(ctx, out, r.cfg.MemoryMeta); err != nil {
+					_ = err // 失败隔离: log 不 fail
+				}
+			}
 
 			// v0.10.23 候选 2: 新意度 retry 通路 (先 novelty 后 length limit)
 			speaker := Speaker{

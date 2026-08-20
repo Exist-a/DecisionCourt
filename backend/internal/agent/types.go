@@ -89,6 +89,11 @@ type AgentOutput struct {
 	// Weaken (v0.6) — list of evidence pieces the agent wants to neutralise.
 	// See WeakenDeclaration below.
 	Weaken []WeakenDeclaration `json:"weaken,omitempty"`
+	// Rebut (v1.0.2 候选 4) — list of evidence pieces the agent wants to
+	// rebut. See RebuttalDeclaration below. Symmetric to Weaken but targets
+	// CONTENT (not transmission). Persisted by RebuttalHook into
+	// evidence_rebuttal_links table with default status='standing'.
+	Rebut []RebuttalDeclaration `json:"rebut,omitempty"`
 }
 
 // WeakenDeclaration is a single "weakening edge" declared by an LLM agent.
@@ -173,6 +178,65 @@ func (o *AgentOutput) ValidWeakenDeclarations() []WeakenDeclaration {
 	return out
 }
 
+// RebuttalDeclaration (v1.0.2 候选 4) is a single "rebuttal edge" declared by
+// an LLM agent. Symmetric to WeakenDeclaration but targets evidence CONTENT
+// (not transmission): "E001 不成立因为 X" 而非 "E001 传播削弱 0.5"。
+//
+// ReAct runner 在 speak 之前把所有 valid rebuttal declarations 转给
+// RebuttalHook,Service 层把每条写入 evidence_rebuttal_links 表
+// (default status='standing')。后续 applySpeakerRebuttalCheck (PR-3)
+// 在 validateSpeak 阶段硬拒引用 standing 状态的 evidence。
+//
+// 字段对齐 WeakenDeclaration: 复用 "声明 schema" 不引入新 ActionKind,
+// 让 LLM 在同一次 speak 中可以既 rebut 又 speak (区别于 Weaken 仅在
+// reflect 阶段声明, 详见 react_runner.go)。
+type RebuttalDeclaration struct {
+	// RebuttedEvidenceID is the *display_id* (e.g. "E001") the user sees in
+	// the EvidenceBoard. RebuttalHook resolves it to actual UUID via
+	// session's evidence list before Inserting.
+	RebuttedEvidenceID string `json:"rebutted_evidence_id"`
+	// Strength is 0..1 rebuttal strength. 后端不直接衰减 weight (与 Weaken
+	// 不同), 但记录到 evidence_rebuttal_links 供前端 audit / chip 显示。
+	Strength float64 `json:"strength"`
+	// Rationale is a short free-text reason (≤50 字, prompt 约束).
+	Rationale string `json:"rationale,omitempty"`
+}
+
+// HasRebuttal reports whether the output has at least one valid
+// RebuttalDeclaration. Hooks use this before persisting to avoid no-op DB writes.
+func (o *AgentOutput) HasRebuttal() bool {
+	for _, r := range o.Rebut {
+		if isValidRebuttal(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// isValidRebuttal drops obviously-broken rebuttal entries.
+// 同 Weaken 策略: RebuttedEvidenceID 非空 + Strength ∈ (0, 1].
+func isValidRebuttal(r RebuttalDeclaration) bool {
+	if strings.TrimSpace(r.RebuttedEvidenceID) == "" {
+		return false
+	}
+	if r.Strength <= 0 || r.Strength > 1 {
+		return false
+	}
+	return true
+}
+
+// ValidRebuttalDeclarations returns the slice containing only entries that
+// pass isValidRebuttal. Symmetric to ValidWeakenDeclarations.
+func (o *AgentOutput) ValidRebuttalDeclarations() []RebuttalDeclaration {
+	out := make([]RebuttalDeclaration, 0, len(o.Rebut))
+	for _, r := range o.Rebut {
+		if isValidRebuttal(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // Speaker represents an Agent ready to speak in the courtroom.
 type Speaker struct {
 	Agent        model.Agent
@@ -200,4 +264,12 @@ type Speaker struct {
 	// JSON omitempty 向后兼容: 旧后端 / 旧前端不会显示这两个字段。
 	StanceRejected   bool   `json:"stance_rejected,omitempty"`
 	StanceJudgeReason string `json:"stance_judge_reason,omitempty"`
+	// v1.0.2 候选 4: 已反驳证据 hard reject 标记 + 违规 evidence IDs
+	// RebuttalRejected=true 表示本发言触发了"已反驳证据 hard reject" (2 次 retry 后仍含
+	// standing rebuttal), 即最终返回的 Speaker 仍然引用了已反驳未翻盘的证据 (PRD §4.3.3)。
+	// RebuttalViolations 列出被拒绝引用的 evidence IDs (E00X 格式), 用于前端 chip
+	// + 审计 trail (类似 StanceJudgeReason)。与 stance/novelty 同等级 guard。
+	// JSON omitempty 向后兼容: 旧后端 / 旧前端不会显示这两个字段。
+	RebuttalRejected   bool     `json:"rebuttal_rejected,omitempty"`
+	RebuttalViolations []string `json:"rebuttal_violations,omitempty"`
 }
