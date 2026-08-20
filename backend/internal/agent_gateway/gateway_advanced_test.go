@@ -52,6 +52,9 @@ func TestGateway_Advanced_BudgetCompressThrottleAndLog(t *testing.T) {
 		LogDir:            dir,
 	}.Normalize()
 	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	// v1.0.1 修复: Windows 上 t.TempDir() cleanup 在 fileLogger.Close() 之前
+	// 触发 "file in use" 错误。t.Cleanup 保证 fileLogger 先关, 再清理目录。
+	t.Cleanup(func() { _ = gw.fileLogger.Close() })
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "sess-1", AgentType: "prosecutor", TaskType: "speak"})
 	msgs := make([]llm.Message, 12)
@@ -108,13 +111,16 @@ func TestGateway_Advanced_FallbackRetry(t *testing.T) {
 	inner := &fakeRetryLLM{failures: 2}
 	rec := NewRecorder(RecorderConfig{Enabled: false, Provider: "deepseek"}, nil)
 	cfg := GatewayConfig{
-		Enabled: true,
-		Fallback: true,
+		Enabled:    true,
+		Fallback:   true,
 		FileLogger: true,
-		LogDir: dir,
+		LogDir:     dir,
 	}.Normalize()
 	// 用短退避加速测试
 	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	// v1.0.1 修复: 同 TestGateway_Advanced_BudgetCompressThrottleAndLog,
+	// Windows TempDir cleanup 必须先关 fileLogger。
+	t.Cleanup(func() { _ = gw.fileLogger.Close() })
 	gw.retryer = NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond})
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "sess-2", AgentType: "judge", TaskType: "assess"})

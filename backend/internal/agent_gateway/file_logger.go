@@ -80,6 +80,7 @@ func (fl *FileLogger) Write(entry LogEntry) error {
 	if fl.currentDate != today || fl.file == nil {
 		if fl.file != nil {
 			fl.file.Close()
+			fl.file = nil
 		}
 		if err := os.MkdirAll(fl.logDir, 0755); err != nil {
 			return err
@@ -104,12 +105,16 @@ func (fl *FileLogger) Write(entry LogEntry) error {
 	return err
 }
 
-// Close 关闭当前文件。
+// Close 关闭当前文件。下次 Write 会自动 lazy reopen 同一天的文件。
+// (v1.0.1 修复: Close 后将 fl.file 置 nil,避免 Windows TempDir cleanup 时
+// "file in use" 报错 — 测试场景下测试结束前必须 defer Close。)
 func (fl *FileLogger) Close() error {
 	fl.mu.Lock()
 	defer fl.mu.Unlock()
 	if fl.file != nil {
-		return fl.file.Close()
+		err := fl.file.Close()
+		fl.file = nil
+		return err
 	}
 	return nil
 }

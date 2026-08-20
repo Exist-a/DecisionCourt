@@ -133,7 +133,10 @@ func TestReActRunner_DirectSpeak_NoToolsInvoked(t *testing.T) {
 	require.Equal(t, "pro_a", speaker.Stance)
 	require.Len(t, steps, 1)
 	require.Equal(t, "speak", steps[0].Action)
-	require.Equal(t, 1, llm.Calls())
+	// v1.0.1 修复: v0.10.23/24 加了 applySpeakerStanceJudge (2 次) +
+	// applySpeakerNoveltyRetryLoop (2 次) + 原 ReAct 1 次 = 6 次。
+	// 原断言 1 已是 stale (v0.10.23 提交前 v0.10.21 PR-B 时代)。
+	require.Equal(t, 6, llm.Calls())
 	require.Empty(t, tool.Calls(), "tool 不应被调用")
 }
 
@@ -153,7 +156,8 @@ func TestReActRunner_OneToolThenSpeak(t *testing.T) {
 	require.Equal(t, "investigator_search", steps[0].ToolName)
 	require.Equal(t, "搜到了证据 E007", steps[0].Observation)
 	require.Equal(t, "speak", steps[1].Action)
-	require.Equal(t, 2, llm.Calls())
+	// v1.0.1 修复: v0.10.23/24 stance + novelty 通路 +5 → 2 → 7
+	require.Equal(t, 7, llm.Calls())
 	require.Len(t, tool.Calls(), 1)
 	require.Equal(t, "选项A 长期收益", tool.Calls()[0]["query"])
 }
@@ -174,7 +178,8 @@ func TestReActRunner_TwoToolsThenSpeak(t *testing.T) {
 	require.Equal(t, 2, len(tool.Calls()))
 	require.Equal(t, "Q1", tool.Calls()[0]["query"])
 	require.Equal(t, "Q2", tool.Calls()[1]["query"])
-	require.Equal(t, 3, llm.Calls())
+	// v1.0.1 修复: v0.10.23/24 stance + novelty 通路 +5 → 3 → 8
+	require.Equal(t, 8, llm.Calls())
 }
 
 // T4: 超过 max iteration 仍未 speak → runner 返回 error（不允许无限循环）
@@ -292,19 +297,24 @@ func TestReActRunner_InvalidJSONRetriesThenFails(t *testing.T) {
 	speaker, _, err := r.Run(context.Background(), nil)
 	require.NoError(t, err)
 	require.Equal(t, "OK", speaker.Content)
-	require.Equal(t, 2, llm.Calls(), "应有一次重试")
+	// v1.0.1 修复: v0.10.23/24 stance + novelty 通路 +5 → 2 → 7
+	require.Equal(t, 7, llm.Calls(), "应有一次重试")
 }
 
 // T10: transcript 历史被注入到 system prompt 之外作为额外上下文
 func TestReActRunner_TranscriptContextInjected(t *testing.T) {
-	var capturedMessages []llm.Message
+	var capturedCalls [][]llm.Message
 	var mu sync.Mutex
 	captureLLM := &captureLLMScripted{
 		output: speakOutputJSON("回应", "我的发言", "pro_a", 0.7),
 		onCall: func(msgs []llm.Message) {
 			mu.Lock()
 			defer mu.Unlock()
-			capturedMessages = append([]llm.Message{}, msgs...)
+			// v1.0.1 修复: 改为 per-call 切片数组。原版覆盖式 append 在
+			// v0.10.23/24 加 applySpeakerStanceJudge + applySpeakerNoveltyRetryLoop
+			// 多次 LLM call 后只保留最后一次 call 的 msgs,transcript 注入
+			// 在第一次 call 里的 system prompt 被覆盖丢失,断言失败。
+			capturedCalls = append(capturedCalls, append([]llm.Message{}, msgs...))
 		},
 	}
 	transcript := []model.Message{
@@ -317,13 +327,15 @@ func TestReActRunner_TranscriptContextInjected(t *testing.T) {
 	_, _, err := r.Run(context.Background(), transcript)
 	require.NoError(t, err)
 
-	// system prompt 应包含双方历史
+	// system prompt 应在某个 call 里包含双方历史
 	mu.Lock()
 	defer mu.Unlock()
 	var foundSystem bool
-	for _, m := range capturedMessages {
-		if m.Role == "system" && strings.Contains(m.Content, "对方说 A 是垃圾") && strings.Contains(m.Content, "我之前说 B 才正确") {
-			foundSystem = true
+	for _, msgs := range capturedCalls {
+		for _, m := range msgs {
+			if m.Role == "system" && strings.Contains(m.Content, "对方说 A 是垃圾") && strings.Contains(m.Content, "我之前说 B 才正确") {
+				foundSystem = true
+			}
 		}
 	}
 	require.True(t, foundSystem, "transcript 应被注入到 system prompt 或单独的 system 消息")
@@ -377,7 +389,8 @@ func TestReActRunner_ReflectThenReflectThenSpeak(t *testing.T) {
 	require.Equal(t, "reflect", steps[0].Action)
 	require.Equal(t, "reflect", steps[1].Action)
 	require.Equal(t, "speak", steps[2].Action)
-	require.Equal(t, 3, llm.Calls())
+	// v1.0.1 修复: v0.10.23/24 stance + novelty 通路 +5 → 3 → 8
+	require.Equal(t, 8, llm.Calls())
 }
 
 // T12: 超过 MaxReflects 后 reflect 被 cap，发出 reflect_cap_reached 提示，但仍允许继续 speak
@@ -397,6 +410,9 @@ func TestReActRunner_ReflectCapFallsThroughToSpeak(t *testing.T) {
 	require.Equal(t, 5, len(steps))
 	require.Contains(t, steps[3].Observation, "reflect_cap_reached")
 	require.Equal(t, "speak", steps[4].Action)
+	// v1.0.1 修复: 这个测试 SpeakerAgent 是零值, isStanceConsistent fast
+	// filter 返回 true (stance 没冲突), 所以 stance judge + novelty 不调,
+	// calls 保持 5 (4 reflect + 1 speak)。
 	require.Equal(t, 5, llm.Calls())
 }
 

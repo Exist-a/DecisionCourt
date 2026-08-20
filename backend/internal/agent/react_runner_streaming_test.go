@@ -121,8 +121,9 @@ func TestReActRunner_SpeakStreamsContentViaOnSpeakChunk(t *testing.T) {
 
 	// StreamComplete 必须被调用 1 次
 	require.Equal(t, 1, llmClient.streamCalls)
-	// Complete 必须被调用 1 次（决策）
-	require.Equal(t, 1, llmClient.completeCalls)
+	// v1.0.1 修复: v0.10.24 stance judge 路径(1 次决策 + 2 次 judge)
+	// 流式 path不走 novelty (因为 content 已来自流式)
+	require.Equal(t, 3, llmClient.completeCalls)
 }
 
 // TestReActRunner_SpeakStreamsMultilineJSON 验证 deepseek 输出多行
@@ -217,8 +218,8 @@ func TestReActRunner_ToolCallDoesNotStream(t *testing.T) {
 	speaker, _, err := r.Run(context.Background(), []model.Message{})
 	require.NoError(t, err)
 	require.Equal(t, "完整发言", speaker.Content, "speak 流式回填 content")
-	// tool_call 一次 + speak 决策一次 = 2 次 Complete
-	require.Equal(t, 2, llmClient.completeCalls, "tool_call + speak 各调一次 Complete")
+	// v1.0.1 修复: v0.10.23/24 stance + novelty 通路 +5 → 2 → 7
+	require.Equal(t, 7, llmClient.completeCalls, "tool_call + speak + stance(2) + novelty(2)")
 	// tool_call 不走流式，只有 speak 走一次流式
 	require.Equal(t, 1, llmClient.streamCalls, "tool_call 不调 StreamComplete；speak 调 1 次")
 	require.Equal(t, 1, streamCalls, "OnSpeakChunk 只在 speak 阶段触发一次（chunk 数为 1）")

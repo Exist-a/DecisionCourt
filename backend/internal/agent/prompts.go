@@ -37,6 +37,16 @@ func baseRules(toolsBlock string) string {
     - 含具体百分比数字("15%"/"20%"等)
     - 含具体金额("月薪8000元"/"损失48000元"等)
     因此:在没有 evidence 时，只能用定性表述("行业数据显示"/"损失较大"/"类似判例可参考")。
+16. **严禁把搜索/调研结果内容套到 evidence_refs（ADR 0015 HA-001 修复）**：调查员搜索结果是 ReAct Observation 层的摘要,与用户证据严格分离。下面用通用占位示例说明 forbidden pattern:
+    反例(禁止,禁止模式用 X/Y 通用占位表达,避免 prompt 渲染时与 E 编号系统撞车):
+    - ❌ 「依证据 X 显示……[搜索结果原文]」(把搜索内容塞进用户证据 ID)
+    - ❌ evidence_refs 中含真实证据 ID,但 content 包含"调研显示""搜索显示"等搜索结果特征词
+    正例(要求):
+    - ✅ 「调研显示……」(搜索结果用语义前缀,不挂用户证据 ID)
+    - ✅ 「用户提交的某条证据提到『还有工作』」(真实证据才挂证据 ID,content 仅复述证据文本)
+    本规则与第 13 条「严禁编造证据细节」配合:把搜索内容假冒成证据是「间接编造」。
+    详见下方独立 section,该 section 与「## 当前证据」视觉分隔,二者不得混用。
+    调查 (investigation) 视角下 finding 与 evidence 的关系由后端 buildInvestigationContext 渲染。
 
 ` + toolsBlock + `
 
@@ -121,6 +131,7 @@ func ProsecutorPrompt(agent model.Agent, session model.CourtSession, evidences [
 	b.WriteString("3. 强调选项 A 的收益、机会、长期价值；用具体数据或案例，避免空话。\n")
 	b.WriteString("4. 初始信念度是 0.75，你对选项 A 有较强倾向；但当对方论据确实更强时，允许通过 reflect 把信念度小幅下调。\n")
 	b.WriteString(buildContext(session, evidences))
+	b.WriteString(buildInvestigationContext(session))
 	return b.String()
 }
 
@@ -137,6 +148,7 @@ func DefenderPrompt(agent model.Agent, session model.CourtSession, evidences []m
 	b.WriteString("3. 强调选项 B 的稳定性、确定性、风险控制；用可验证的事实，避免空话。\n")
 	b.WriteString("4. 初始信念度是 0.75，你对选项 B 有较强倾向；但当对方论据确实更强时，允许通过 reflect 把信念度小幅下调。\n")
 	b.WriteString(buildContext(session, evidences))
+	b.WriteString(buildInvestigationContext(session))
 	return b.String()
 }
 
@@ -372,6 +384,37 @@ func buildContext(session model.CourtSession, evidences []model.Evidence) string
 	} else {
 		b.WriteString("## 当前证据\n当前尚无证据。你必须基于背景信息和对方观点进行分析，evidence_refs 必须为空数组 []。\n")
 	}
+	return b.String()
+}
+
+// buildInvestigationContext 生成"## 调查活动"section (v0.9.4 HA-001 修复 spec)。
+//
+// 目的:
+//   - 解决"agent 把调查员搜索的 InvestigationFinding 内容套到 evidence_refs 中的
+//     E00X ID 上"的幻觉 (finding_evidence_confusion_test.go L1-66 描述)。
+//   - 在 system prompt 视觉上把"调查发现"和"用户证据"分离,让 LLM 一眼看到:
+//       当前证据 = 用户提交 (evidence_refs 来源)
+//       调查活动 = ReAct tool_call 结果 (绝不能套到 E00X)
+//
+// 当前实现是占位 — 未来版本可在 ProsecutorSpeak / DefenderSpeak 调用时通过
+// investigation.Repository.ListBySession(session.ID) 注入真实 finding 列表。
+// 该函数现已存在于 prompts.go 但默认不查 DB,避免 prompts.go 直接依赖 DB 层
+// (prompts.go 是纯字符串拼接包)。
+//
+// 测试覆盖: TestProsecutorPrompt_ShouldHaveFindingSection_WhenFindingsExist
+// 验证本函数总是输出 "## 调查活动" header (即使没有 findings),保证 prompt 视觉
+// 一致性。
+func buildInvestigationContext(session model.CourtSession) string {
+	var b strings.Builder
+	b.WriteString("## 调查活动\n")
+	b.WriteString("注意:本节是「调查活动」section (InvestigationFinding 表内容),与「当前证据」独立。\n")
+	b.WriteString("- 调查发现由 ReAct tool_call (investigator_search) 触发,基于用户授权的搜索 API (Bocha AI Search / SearXNG) 生成,不是用户提交。\n")
+	b.WriteString("- 调查发现可被双方律师引用为论据,但**绝不能**挂到 evidence_refs 的用户证据 ID 上。引用调查发现必须用「调查员发现...」「调研显示...」等语义前缀。\n")
+	b.WriteString("- 当前 session 调查活动列表: [由 ProsecutorSpeak / DefenderSpeak 在调用时通过 investigation.Repository.ListBySession 注入]\n")
+	if session.SessionUUID != "" {
+		b.WriteString(fmt.Sprintf("- 当前 session UUID: %s\n", session.SessionUUID))
+	}
+	b.WriteString("\n## 调查活动结束\n")
 	return b.String()
 }
 
