@@ -78,26 +78,29 @@
 
 ---
 
-### M1:v1.0.1 候选 4 已反驳证据集合跟踪 (⏸ 用户授权启动)
+### M1:v1.0.2 候选 4 已反驳证据集合跟踪 ✅ (2026-08-20)
 
-**目标**: 实现 roadmap §0 "下一步进入候选 4 讨论"——已反驳证据集合在庭审中的跟踪机制
+**目标**: 实现 PRD §4.3.3 "v0.7+ 计划" 第一项 "禁止引用被反驳且未翻盘的证据"。
+roadmap §0 顶部钦定 "下一步进入候选 4 讨论"。
 
-**PRD 来源**: §4.3.2 §4.3.3 §10.1
+**已完成** (6 PR, 5 commits):
+- ✅ PR-1 数据模型 + ADR 0030 (`ac8eda0`)
+- ✅ PR-2 输入协议 (AgentOutput.Rebut + RebuttalHook + RebuttalSink) (`a2eddb6`)
+- ✅ PR-3 后端硬拒 (applySpeakerRebuttalCheck, 与 stance/novelty 同级 guard) (`45dce74`)
+- ✅ PR-4 Service 集成 + GORM RebuttalRepository + REST /rebuttal-links (`0d43e76`)
+- ✅ PR-5 baseRules rebut schema + Frontend EvidenceBoard ⚔ 已反驳 X 次 chip (`88e5178`)
+- ✅ PR-6 ecs_regression_v102_test + v1.0.2 release notes + tag
+- ✅ `go test ./...` 100% PASS (含新增 13 sub-test)
+- ✅ `pnpm test` 40/40 PASS
+- ✅ `pnpm tsc --noEmit` 通过
 
-**业务场景**:
-- 律师 A 提出"X 公司 2023 财报下降 30%"作为证据 E001
-- 律师 B 反驳"X 公司新业务线 2024 增长 50%,综合营收实际上升"
-- 当前:`rebuttal` 字段只有 evidence_refs 标记,没有"被反驳证据集合"概念
-- v1.0.1 改造:`evidence` 表加 `rebutted_by` 字段(指向反驳方的 evidence_id), `belief_diffs` 加 `rebuttal_chain` JSONB
-- 庭审可视化:BeliefDiffCard 显示"X 证据已被 Y 反驳"链接
+**Commit 链**: `ac8eda0` → `a2eddb6` → `45dce74` → `0d43e76` → `88e5178` → (PR-6)
 
-**预估工作量**:2-3 hour(PRD §4.3.2 详细描述已写)
+**触及 §2.1 裁决逻辑**: **中** (PRD §4.3.3 hard reject, 与 stance/novelty 同等级; 法官判决不感知 → 留 v1.0.x 后续讨论)
 
-**触发**: 用户授权启动讨论 → 候选 4 ADR 入库 → 实现 + 测试
+**回滚**: `git reset --hard v1.0.1` 回 v1.0.1 + 单独 revert 任一 PR
 
-**触及 §2.1 裁决逻辑**: **强**(影响 belief_diffs 计算,可能影响最终判决)
-
-**回滚**: `git revert <commit>` + 数据库迁移 down
+详见 [release-notes/v1.0.2.md](./release-notes/v1.0.2.md) + [ADR 0030](./adr/0030-evidence-rebuttal-state-machine.md)
 
 ---
 
