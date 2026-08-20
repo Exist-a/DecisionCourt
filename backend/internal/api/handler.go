@@ -10,14 +10,15 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/decisioncourt/backend/internal/a2a"
+"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/auth"
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
-		"github.com/decisioncourt/backend/internal/observability"
+	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/ratelimit"
 	"github.com/decisioncourt/backend/internal/idempotency"
+	"github.com/decisioncourt/backend/internal/util"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -239,6 +240,8 @@ func (h *Handler) checkSessionAccess(c *gin.Context, sessionUUID string) (model.
 
 // writeAudit 写一条审计日志(异步,不阻塞主流程)。
 // 失败时仅记 slog 警告,不返回错误——审计不是关键路径。
+// IP 字段调用 util.TruncateIP 脱敏(v1.0.0 P3-1):公网 IPv4 保留 a.b.IPv6 保留前 2 段,
+// 内网 / localhost 原样。详见 internal/util/ip.go + production-retrospective-2026-08-05.md §4 P3-1。
 func (h *Handler) writeAudit(c *gin.Context, action, target, result, reason string) {
 	if model.DB == nil {
 		return
@@ -248,8 +251,8 @@ func (h *Handler) writeAudit(c *gin.Context, action, target, result, reason stri
 		UserID:  viewer,
 		Action:  action,
 		Target:  target,
-		IP:      c.ClientIP(),
-		UA:      c.GetHeader("User-Agent"),
+		IP:      util.TruncateIP(c.ClientIP()),
+		UA:      util.TruncateUA(c.GetHeader("User-Agent")),
 		Result:  result,
 		Reason:  reason,
 	}
@@ -271,7 +274,7 @@ func (h *Handler) CreateCourtroom(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// v0.8.3 安全(P1-6 错误脱敏):不直接回显 err.Error()(暴露 binding tag / 字段名)
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": "invalid request body"})
-		slog.Warn("CreateCourtroom bind failed", "error", err, "client_ip", c.ClientIP())
+		slog.Warn("CreateCourtroom bind failed", "error", err, "client_ip", util.TruncateIP(c.ClientIP()))
 		return
 	}
 
@@ -421,7 +424,7 @@ func (h *Handler) SubmitEvidence(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1001, "message": "invalid request body"})
-		slog.Warn("SubmitEvidence bind failed", "error", err, "client_ip", c.ClientIP())
+		slog.Warn("SubmitEvidence bind failed", "error", err, "client_ip", util.TruncateIP(c.ClientIP()))
 		return
 	}
 
