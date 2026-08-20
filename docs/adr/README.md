@@ -37,6 +37,7 @@
 | [0027](./0027-rate-limit-defense-in-depth.md) | 4 层限流防御深度（Defense in Depth, ADR 0012 单机部署假设下） | ⏳ Proposed | `internal/ratelimit/` + `middleware/session_ratelimit.go`（新）+ `courtroom/concurrency.go`（新）+ `observability/metrics.go` |
 | [0028](./0028-env-or-default-helper.md) | envOrDefault helper 全面修复 viper 25+ env lowercase bug（v0.10.21 PR-C） | ✅ | `internal/config/env.go` + `config.go` + 26 sub-test |
 | [0029](./0029-deepseek-v4-migration.md) | DeepSeek v3→v4 模型硬迁移（v1.0.0 P0-前置）| ✅ | `internal/config/config.go` + `.env.example` + 8 个 mock test + 3 个 config test |
+| [0030](./0030-evidence-rebuttal-state-machine.md) | **候选 4: 已反驳证据集合跟踪状态机（v1.0.2 PRD §4.3.3 roadmap §0）** | ✅ | `internal/model/evidence_rebuttal_link.go` (NEW) + AutoMigrate |
 
 ---
 

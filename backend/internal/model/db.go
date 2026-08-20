@@ -313,6 +313,9 @@ func Connect() error {
 		&BeliefSnapshot{},
 		&BeliefDiff{},
 		&EvidenceWeakenLink{},
+		// v1.0.2 候选 4: 已反驳证据集合跟踪 (PRD §4.3.3 roadmap §0)
+		// 与 EvidenceWeakenLink 对称, 关系型设计支持多轮链 (A→B→C)
+		&EvidenceRebuttalLink{},
 		&Verdict{},
 		&LLMCall{},
 		&SearchLog{},
