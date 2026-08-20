@@ -259,6 +259,9 @@ func TestGateway_SmartCompressionInfo_WrittenToLog(t *testing.T) {
 		LogDir:                   dir,
 	}.Normalize()
 	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	// v1.0.1 修复: Windows TempDir cleanup 必须先关 fileLogger (同 ae7a464 commit
+	// 在 BudgetCompressThrottleAndLog / FallbackRetry 加的 t.Cleanup 模式)。
+	t.Cleanup(func() { _ = gw.fileLogger.Close() })
 	// 强制进入 throttle 通过 budget snapshot
 	gw.budget.AddUsage(context.Background(), "sc-1", BudgetUsage{InputTokens: 700})
 

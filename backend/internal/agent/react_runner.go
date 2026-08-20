@@ -148,6 +148,10 @@ type RunnerConfig struct {
 	// reference 'standing' rebuttal evidence. Nil is safe and disables
 	// rebuttal persistence — useful for pre-v1.0.2 callers.
 	RebuttalHook RebuttalHook
+	// RebuttalRepository (v1.0.2 候选 4) 是抽象接口,让 applySpeakerRebuttalCheck
+	// 拉 standing 状态 rebuttal evidence。Nil = 跳过 rebut hard-reject 检查
+	// (向后兼容 + pre-v1.0.2 调用方)。
+	RebuttalRepository RebuttalRepository
 	// SpeakerHistory (v0.10.23 候选 2), if non-nil, 是当前 speaker 同 agent
 	// 的历史 speak messages (跨 phase 跨 round, 但只看自己)。runner 用它做
 	// 新意度 Jaccard 检查: 本次新发言 vs 自己历史任一条 jaccard > 0.6 → reject +
@@ -438,6 +442,12 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 				}
 				speaker, _ = applySpeakerStanceJudge(speaker, r, ctx, messages)
 				speaker, _ = applySpeakerNoveltyRetryLoop(speaker, r, ctx, messages)
+				// v1.0.2 候选 4: 已反驳证据 hard reject (streamSucceeded 路径)
+				sessionIDStr := r.cfg.MemoryMeta.SessionUUID
+				if sessionIDStr == "" {
+					sessionIDStr = r.cfg.MemoryMeta.SessionID.String()
+				}
+				speaker, _ = applySpeakerRebuttalRetryLoop(speaker, r, ctx, messages, sessionIDStr, r.cfg.RebuttalRepository)
 				return applySpeakerLengthLimit(speaker), steps, nil
 			}
 			}
@@ -492,6 +502,13 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 			}
 			speaker, _ = applySpeakerStanceJudge(speaker, r, ctx, messages)
 			speaker, _ = applySpeakerNoveltyRetryLoop(speaker, r, ctx, messages)
+			// v1.0.2 候选 4: 已反驳证据 hard reject (与 stance/novelty 同级 guard,
+			// 在 length limit 之前, 让最终 Speaker 不会引用 standing rebuttal)
+			sessionIDStr := r.cfg.MemoryMeta.SessionUUID
+			if sessionIDStr == "" {
+				sessionIDStr = r.cfg.MemoryMeta.SessionID.String()
+			}
+			speaker, _ = applySpeakerRebuttalRetryLoop(speaker, r, ctx, messages, sessionIDStr, r.cfg.RebuttalRepository)
 			return applySpeakerLengthLimit(speaker), steps, nil
 
 		default:

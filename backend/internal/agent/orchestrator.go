@@ -24,7 +24,8 @@ type Orchestrator struct {
 	a2aBus      *a2a.Bus
 	memoryRepo  private_memory.Repository
 	weakenRepo  belief.WeakenRepository
-	rebutRepo   RebuttalSink         // v1.0.2 候选 4: 持久化 rebuttal 声明
+	rebutRepo   RebuttalSink         // v1.0.2 候选 4: 持久化 rebuttal 声明 (Hook 用)
+	rebutRead   RebuttalRepository   // v1.0.2 候选 4: 读取 standing 状态 (hard reject 用)
 	evidenceLkp EvidenceResolver
 	// historyProvider (v0.10.23 候选 2), if non-nil, 让 orchestrator
 	// 拉同 agent 历史 speak messages 用于新意度 Jaccard 检查。
@@ -85,6 +86,14 @@ func NewOrchestratorLegacy(client llm.Client, bus *a2a.Bus, memRepo private_memo
 // Nil-safe: passing nil disables RebuttalHook emission (pre-v1.0.2 behavior).
 func (o *Orchestrator) SetRebuttalSink(repo RebuttalSink) {
 	o.rebutRepo = repo
+}
+
+// SetRebuttalRepository (v1.0.2 候选 4) injects the read-side RebuttalRepository
+// (用于 applySpeakerRebuttalCheck 查 standing 状态). 与 SetRebuttalSink 区分:
+// Sink 是写 (Hook), Repository 是读 (hard reject). Service 层 PR-4 调用两者
+// (共享 GORM 实现, 但接口窄契约).
+func (o *Orchestrator) SetRebuttalRepository(repo RebuttalRepository) {
+	o.rebutRead = repo
 }
 
 func (o *Orchestrator) ProsecutorSpeak(
@@ -264,6 +273,10 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		// (老 isStanceConsistent 阈值 0.45/0.55 fast filter + LLM judge 语义判定)
 		SpeakerBeliefA: agent.BeliefA,
 		SpeakerAgent:   agent,
+		// v1.0.2 候选 4: 注入 RebuttalRepository (PR-3 hard reject 通路依赖)。
+		// PR-4 在 courtroom.Service 注入 GORM 实现;pre-v1.0.2 调用方 nil-safe。
+		// 注意: 与 o.rebutRepo (Hook Sink) 不同,这里是 Read Repository。
+		RebuttalRepository: o.rebutRead,
 	})
 	runner.SetStepHook(stepHook)
 
