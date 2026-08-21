@@ -7,14 +7,52 @@ import (
 	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/model"
+	"github.com/decisioncourt/backend/internal/promptlab"
 )
 
-// baseRules 返回共享给所有 Agent 的系统提示词骨架。当 toolsBlock 非空时，
-// 「## 工具调用协议」段落会被插入到「## 输出格式」之前，让 LLM 在看到格式
-// 示例前先理解可选的 action / tool_call 路径。toolsBlock 的格式约定见
-// toolBlockForPrompt。
-func baseRules(toolsBlock string) string {
-	rules := `你是一名专业的决策顾问，正在参与一场结构化庭审辩论。
+// defaultStore 是 v1.0.3 PR-B1 引入的可选 promptlab.Store 引用, 由
+// cmd/server/main.go 在 server 启动时通过 SetDefaultStore() 注入。
+//
+// 行为契约:
+//   - nil (默认): baseRules() 返回 hardcoded 字符串, 与 v1.0.2 行为一致
+//   - 非 nil: baseRules() 走 YAML 路径 (Store.GetBaseRules), 失败时 fallback
+//
+// 并发安全: 该变量在 server 启动 + 后续 mtime reload 阶段被修改,
+// prompt 生成是高频读路径, 由 promptlab.Store 内部 sync.RWMutex 保护并发。
+// Agent 包层面不需要额外锁 — 写入仅发生一次 (启动时), 后续 mtime reload
+// 是 Store.Load() 内部锁, 不修改 defaultStore 引用本身。
+var defaultStore *promptlab.Store
+
+// SetDefaultStore 注入 promptlab.Store 引用。cmd/server/main.go 在
+// 创建 Orchestrator 前调用一次; nil 表示禁用 YAML 路径, 退回 hardcoded。
+func SetDefaultStore(store *promptlab.Store) {
+	defaultStore = store
+}
+
+// HardcodedBaseRules 返回 v1.0.2 版本的 baseRules 字符串字面量, 用于:
+//   - YAML 加载失败时 promptlab.Store.ApplyFallback 的 fallback 输入
+//   - 单元测试中"未注入 Store"的 hardcoded 路径
+//   - 线上紧急回滚 (理论上不需要, 但保留作为 safety net)
+//
+// 内容与 backend/prompts/base.yaml 的 base_rules 字段保持一致 (PR-B1 启动时
+// 人工同步验证), 含 {{TOOLS_BLOCK}} 占位符 — 调用方拼接时做 Replace。
+func HardcodedBaseRules() string {
+	return hardcodedBaseRules
+}
+
+// hardcodedBaseRules 是 v1.0.2 (PR-B1 之前) baseRules 的字符串字面量。
+// v1.0.3 PR-B1 把这段内容搬到 backend/prompts/base.yaml, 但保留此常量作为
+// YAML 加载失败时的 fallback (庭审不中断) + agent 包测试使用 (无需依赖 YAML 文件)。
+//
+// 字段约束 (与 YAML base.yaml 必须保持一致):
+//   - 17 条基本规则 (含 v1.0.2 候选 4 rebut 规则)
+//   - 输出格式 (ReAct JSON schema)
+//   - stance 说明 (4 个枚举 + 信念度阈值)
+//
+// 注意: 必须是 var 而非 const, 因为 const 不能内嵌 "\n\n" + 工具块的拼接
+// (v1.0.3 PR-B1 改造时把 toolsBlock 拼接移到了 baseRules() 函数内, 此常量
+// 只剩 base_rules 主体内容)。var 也允许在测试运行时被替换(测试用)。
+var hardcodedBaseRules = `你是一名专业的决策顾问，正在参与一场结构化庭审辩论。
 
 ## 基本规则
 1. 每次发言最多 300 字。v0.10.21 PR-B 增加硬截断 (react_runner.applySpeakerLengthLimit) 兜底, Prompt 里实际软约束 + 后端硬截断双层防护。
@@ -59,7 +97,7 @@ func baseRules(toolsBlock string) string {
     详见下方独立 section,该 section 与「## 当前证据」视觉分隔,二者不得混用。
     调查 (investigation) 视角下 finding 与 evidence 的关系由后端 buildInvestigationContext 渲染。
 
-` + toolsBlock + `
+{{TOOLS_BLOCK}}
 
 ## 输出格式（ReAct）
 你必须严格按以下 JSON 格式输出，不要包含其他内容：
@@ -95,7 +133,25 @@ func baseRules(toolsBlock string) string {
 - 信念度(A) < 0.45 时，通常应使用 pro_b
 - 信念度在 0.45-0.55 之间时，可使用 challenge 或 neutral
 `
-	return rules
+
+// baseRules 返回共享给所有 Agent 的系统提示词骨架。当 toolsBlock 非空时，
+// 「## 工具调用协议」段落会被插入到「## 输出格式」之前，让 LLM 在看到格式
+// 示例前先理解可选的 action / tool_call 路径。toolsBlock 的格式约定见
+// toolBlockForPrompt。
+//
+// v1.0.3 PR-B1: 该函数现在根据 defaultStore 是否注入走两条路径:
+//   - defaultStore == nil: 在 hardcodedBaseRules 里替换 {{TOOLS_BLOCK}} 占位符
+//     为 toolsBlock, 与 v1.0.2 行为完全一致
+//   - defaultStore != nil: 返回 Store.GetBaseRules(toolsBlock), YAML 失败时
+//     Store 内部 fallback 到 hardcoded (庭审不中断)
+//
+// 测试兼容: agent 包的 4 个 prompts_test.go 调用 baseRules("") 走 hardcoded 路径,
+// 无需依赖 YAML 文件, 也不需要修改测试代码。
+func baseRules(toolsBlock string) string {
+	if defaultStore != nil {
+		return defaultStore.GetBaseRules(toolsBlock)
+	}
+	return strings.Replace(hardcodedBaseRules, "{{TOOLS_BLOCK}}", toolsBlock, 1)
 }
 
 // toolBlockForPrompt 根据已注册的工具生成一段「工具调用协议」Markdown，

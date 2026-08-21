@@ -59,6 +59,10 @@ docker-compose.override.yml
 *.env.backup
 secrets/
 
+# v1.0.3 PR-B1: promptlab 本地 YAML override (开发者在不改 base.yaml 的前提下
+# 临时试调 prompt; git 不追踪, 不污染正式版).
+backend/prompts/*.local.yaml
+
 # Agent 内部 spec / 工作区（不属于项目代码）
 .trae/
 

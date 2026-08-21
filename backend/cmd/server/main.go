@@ -26,6 +26,7 @@ import (
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/private_memory"
+	"github.com/decisioncourt/backend/internal/promptlab"
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/decisioncourt/backend/internal/util"
 	"github.com/gin-contrib/cors"
@@ -110,6 +111,49 @@ func main() {
 	}
 	bus := a2a.NewBus(a2a.NewGormRepository(model.DB), a2aBroadcaster)
 	memRepo := private_memory.NewGormRepository(model.DB)
+
+	// v1.0.3 PR-B1: 初始化 promptlab.Store, 把 baseRules 从 hardcoded 字符串
+	// 切到 YAML 文件 (backend/prompts/base.yaml). 启动时 Load() 失败 → 降级
+	// 到 hardcoded (庭审不中断). 后台 5s tick 检测 YAML mtime 变化 → 自动
+	// reload, 秒级调优 prompt 不用重启 server.
+	//
+	// YAML 路径相对工作目录 (cmd/server 启动时 cwd 通常是 backend/), 留个
+	// env 变量覆盖方便本地测试 (PROMPTLAB_YAML_PATH).
+	promptlabYAML := os.Getenv("PROMPTLAB_YAML_PATH")
+	if promptlabYAML == "" {
+		promptlabYAML = "prompts/base.yaml"
+	}
+	promptlabStore := promptlab.NewStore(promptlabYAML)
+	if err := promptlabStore.Load(); err != nil {
+		slog.Warn("promptlab YAML load failed, using hardcoded fallback",
+			"path", promptlabYAML, "error", err)
+		promptlabStore.ApplyFallback(agent.HardcodedBaseRules())
+	} else {
+		v := promptlabStore.Version()
+		slog.Info("promptlab loaded", "version", v.String(), "path", promptlabYAML)
+	}
+	agent.SetDefaultStore(promptlabStore)
+
+	// v1.0.3 PR-B1: 后台 5s ticker 检测 YAML mtime 变化 → 自动 reload。
+	// 第一次成功 Load 后启动; 失败时仍启动, 让 fallback 在 YAML 文件被补回来后
+	// 自动恢复 (无需重启 server).
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if !promptlab.IsYAMLReloadNeeded(promptlabYAML, promptlabStore.LastMtime()) {
+				continue
+			}
+			if err := promptlabStore.Load(); err != nil {
+				slog.Warn("promptlab hot reload failed, keeping previous version",
+					"path", promptlabYAML, "error", err)
+				continue
+			}
+			v := promptlabStore.Version()
+			slog.Info("promptlab hot reload ok", "version", v.String())
+		}
+	}()
+
 	orchestrator := agent.NewOrchestrator(gatewayClient, bus, memRepo, nil, nil)
 	evidenceSvc := evidence.NewService(model.DB, gatewayClient)
 	searcher, _ := search.NewProvider(config.AppConfig.SearchProvider, config.AppConfig.BochaAPIKey)
