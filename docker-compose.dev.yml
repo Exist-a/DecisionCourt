@@ -161,23 +161,10 @@ services:
     depends_on:
       - backend
 
-  # Dozzle: 轻量级 Docker 日志面板 (7MB)
-  # 浏览器打开 http://localhost:9999 就能实时看所有 dc_dev_* 容器的日志
-  # 不用 docker logs + grep 翻来翻去
-  # 安全: 只读挂载 Docker socket (无法控制容器)
-  dozzle:
-    image: amir20/dozzle:latest
-    container_name: dc_dev_dozzle
-    ports:
-      - "9999:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-      DOZZLE_LEVEL: info
-      DOZZLE_TAILSIZE: 500
-      # 只显示 dev 相关容器,避免看到宿主机其他容器
-      DOZZLE_FILTER: "container=dc_dev_"
-    restart: unless-stopped
+  # Dozzle 已移除 (2026-08-21): Windows Docker Desktop 用 npipe://./pipe/docker_engine,
+  # Dozzle v10.x 是 Linux-only, 假设 /var/run/docker.sock unix socket, 在 Windows 上
+  # 循环 fatal 'Could not connect to any Docker Engine' (每60s restart 一次).
+  # 替代方案: 终端 'docker compose -f docker-compose.dev.yml logs -f backend'.
 
 volumes:
   dc_dev_postgres_data:
