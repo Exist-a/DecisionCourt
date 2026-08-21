@@ -18,6 +18,7 @@ import (
 	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/ratelimit"
 	"github.com/decisioncourt/backend/internal/idempotency"
+	"github.com/decisioncourt/backend/internal/trace"
 	"github.com/decisioncourt/backend/internal/util"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -72,6 +73,11 @@ type Handler struct {
 	// 注入方式: handler.promptLab = NewPromptLabAdapter(store, llmClient)
 	// nil 时 RegisterPromptLabRoutes 不注册任何路由(降级为 404)。
 	promptLab PromptLabClient
+
+	// v1.0.4 PR-C1 Trace: /api/v1/courtrooms/:uuid/traces/* REST 端点依赖。
+	// 注入方式: handler.traceStore = trace.NewFileTraceStore(config.AppConfig.AgentGateway.LogDir)
+	// nil 时 RegisterTraceRoutes 不注册路由(降级为 404)。
+	traceStore trace.Store
 }
 
 // WithEventRecorder 注入前端埋点 recorder。装配阶段(main.go)调用一次。
@@ -205,6 +211,10 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 	// v1.0.3 PR-B2 Prompt Lab REST 端点。
 	// nil 时 (老部署 / 测试场景) 不注册,降级为 404。
 	h.RegisterPromptLabRoutes(api)
+
+	// v1.0.4 PR-C1 Trace REST 端点。
+	// nil 时 (老部署 / 测试场景) 不注册,降级为 404。
+	h.RegisterTraceRoutes(api)
 }
 
 func (h *Handler) HealthHandler(c *gin.Context) {
