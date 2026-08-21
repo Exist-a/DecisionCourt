@@ -87,7 +87,7 @@
 | 语言 | TypeScript | 类型安全，便于维护 |
 | 样式 | Tailwind CSS | 实用优先，白底极简法庭风格可快速实现 |
 | 组件库 | shadcn/ui | 基于 Radix UI，可定制，无样式锁定 |
-| 可视化 | React-Flow | 观点地图、证据关系图首选 |
+| 可视化 | —— | **v1.0.3 移除 React-Flow**（commit `<此 commit>`）：ArgumentMap 已被删除；如有未来可视化需求重新评估。详见 ADR 0032 |
 | 图表 | Recharts / Visx | 立场变化曲线 |
 | 状态管理 | Zustand | 轻量，适合庭审客户端状态 |
 | 实时通信 | Socket.io-client | 自动重连、事件命名空间 |
@@ -120,9 +120,9 @@ frontend/
 │   │   ├── CourtroomScene.tsx    # 法庭场景布局
 │   │   ├── AgentAvatar.tsx       # Agent 头像
 │   │   ├── EvidenceBoard.tsx     # 证据板
-│   │   ├── StanceChart.tsx       # 立场变化曲线
-│   │   ├── ArgumentMap.tsx       # 观点地图
+│   │   ├── StanceChart.tsx       # 立场变化曲线（庭审页不展示）
 │   │   └── VerdictPanel.tsx      # 判决书面板
+│   │   # v1.0.3 移除 ArgumentMap.tsx (commit `<此 commit>`) — 详见 ADR 0032
 │   ├── ui/                       # shadcn/ui 组件
 │   └── forms/                    # 表单组件
 ├── lib/

@@ -1014,7 +1014,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 - [ ] ❌ **不做**：Agent 主动提问（识别信息缺口后向用户提问，回答转为证据）—— MVP 明确不做，见 §15.3
 - [x] 调查员 Agent 做简单 WebSearch（开发用 Bocha，HTTP 200 实测）
 - [x] 基础庭审流程：开庭 → 举证 → 质证（用户触发每轮）→ 调查补充 → 结案 → 判决
-- [x] 观点地图（ArgumentMap 精简版，详见 `.trae/documents/庭审可视化简化计划.md`）
+- [ ] ~~观点地图（ArgumentMap 精简版，详见 `.trae/documents/庭审可视化简化计划.md`）~~ —— **v1.0.3 移除（commit `<此 commit>`）**：用户反馈庭审过程叙事流已承载立场信息，ReactFlow 重写同一数据未提供额外洞察。详见 ADR 0032 (待补) + `docs/decisioncourt-roadmap.md` §6 v1.0.3。
 - [x] 立场变化曲线 —— ❌ **不做**：组件保留 `StanceChart.tsx` 文件但庭审页不展示，改为 BeliefTrajectoryTab（详见 §4.3.2 v0.6 信念审计）
 - [x] 判决书生成与导出：JSON（`GET /export`）+ PDF（前端 `window.print()` + `@media print`）
 - [ ] ⏳ **Docker Compose 一键启动**：配置已写，待 Docker 环境验证

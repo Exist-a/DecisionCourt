@@ -56,7 +56,8 @@
 | [0006](./adr/0006-smart-prompt-compression.md) | Agent Gateway v2 Smart Prompt Compression | `internal/agent_gateway/prompt_*` |
 | [0007](./adr/0007-token-budget-rejection.md) | Token Budget 默认 reject-when-exhausted | `internal/agent_gateway/token_budget.go` |
 | [0008](./adr/0008-cross-exam-user-trigger.md) | 质证轮次控制（用户点击触发每轮） | `internal/courtroom/service.go` |
-| [0009](./adr/0009-courtroom-vis-simplify.md) | 庭审页面可视化简化 | `frontend/components/courtroom/ArgumentMap.tsx` |
+| [0009](./adr/0009-courtroom-vis-simplify.md) | 庭审页面可视化简化（2026-07 保留 ReactFlow 观点地图） | `frontend/components/courtroom/ArgumentMap.tsx` |
+| [0032](./adr/0032-remove-argument-map.md) | v1.0.3 移除 ArgumentMap（叙事流优先于信息图重） | | 详见 ADR 0032 + commit `<此 commit>` |
 | [0010](./adr/0010-whitebox-observability.md) | v0.8 后端白盒化（slog + Prometheus + OTel-Span + decision_events） | ✅ | `internal/observability/` |
 | [0011](./adr/0011-llm-probability-hard-clamp.md) | v0.8.4 LLM 输出概率值后端硬编码 Clamp（DeepSeek 抽风修复） | ✅ | `internal/agent/probability.go` |
 | [0012](./adr/0012-ha-and-concurrency.md) | v0.9 单机部署 HA 与并发防护（session 互斥 + Idempotency-Key + panic 兜底 + 启动恢复） | ✅ | `internal/courtroom/session_locks.go` + `internal/idempotency/` + `recovery.go` |
@@ -161,7 +162,7 @@
 | InvestigatorPanel（独立 Tab） | ✅ | `frontend/components/courtroom/InvestigatorPanel.tsx` |
 | MemoryAuditPanel（4 种 kind 配色 + 真实法庭 toggle） | ✅ | `frontend/components/courtroom/MemoryAuditPanel.tsx` |
 | BeliefDiffCard / BeliefTrajectoryTab / ConvergenceBadge | ✅ | `frontend/components/courtroom/Belief*` |
-| 观点地图 ArgumentMap（精简版） | ✅ | `frontend/components/courtroom/ArgumentMap.tsx` |
+| ~~观点地图 ArgumentMap（精简版）~~ | ❌ **v1.0.3 移除** | 叙事流已承载立场信息, ReactFlow 信息图重写无增量洞察 |
 | 判决书页 + trial_summary + JSON/PDF 导出 | ✅ | `frontend/app/verdict/[id]/page.tsx` |
 
 ### 5.3 第二阶段 / v0.10+ 计划（不在 v0.9 范围）

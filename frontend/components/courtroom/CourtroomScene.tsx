@@ -24,7 +24,6 @@ import {
   toastWarning,
 } from "@/lib/errorBus";
 import { AgentAvatar } from "./AgentAvatar";
-import { ArgumentMap } from "./ArgumentMap";
 import { EvidenceBoard } from "./EvidenceBoard";
 import { MessageHistory } from "./MessageHistory";
 import { InvestigatorPanel } from "./InvestigatorPanel";
@@ -797,13 +796,6 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
               <p className="text-slate-400 text-sm mt-4">未加载到 Agent 数据</p>
             )}
           </div>
-
-          {/* Visualization section */}
-          <ArgumentMap
-            optionA={session?.option_a ?? ""}
-            optionB={session?.option_b ?? ""}
-            agents={agents}
-          />
 
           {/* Evidence board */}
           <EvidenceBoard

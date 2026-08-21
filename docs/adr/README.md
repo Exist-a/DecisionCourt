@@ -39,6 +39,7 @@
 | [0029](./0029-deepseek-v4-migration.md) | DeepSeek v3→v4 模型硬迁移（v1.0.0 P0-前置）| ✅ | `internal/config/config.go` + `.env.example` + 8 个 mock test + 3 个 config test |
 | [0030](./0030-evidence-rebuttal-state-machine.md) | **候选 4: 已反驳证据集合跟踪状态机（v1.0.2 PRD §4.3.3 roadmap §0）** | ✅ | `internal/model/evidence_rebuttal_link.go` (NEW) + AutoMigrate |
 | [0031](./0031-prompt-lab-architecture.md) | **Prompt Lab 架构：baseRules YAML 化 + 热加载 + LLM-as-judge Eval + A/B（v1.0.3 V1-ROADMAP M2）** | ✅ | `backend/prompts/base.yaml` (NEW) + `internal/promptlab/` (NEW) + REST `/api/v1/prompts/*` |
+| [0032](./0032-remove-argument-map.md) | **移除 ArgumentMap 观点地图（叙事流优先于信息图重写，v1.0.3）** | ✅ | 删除 `frontend/components/courtroom/ArgumentMap.tsx` + 移除 `reactflow` 依赖 + 更新 PRD / tech-spec / roadmap / README |
 
 ---
 
