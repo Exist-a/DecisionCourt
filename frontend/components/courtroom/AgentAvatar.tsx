@@ -8,6 +8,13 @@ import { Search, Cloud } from "lucide-react";
 // v1.0.4 PR-C3: Framer Motion 微动效接入
 import { AvatarAnimations, deriveAnimationState } from "./animations/AvatarAnimations";
 import { SpeechBubbleAnimated } from "./animations/SpeechBubbleAnimated";
+// v2.0: 厕所标识剪影小人 SVG + 向后兼容圆形头像 fallback
+import { RoleSilhouette } from "./silhouettes/RoleSilhouette";
+
+// v2.0: env var NEXT_PUBLIC_USE_CIRCLE_AVATAR=true 时回退到旧圆形头像
+// 默认 false → 用剪影小人 SVG (V2.0 视觉飞跃)
+// 设计理由: 老 v1.0.x 用户升级想看回圆形头像时, 可不修改代码仅设环境变量
+const useCircleAvatar = process.env.NEXT_PUBLIC_USE_CIRCLE_AVATAR === "true";
 
 interface AgentAvatarProps {
   agent: Agent;
@@ -226,7 +233,7 @@ export function AgentAvatar({
         />
       </SpeechBubbleAnimated>
 
-      {/* v1.0.4 PR-C3: AvatarAnimations 接管头像 scale/y/rotate 动画 (motion.div) */}
+      {/* v2.0: 厕所标识剪影小人 SVG (默认) — NEXT_PUBLIC_USE_CIRCLE_AVATAR=true 回退到圆形 */}
       <AvatarAnimations
         state={deriveAnimationState({
           isSpeaking,
@@ -235,28 +242,21 @@ export function AgentAvatar({
         })}
       >
         <div className="relative">
-          <div
-            className={`w-12 h-12 rounded-full ${config.color} ring-2 ${config.ring} flex items-center justify-center transition-all duration-300 ${
-              isSpeaking
-                ? "ring-gold ring-4 shadow-paper-lg"
-                : isSearching
-                  ? "ring-inkSoft ring-4"
-                  : showThinking
-                    ? `ring-4 thinking-${agent.agent_type ?? "defender"}`
-                    : "ring-2"
-            }`}
-          >
-            {/* 角色名首字（serif） */}
-            <span className="text-white font-serif text-base leading-none">
-              {config.roleName.charAt(0)}
-            </span>
-          </div>
-          {/* 发言时：金色印章点 */}
-          {isSpeaking && (
+          <RoleSilhouette
+            agentType={agent.agent_type}
+            isSpeaking={isSpeaking}
+            isThinking={showThinking}
+            isSearching={isSearching}
+            isJudging={agent.agent_type === "judge" && isSpeaking}
+            size={48}
+            mode={useCircleAvatar ? "circle" : "silhouette"}
+          />
+          {/* 发言时：金色印章点 (兼容 silhouette + circle) */}
+          {isSpeaking && !useCircleAvatar && (
             <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-gold border-2 border-paper" />
           )}
-          {/* 调查时：旋转 spinner 环 (CSS animate-spin,与 motion 共存) */}
-          {isSearching && (
+          {/* 调查时：旋转 spinner 环 (CSS animate-spin, 仅 circle 模式需要) */}
+          {isSearching && useCircleAvatar && (
             <span
               className="absolute inset-0 rounded-full border-2 border-transparent border-t-inkSoft animate-spin pointer-events-none"
               aria-label="调查员正在调查"

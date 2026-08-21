@@ -361,3 +361,97 @@
     margin: 1.5cm 1cm;
   }
 }
+
+/* ============================================================================
+   v2.0 厕所标识剪影小人 SVG 样式
+   ============================================================================
+   设计原则 (V2.0-PLAN.md §1.2):
+   - 纯色剪影 (无渐变无细节)
+   - 5 角色: 控方律师/辩方律师/调查员/法官/书记员
+   - 对称剪影 (左右镜像)
+   - CSS var 解耦颜色: 改色不改 SVG path
+   - 走路/点头/举手/敲锤 4 类 CSS keyframes 动画
+   ============================================================================ */
+
+:root {
+  /* 角色色 — 与 tailwind.config.ts 案卷·印章 token 对齐 */
+  --silhouette-prosecutor: #B53A2E; /* 绛红 */
+  --silhouette-defender: #2C5470;   /* 深青 */
+  --silhouette-investigator: #7A5C3F; /* 棕金 */
+  --silhouette-judge: #5C564F;      /* 深灰 */
+  --silhouette-clerk: #A89F8E;       /* 米褐 */
+}
+
+/* 角色色应用: 复用 tailwind class 名模式 */
+.silhouette-prosecutor  { color: var(--silhouette-prosecutor); }
+.silhouette-defender    { color: var(--silhouette-defender); }
+.silhouette-investigator { color: var(--silhouette-investigator); }
+.silhouette-judge       { color: var(--silhouette-judge); }
+.silhouette-clerk       { color: var(--silhouette-clerk); }
+
+/* 走路 — 双脚交替 (0.8s 循环, transform-origin 防止抖动) */
+@keyframes silhouette-walk {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25%      { transform: translateY(-2px) rotate(5deg); }   /* 左脚抬起 */
+  75%      { transform: translateY(-2px) rotate(-5deg); }  /* 右脚抬起 */
+}
+
+.silhouette-leg-left {
+  animation: silhouette-walk 0.8s ease-in-out infinite;
+  transform-origin: center top;
+}
+
+.silhouette-leg-right {
+  animation: silhouette-walk 0.8s ease-in-out infinite reverse;
+  transform-origin: center top;
+}
+
+/* 点头 — 身体微微点头 (1.2s 循环) */
+@keyframes silhouette-nod {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(8deg); }
+}
+
+.silhouette-nod {
+  animation: silhouette-nod 1.2s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+/* 举手指控 — 律师专属 (2s 循环 + 抬升) */
+@keyframes silhouette-point {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50%      { transform: rotate(-15deg) translateY(-3px); }
+}
+
+.silhouette-arm-pointing {
+  animation: silhouette-point 2s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+/* 调查员放大镜 — 旋转 */
+@keyframes silhouette-magnify {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(20deg); }
+}
+
+.silhouette-magnifier {
+  animation: silhouette-magnify 1.5s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+/* 法官敲锤 — 关键帧 */
+@keyframes silhouette-gavel {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  30%      { transform: rotate(-10deg) translateY(-4px); }  /* 举锤 */
+  60%      { transform: rotate(10deg) translateY(0); }      /* 落锤 */
+}
+
+.silhouette-gavel {
+  animation: silhouette-gavel 0.4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+/* 走路/点头期间头像不闪烁 (GPU 加速) */
+.silhouette-avatar * {
+  will-change: transform;
+}
