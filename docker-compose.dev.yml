@@ -102,7 +102,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-prod-please-use-32chars}
       JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-168}
       # dev: 允许 localhost:3000 跨域
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      # 重要: 这里 hardcode (不走 ${VAR:-default}), 因为 env_file 让 .env 完整
+      # 注入容器, .env 里 ALLOWED_ORIGINS 是生产域名 (https://decisioncourt.cn,...),
+      # 优先级高于 ${VAR:-default} 的 default. hardcode 是唯一能让 dev 走 localhost 的方法.
+      # (同 bea7289 修复 NEXT_PUBLIC_* 的同一根因)
+      ALLOWED_ORIGINS: http://localhost:3000
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
       AGENT_GATEWAY_LLM_TIMEOUT_SEC: 90
