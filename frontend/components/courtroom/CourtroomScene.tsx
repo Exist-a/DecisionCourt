@@ -32,6 +32,8 @@ import { ConvergenceBadge } from "./ConvergenceBadge";
 import { BeliefTrajectoryTab } from "./BeliefTrajectoryTab";
 import { PhaseGuide } from "./PhaseGuide";
 import { HelpPopover } from "./HelpPopover";
+// v1.0.4 PR-C2: Trace 可视化 (TrialReplay Dialog)
+import { TrialReplay } from "@/components/trace/TrialReplay";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 // v0.10 前端埋点 (ADR 0020): 见 runtime.ts 注释。模块级单例,
@@ -54,6 +56,7 @@ import {
   Search as SearchIcon,
   Brain,
   Activity,
+  History,
 } from "lucide-react";
 
 interface CourtroomSceneProps {
@@ -114,6 +117,8 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   const [verdictReady, setVerdictReady] = useState(false);
   const [waitingForNextRound, setWaitingForNextRound] = useState(false);
   const [nextRound, setNextRound] = useState(2);
+  // v1.0.4 PR-C2: TrialReplay 庭审回放 Dialog 开关
+  const [replayOpen, setReplayOpen] = useState(false);
   // v0.10 (ADR 0020) fe.phase_entered: 跟踪"上一次进入 phase 的时刻 + 当前 phase",
   // phase.changed 事件到达时计算 durationMs = now - lastEnteredAt。
   // useRef 不触发 re-render,避免 phase 变化外引起额外渲染。
@@ -539,6 +544,16 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
           </div>
           <div className="flex items-center gap-2">
             {convergenceInfo && <ConvergenceBadge info={convergenceInfo} />}
+            {/* v1.0.4 PR-C2: 庭审回放入口 */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setReplayOpen(true)}
+              data-testid="trial-replay-button"
+            >
+              <History className="w-3.5 h-3.5 mr-1.5" />
+              庭审回放
+            </Button>
             <HelpPopover />
             {/*
               v0.8.3 按钮逻辑修正：派生判断改用 session.current_phase
@@ -1004,6 +1019,13 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* v1.0.4 PR-C2: 庭审回放 Dialog (放在主 Dialog 后,独立顶层,open 状态由 replayOpen 控制) */}
+      <TrialReplay
+        sessionUUID={sessionId}
+        open={replayOpen}
+        onOpenChange={setReplayOpen}
+      />
     </div>
   );
 }

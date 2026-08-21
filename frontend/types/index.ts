@@ -575,3 +575,54 @@ export interface ErrorEvent extends CourtEvent {
     class?: string;
   };
 }
+
+// ============================================================================
+// v1.0.4 PR-C2 Trace 可视化类型
+// ============================================================================
+//
+// 与后端 internal/trace.Run / RunNode / Trace 字段对齐 (handler_trace.go 返回 JSON)
+// 命名差异: 后端 Run.TraceID = LogEntry.RequestID (HTTP middleware 注入)
+
+export interface TraceRun {
+  run_id: string;
+  trace_id: string;
+  session_id: string;
+  agent_type: string;
+  task_type: string;
+  model: string;
+  provider: string;
+  started_at: string;
+  ended_at: string;
+  latency_ms: number;
+  status: "ok" | "error";
+  error_msg?: string;
+  retry_count: number;
+}
+
+export interface TraceRunNode {
+  run: TraceRun;
+  children?: TraceRunNode[];
+}
+
+export interface Trace {
+  trace_id: string;
+  session_id: string;
+  started_at: string;
+  ended_at: string;
+  runs: TraceRun[];
+  tree: TraceRunNode;
+}
+
+export interface TraceListResponse {
+  code: number;
+  data: {
+    traces: Trace[];
+    count: number;
+    date: string;
+  };
+}
+
+export interface TraceDetailResponse {
+  code: number;
+  data: Trace | null;
+}
