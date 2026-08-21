@@ -67,6 +67,11 @@ type Handler struct {
 	// 前端事件直接落 decision_events 表,EventType 以 fe. 前缀与后端 span.X 区分。
 	// nil 时 POST /events 端点降级为 200 + 不写库(不阻塞前端)。
 	eventRecorder observability.EventRecorder
+
+	// v1.0.3 PR-B2 Prompt Lab: /api/v1/prompts/* REST 端点依赖。
+	// 注入方式: handler.promptLab = NewPromptLabAdapter(store, llmClient)
+	// nil 时 RegisterPromptLabRoutes 不注册任何路由(降级为 404)。
+	promptLab PromptLabClient
 }
 
 // WithEventRecorder 注入前端埋点 recorder。装配阶段(main.go)调用一次。
@@ -196,6 +201,10 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 	}
 	llmGroup.POST("/courtrooms/:session_uuid/evidences", h.SubmitEvidence)
 	llmGroup.POST("/courtrooms/:session_uuid/actions", h.UserAction)
+
+	// v1.0.3 PR-B2 Prompt Lab REST 端点。
+	// nil 时 (老部署 / 测试场景) 不注册,降级为 404。
+	h.RegisterPromptLabRoutes(api)
 }
 
 func (h *Handler) HealthHandler(c *gin.Context) {
