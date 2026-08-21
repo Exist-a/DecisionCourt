@@ -5,6 +5,9 @@ import type { Agent } from "@/types";
 import { useCourtroomStore } from "@/store/courtroomStore";
 import { JudgeBiasMeter } from "./JudgeBiasMeter";
 import { Search, Cloud } from "lucide-react";
+// v1.0.4 PR-C3: Framer Motion 微动效接入
+import { AvatarAnimations, deriveAnimationState } from "./animations/AvatarAnimations";
+import { SpeechBubbleAnimated } from "./animations/SpeechBubbleAnimated";
 
 interface AgentAvatarProps {
   agent: Agent;
@@ -167,92 +170,101 @@ export function AgentAvatar({
   return (
     <div className="flex flex-col items-center gap-1.5 px-3 py-1 relative">
       {/* 气泡（搜索 / 思考 / 流式 / 发言）共用同一个锚点 */}
-      {visibleBubble && (
-        <div
-          className={`absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-60 max-h-40 overflow-y-auto z-50 ${
-            bubbleKind === "thinking"
-              ? "thinking-bubble"
-              : bubbleKind === "searching"
-                ? "bg-paperDeep border border-inkSoft shadow-paper-lg"
-                : "speech-bubble-paper"
+      {/* v1.0.4 PR-C3: SpeechBubbleAnimated 接管 mount/unmount 淡入淡出 */}
+      <SpeechBubbleAnimated
+        bubbleId={`${agent.agent_type ?? "unknown"}-${bubbleKind}-${(visibleBubble ?? "").slice(0, 32)}`}
+        visible={!!visibleBubble}
+        className={`absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-60 max-h-40 overflow-y-auto z-50 ${
+          bubbleKind === "thinking"
+            ? "thinking-bubble"
+            : bubbleKind === "searching"
+              ? "bg-paperDeep border border-inkSoft shadow-paper-lg"
+              : "speech-bubble-paper"
+        }`}
+      >
+        <p
+          className={`text-[11px] text-display italic leading-relaxed flex items-start gap-1.5 px-2 py-1 ${
+            bubbleKind === "thinking" ? "text-inkSoft" : "text-inkSoft"
           }`}
           data-bubble-kind={bubbleKind}
           data-streaming={isStreamingThisAgent ? "true" : "false"}
         >
-          <p
-            className={`text-[11px] text-display italic leading-relaxed flex items-start gap-1.5 px-2 py-1 ${
-              bubbleKind === "thinking" ? "text-inkSoft" : "text-inkSoft"
-            }`}
-          >
-            {bubbleKind === "thinking" && (
-              <Cloud
-                className="cloud w-3.5 h-3.5 mt-0.5 shrink-0 text-prosecution-ink"
+          {bubbleKind === "thinking" && (
+            <Cloud
+              className="cloud w-3.5 h-3.5 mt-0.5 shrink-0 text-prosecution-ink"
+              aria-hidden
+            />
+          )}
+          {bubbleKind === "searching" && (
+            <Search className="w-3 h-3 mt-0.5 shrink-0 animate-pulse" />
+          )}
+          {/* 流式时不截断前 100 字符，让用户看到完整累积文本 + 末尾光标 */}
+          <span>
+            「
+            {isStreamingThisAgent
+              ? visibleBubble
+              : visibleBubble && visibleBubble.length > 100
+                ? `${visibleBubble.slice(0, 100)}…`
+                : visibleBubble}
+            {isStreamingThisAgent && (
+              <span
+                className="inline-block w-[2px] h-[1em] align-middle ml-0.5 bg-ink animate-pulse"
                 aria-hidden
+                data-cursor="true"
               />
             )}
-            {bubbleKind === "searching" && (
-              <Search className="w-3 h-3 mt-0.5 shrink-0 animate-pulse" />
-            )}
-            {/* 流式时不截断前 100 字符，让用户看到完整累积文本 + 末尾光标 */}
-            <span>
-              「
-              {isStreamingThisAgent
-                ? visibleBubble
-                : visibleBubble.length > 100
-                  ? `${visibleBubble.slice(0, 100)}…`
-                  : visibleBubble}
-              {isStreamingThisAgent && (
-                <span
-                  className="inline-block w-[2px] h-[1em] align-middle ml-0.5 bg-ink animate-pulse"
-                  aria-hidden
-                  data-cursor="true"
-                />
-              )}
-              」
-            </span>
-          </p>
-          {/* 气泡尾部小三角 */}
-          <div
-            className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 border-b border-r rotate-45 ${
-              bubbleKind === "thinking"
-                ? "bg-paperDeep border-inkSoft"
-                : "bg-white border-rule"
-            }`}
-          />
-        </div>
-      )}
-
-      {/* 圆形头像：克制本色（无 ripple 动效） */}
-      <div className="relative">
-        <div
-          className={`w-12 h-12 rounded-full ${config.color} ring-2 ${config.ring} flex items-center justify-center transition-all duration-300 ${
-            isSpeaking
-              ? "ring-gold ring-4 scale-105 shadow-paper-lg"
-              : isSearching
-                ? "ring-inkSoft ring-4 scale-105"
-                : showThinking
-                  ? `ring-4 scale-105 thinking-${agent.agent_type ?? "defender"}`
-                  : "ring-2"
-          }`}
-        >
-          {/* 角色名首字（serif） */}
-          <span className="text-white font-serif text-base leading-none">
-            {config.roleName.charAt(0)}
+            」
           </span>
+        </p>
+        {/* 气泡尾部小三角 */}
+        <div
+          className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 border-b border-r rotate-45 ${
+            bubbleKind === "thinking"
+              ? "bg-paperDeep border-inkSoft"
+              : "bg-white border-rule"
+          }`}
+        />
+      </SpeechBubbleAnimated>
+
+      {/* v1.0.4 PR-C3: AvatarAnimations 接管头像 scale/y/rotate 动画 (motion.div) */}
+      <AvatarAnimations
+        state={deriveAnimationState({
+          isSpeaking,
+          isSearching,
+          showThinking,
+        })}
+      >
+        <div className="relative">
+          <div
+            className={`w-12 h-12 rounded-full ${config.color} ring-2 ${config.ring} flex items-center justify-center transition-all duration-300 ${
+              isSpeaking
+                ? "ring-gold ring-4 shadow-paper-lg"
+                : isSearching
+                  ? "ring-inkSoft ring-4"
+                  : showThinking
+                    ? `ring-4 thinking-${agent.agent_type ?? "defender"}`
+                    : "ring-2"
+            }`}
+          >
+            {/* 角色名首字（serif） */}
+            <span className="text-white font-serif text-base leading-none">
+              {config.roleName.charAt(0)}
+            </span>
+          </div>
+          {/* 发言时：金色印章点 */}
+          {isSpeaking && (
+            <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-gold border-2 border-paper" />
+          )}
+          {/* 调查时：旋转 spinner 环 (CSS animate-spin,与 motion 共存) */}
+          {isSearching && (
+            <span
+              className="absolute inset-0 rounded-full border-2 border-transparent border-t-inkSoft animate-spin pointer-events-none"
+              aria-label="调查员正在调查"
+              data-searching-spinner="true"
+            />
+          )}
         </div>
-        {/* 发言时：金色印章点 */}
-        {isSpeaking && (
-          <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-gold border-2 border-paper" />
-        )}
-        {/* 调查时：旋转 spinner 环 */}
-        {isSearching && (
-          <span
-            className="absolute inset-0 rounded-full border-2 border-transparent border-t-inkSoft animate-spin pointer-events-none"
-            aria-label="调查员正在调查"
-            data-searching-spinner="true"
-          />
-        )}
-      </div>
+      </AvatarAnimations>
 
       {/* 名字 + 角色（serif） */}
       <div className="text-center min-w-[80px]">
