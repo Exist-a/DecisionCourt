@@ -351,3 +351,5 @@ git push origin main
 - ⏸ **P0-1 鉴权** 立即启动（JWT 库 + 30 天已确定，UID 10001 已确定）
 - ⏸ **P0-3 容器硬化** 立即启动
 - ⏸ **PR 6 search 包 circuit breaker** 推迟到下次 sprint
+
+> **v1.0+ 系列详见 [V1-ROADMAP.md](./V1-ROADMAP.md)**。本节仅记录 v0.10.17 之前里程碑；v0.10.18 ~ v0.10.25（silent-error 收尾）+ v1.0.0（ECS 30 天沉淀 + DeepSeek v4 迁移）+ v1.0.1（v1.0.0 遗留 4 类预存在失败 100% 修复）+ v1.0.2（候选 4 已反驳证据集合跟踪）由 V1-ROADMAP 接管。v1.0.3（Prompt Lab）已在 2026-08-21 落地，详见 [release-notes/v1.0.3.md](../release-notes/v1.0.3.md)。

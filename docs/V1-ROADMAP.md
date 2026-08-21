@@ -20,18 +20,18 @@
 | v1.0.0 落地 | ✅ | ECS 30 天 8 问题全修 + DeepSeek v4 迁移 + 8 问题专项回归测试护栏 |
 | v1.0.1 | ✅ | v1.0.0 遗留 4 类预存在失败 100% 修复 + prompt HA-001 |
 | v1.0.2 | ✅ | 候选 4 已反驳证据集合跟踪 + ADR 0030 |
-| **v1.0.3 PR-B1** | ✅ | Prompt Lab baseRules YAML 化 + 热加载 + 5 sub-test (`f1720f7`) |
-| **v1.0.3 PR-B2** | ⏸ | Eval + A/B + REST API（待启动） |
-| **v1.0.3 PR-B3** | ⏸ | release notes + tag（PR-B2 后） |
+| **v1.0.3 PR-B1** | ✅ | Prompt Lab baseRules YAML 化 + 热加载 + 11 sub-test (`f1720f7`) |
+| **v1.0.3 PR-B2** | ✅ | Eval + A/B + REST API + 14 sub-test (`4598547`) |
+| **v1.0.3 PR-B3** | ✅ | release notes + V1-ROADMAP 同步（本 commit） |
 | **ArgumentMap 移除** | ✅ | ADR 0032 + `16332aa`，用户反馈"完全没用" |
 | **dozzle 移除** | ✅ | `29daff0`，Windows Docker Desktop npipe 不兼容 |
 | **D2 + D3 修复** | ✅ | `694a89e`，cross-exam silent error + 直接判决 fallback "共 0 轮" |
 | ADR 累计 | 32 | 含 0031 Prompt Lab + 0032 Remove ArgumentMap |
-| Go 测试 | ~290 sub-test | v1.0.0 263 + PR-B1 11 + D2/D3 9 + 其他修补 |
+| Go 测试 | ~304 sub-test | v1.0.0 263 + PR-B1 11 + PR-B2 14 + D2/D3 9 + 其他修补 |
 | Frontend 测试 | 7 .test.ts | v1.0.3 移除 ArgumentMap 0 测试 |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
-**当前阻塞**：无。下一决策是用户授权 PR-B2（v1.0.3 补完）。
+**当前阻塞**：无。下一决策是用户授权 v1.0.3 tag + push，或启动 v1.0.4（LLM Trace 可视化 + Framer Motion）。
 
 ---
 
@@ -192,13 +192,14 @@ roadmap §0 顶部钦定 "下一步进入候选 4 讨论"。
 ```
 M0 v1.0.0 ✅ ─┐
 M0.5 v1.0.1 ✅│
-M1 v1.0.2 ✅ ─┴─ M2 v1.0.3 ( PR-B1 ✅ / PR-B2 + B3 ⏸ ) ── M3 v1.0.4 ⏸ ── M4 v2.0 ⏸ (剪影小人)
+M1 v1.0.2 ✅ ─┴─ M2 v1.0.3 ✅ ( PR-B1 ✅ / PR-B2 ✅ / PR-B3 ✅ ) ── M3 v1.0.4 ⏸ ── M4 v2.0 ⏸ (剪影小人)
                                                                                   │
                                                                                   └─ M5 v3.0 ⏸ (端侧 TTS)
 M6 v1.2 ⏸ (安全 P1, 触发后启动)
 ```
 
-- **v1.0.3 PR-B2/B3** → v1.0.4 顺序依赖（PR-B2 完成后启动 v1.0.4）
+- **v1.0.3** ✅ 已完成（PR-B1 + PR-B2 + PR-B3，commit `f1720f7` / `4598547` / 本 commit）
+- **v1.0.3** → v1.0.4 顺序依赖（PR-B3 完成后启动 v1.0.4）
 - **v1.0.4** → v2.0 顺序依赖（Trace + Framer Motion 给 v2.0 提供动画基础设施）
 - **v2.0** → v3.0 松散依赖（v2.0 提供"角色"概念，v3.0 给角色加声音；可独立推进）
 - **v1.0.x / v2.0 / v3.0** 与 v1.2 / v2.0 远期 无强依赖（三线独立：产品打磨 / 安全 / 远期）
@@ -212,9 +213,9 @@ M6 v1.2 ⏸ (安全 P1, 触发后启动)
 | M0 v1.0.0 | 2026-08-20 | ECS 8 问题全修 + DeepSeek v4 + 263 sub-test | ✅ |
 | M0.5 v1.0.1 | 2026-08-20 | v1.0.0 遗留测试 100% 修复 + prompt HA-001 | ✅ (`ae7a464`) |
 | M1 v1.0.2 | 2026-08-20 | 候选 4 已反驳证据集合跟踪 + ADR 0030 | ✅ (`ac8eda0`+...) |
-| **M2 v1.0.3 PR-B1** | 2026-08-21 | Prompt Lab baseRules YAML 化 + 热加载 + 5 sub-test | ✅ (`f1720f7`) |
-| **M2 v1.0.3 PR-B2** | v1.0.3 后 | Eval + A/B + REST API | ⏸ ([V1.0.3-PLAN.md](./V1.0.3-PLAN.md) §3 PR-B2) |
-| **M2 v1.0.3 PR-B3** | PR-B2 后 | release notes + tag | ⏸ ([V1.0.3-PLAN.md](./V1.0.3-PLAN.md) §3 PR-B3) |
+| **M2 v1.0.3 PR-B1** | 2026-08-21 | Prompt Lab baseRules YAML 化 + 热加载 + 11 sub-test | ✅ (`f1720f7`) |
+| **M2 v1.0.3 PR-B2** | 2026-08-21 | Eval + A/B + REST API + 14 sub-test | ✅ (`4598547`) |
+| **M2 v1.0.3 PR-B3** | 2026-08-21 | release notes + roadmap 同步 | ✅ (本 commit) |
 | **M3 v1.0.4** | v1.0.3 后 | LLM Trace 可视化 + Framer Motion 微动效 | ⏸ ([V1.0.4-PLAN.md](./V1.0.4-PLAN.md)) |
 | **M4 v2.0 视觉升级** | v1.0.4 后 | 剪影小人 SVG + 走路/点头/举手 | ⏸ ([V2.0-PLAN.md](./V2.0-PLAN.md)，原 V1.0.5-PLAN.md 升级） |
 | **M5 v3.0 端侧 TTS** | v2.0 后 | 离线 TTS（Piper/Coqui 等），庭审语音化 | ⏸ ([V3.0-PLAN.md](./V3.0-PLAN.md)) |
@@ -245,15 +246,14 @@ M6 v1.2 ⏸ (安全 P1, 触发后启动)
 
 ### 立即可做（等用户授权）
 
-1. **v1.0.3 PR-B2 启动**（Eval + A/B + REST API）— [V1.0.3-PLAN.md §3 PR-B2](./V1.0.3-PLAN.md)
-2. **v1.0.3 PR-B3 启动**（release notes + tag）— PR-B2 完成后
-3. **v1.0.4 启动**（LLM Trace 可视化 + Framer Motion 微动效）— v1.0.3 PR-B3 完成后，按 [V1.0.4-PLAN.md](./V1.0.4-PLAN.md) 推进
-4. **v2.0 启动**（剪影小人 SVG + 走路/点头/举手）— v1.0.4 完成后，按 [V2.0-PLAN.md](./V2.0-PLAN.md) 推进（原 V1.0.5-PLAN.md 升级为大版本）
-5. **v3.0 启动**（端侧 TTS）— v2.0 完成后，按 [V3.0-PLAN.md](./V3.0-PLAN.md) 推进
+1. **v1.0.3 tag + push** — 用户授权后（[release notes](./release-notes/v1.0.3.md) 已完成）
+2. **v1.0.4 启动**（LLM Trace 可视化 + Framer Motion 微动效）— 用户授权后，按 [V1.0.4-PLAN.md](./V1.0.4-PLAN.md) 推进
+3. **v2.0 启动**（剪影小人 SVG + 走路/点头/举手）— v1.0.4 完成后，按 [V2.0-PLAN.md](./V2.0-PLAN.md) 推进（原 V1.0.5-PLAN.md 升级为大版本）
+4. **v3.0 启动**（端侧 TTS）— v2.0 完成后串行，按 [V3.0-PLAN.md](./V3.0-PLAN.md) 推进
 
 ### 长期（按需触发）
 
-6. **v1.2 安全 P1** — 触发条件：公网部署 / 安全事件 / 用户决定继续安全加固
+5. **v1.2 安全 P1** — 触发条件：公网部署 / 安全事件 / 用户决定继续安全加固
 
 ### 持续维护
 
