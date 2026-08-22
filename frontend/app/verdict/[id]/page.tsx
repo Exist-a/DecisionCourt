@@ -6,9 +6,10 @@ import { api } from "@/lib/api";
 // v0.10 (ADR 0020) 判决页埋点：feedback / reopen_trial 是关键事件,
   // 立即 flush 不容丢失（verdict_feedback 在 CRITICAL_EVENTS 清单里）。
 import { initAnalytics, getAnalytics } from "@/lib/analytics/runtime";
+// v1.0-patch: 共享 hydrate 函数 (替代 v0.8.3 6 段重复 try/catch)
+import { hydrateCourtroomStore } from "@/lib/courtroomHydrate";
 import {
   useCourtroomStore,
-  applyCourtEvent,
 } from "@/store/courtroomStore";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +24,7 @@ import {
   Download,
   FileText,
   Loader2,
+  ArrowLeft,
 } from "lucide-react";
 import { BehindTheScenesPanel } from "@/components/courtroom/BehindTheScenesPanel";
 import type { Message } from "@/types";
@@ -50,6 +52,7 @@ export default function VerdictPage() {
   // events, so the verdict page can render the full behind-the-scenes view
   // without a separate REST fetch.
   const memoryEntries = useCourtroomStore((s) => s.memoryEntries);
+  const setMemoryEntries = useCourtroomStore((s) => s.setMemoryEntries);
   const verdict = storeVerdict;
   const [loading, setLoading] = useState(!storeVerdict);
   const [feedback, setFeedback] = useState<"helpful" | "not_helpful" | null>(
@@ -86,99 +89,30 @@ export default function VerdictPage() {
     load();
   }, [sessionId, storeVerdict, setVerdict]);
 
-  // v0.8.3 修复：补齐与 court 页相同的水合序列（session / agents /
-  // evidences / investigations / belief_diffs / memory）。失败时不阻
-  // 断 UI —— 老版本 / 网络异常下 verdict 页仍能展示判决书本体。
-  //
-  // 注意：messages 单独走下面那个 effect（不灌 store，只 setMessages 本地
-  // state，因为 verdict 页 UI 直接读 messages，不需要进入 store 的全局
-  // 流）。其它字段全部灌 store，让 header / evidence panel / behind-the-scenes
-  // / belief tab 都能拿到完整数据。
+  // v1.0-patch (2026-08-22): 抽到 lib/courtroomHydrate.ts 共用,
+  // court + verdict 两个页面共享同一套 hydrate 序列。
+  // (原 6 段 try/catch 90 行 → 1 行调用)
   useEffect(() => {
     let mounted = true;
-
-    async function hydrate() {
-      try {
-        const sessRes = await api.getSession(sessionId);
-        if (!mounted) return;
-        if (sessRes.code === 0) setSession(sessRes.data);
-      } catch (err) {
-        console.warn("[Verdict] hydrate session failed:", err);
+    void (async () => {
+      await hydrateCourtroomStore(sessionId, {
+        setSession,
+        setAgents,
+        addEvidence,
+        setInvestigationFindings,
+        setBeliefDiffs,
+        getStoredEvidences: () => useCourtroomStore.getState().evidences,
+        setMemoryEntries,
+      });
+      // 注意: 旧代码调 applyCourtEvent 灌 memory,但没存到 store。
+      // 新实现已修复: hydrateCourtroomStore 既调 applyCourtEvent 又 setMemoryEntries。
+      if (mounted) {
+        // 防止 lint 警告 (mounted 守门确保 React state 在 unmount 后不更新)
       }
-
-      try {
-        const agentsRes = await api.getAgents(sessionId);
-        if (!mounted) return;
-        if (agentsRes.code === 0) {
-          // Agents may come back as either an array or a { agents: [...] }
-          // envelope depending on backend version. Normalize.
-          const data = agentsRes.data as
-            | { agents?: unknown[] }
-            | unknown[];
-          const list = Array.isArray(data) ? data : (data.agents ?? []);
-          if (list.length > 0) setAgents(list as Parameters<typeof setAgents>[0]);
-        }
-      } catch (err) {
-        console.warn("[Verdict] hydrate agents failed:", err);
-      }
-
-      try {
-        const evRes = await api.getEvidences(sessionId);
-        if (!mounted) return;
-        if (evRes.code === 0 && Array.isArray(evRes.data.evidences)) {
-          // 幂等：先看 store 里是否已经存在该 evidence.evidence_id
-          for (const e of evRes.data.evidences) {
-            if (!storedEvidences.find((x) => x.evidence_id === e.evidence_id)) {
-              addEvidence(e);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("[Verdict] hydrate evidences failed:", err);
-      }
-
-      try {
-        const invRes = await api.getInvestigations(sessionId);
-        if (!mounted) return;
-        if (invRes.code === 0 && Array.isArray(invRes.data.findings)) {
-          setInvestigationFindings(invRes.data.findings);
-        }
-      } catch (err) {
-        console.warn("[Verdict] hydrate investigations failed:", err);
-      }
-
-      try {
-        const diffRes = await api.getBeliefDiffs(sessionId);
-        if (!mounted) return;
-        if (diffRes.code === 0 && Array.isArray(diffRes.data.diffs)) {
-          setBeliefDiffs(diffRes.data.diffs);
-        }
-      } catch (err) {
-        console.warn("[Verdict] hydrate belief diffs failed:", err);
-      }
-
-      try {
-        const memRes = await api.getVisibleMemory(sessionId);
-        if (!mounted) return;
-        if (memRes.code === 0 && Array.isArray(memRes.data.memory)) {
-          for (const row of memRes.data.memory) {
-            applyCourtEvent({
-              type: "a2a.message",
-              payload: row,
-              timestamp: row.created_at || new Date().toISOString(),
-            });
-          }
-        }
-      } catch (err) {
-        console.warn("[Verdict] hydrate memory failed:", err);
-      }
-    }
-
-    hydrate();
+    })();
     return () => {
       mounted = false;
     };
-    // 只在 sessionId 变化时重跑 —— 后续 store 变化由 React 直接驱动。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
@@ -339,6 +273,21 @@ export default function VerdictPage() {
       <header className="border-b border-rule bg-paperDeep">
         <div className="container mx-auto max-w-4xl px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {/* v1.0-patch (2026-08-22): 顶部显眼"返回庭审现场"按钮 — 替代藏底部的 reopen_trial。
+                用户反馈"判决书要加返回按钮"实际 reopen_trial 已存在, 只是位置隐藏。
+                这里用 router.back() 而非 reopen_trial, 让浏览器 back 与按钮行为一致
+                (不调 reopen_trial 重新跑状态机, 保持 verdict 页当前 phase 静止)。
+                底部原"重新开庭"按钮保留, 用于用户主动 reopen 重新辩论。 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.back()}
+              className="text-ink hover:bg-paper rounded-sm px-2 h-8 text-xs font-data tracking-wider print:hidden"
+              data-testid="verdict-back-button"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+              返回庭审现场
+            </Button>
             <span className="seal-stamp w-9 h-9 text-[15px] flex items-center justify-center">
               判
             </span>

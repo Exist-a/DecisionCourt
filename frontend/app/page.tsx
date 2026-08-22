@@ -15,6 +15,9 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { useCourtroomStore } from "@/store/courtroomStore";
+// v1.0-patch (2026-08-22): 历史庭审列表
+import { TrialHistoryList } from "@/components/history/TrialHistoryList";
+import { saveHistoryItem } from "@/lib/trialHistory";
 import {
   Scale,
   MessageSquare,
@@ -80,6 +83,16 @@ export default function Home() {
 
       if (res.code === 0) {
         setSession(res.data);
+        // v1.0-patch: 立案成功 → 写历史庭审 localStorage (首页列表显示 + 跨刷新可访问)
+        saveHistoryItem({
+          sessionUUID: res.data.session_uuid,
+          title: res.data.title,
+          optionA: res.data.option_a,
+          optionB: res.data.option_b,
+          currentPhase: res.data.current_phase,
+          verdictReady: false, // 立案时 phase=idle, 不会 ready
+          updatedAt: Date.now(),
+        });
         router.push(`/court/${res.data.session_uuid}`);
       }
     } finally {
@@ -331,6 +344,9 @@ export default function Home() {
           </div>
         </form>
       </section>
+
+      {/* v1.0-patch (2026-08-22): 历史庭审面板 — 立案表单下方, 折叠显示 */}
+      <TrialHistoryList />
 
       {/* ============ 三大特性（案卷夹三栏） ============ */}
       <section className="container mx-auto max-w-5xl px-6 pb-20">

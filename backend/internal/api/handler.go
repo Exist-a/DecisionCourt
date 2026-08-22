@@ -75,9 +75,17 @@ type Handler struct {
 	promptLab PromptLabClient
 
 	// v1.0.4 PR-C1 Trace: /api/v1/courtrooms/:uuid/traces/* REST 端点依赖。
-	// 注入方式: handler.traceStore = trace.NewFileTraceStore(config.AppConfig.AgentGateway.LogDir)
+	// 注入方式: handler.WithTraceStore(trace.NewFileTraceStore(logDir))
 	// nil 时 RegisterTraceRoutes 不注册路由(降级为 404)。
 	traceStore trace.Store
+}
+
+// WithTraceStore 注入 trace.Store。装配阶段(main.go)调用一次。
+// 修复: 之前 PR-C1 文档注释里写的 "handler.traceStore = ..." 跨包访问
+// private 字段编译失败,导致 main.go 漏注入,/traces 端点从未注册。
+// 加 setter 与 WithMetrics / WithEventRecorder 同模式。
+func (h *Handler) WithTraceStore(store trace.Store) {
+	h.traceStore = store
 }
 
 // WithEventRecorder 注入前端埋点 recorder。装配阶段(main.go)调用一次。
@@ -176,6 +184,10 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 	api.GET("/courtrooms/:session_uuid/agents", h.GetAgents)
 	api.GET("/courtrooms/:session_uuid/verdict", h.GetVerdict)
 	api.GET("/courtrooms/:session_uuid/investigations", h.GetInvestigations)
+	// v1.0-patch (2026-08-22): 历史庭审列表 — 列出当前用户的所有 session。
+	// 必须在 /:session_uuid 子路由前注册避免路由冲突 (gin path resolution)。
+	// 鉴权: viewer 从 JWT 拿,WHERE owner_id = ? 强制 owner-only (防越权)。
+	api.GET("/courtrooms", h.ListMySessions)
 	api.GET("/courtrooms/:session_uuid/export", h.ExportSession)
 	// v0.6 belief engine: structured belief-diff audit trail.
 	// Supports ?agent=prosecutor|defender|... and ?round=N filters.
@@ -323,12 +335,78 @@ func (h *Handler) GetCourtroom(c *gin.Context) {
 	sessionUUID := c.Param("session_uuid")
 
 	session, ok := h.lookupSession(sessionUUID)
-	if !ok {
+	if (!ok) {
 		c.JSON(http.StatusNotFound, gin.H{"code": 1002, "message": "庭审不存在"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": sessionResponse(session)})
+}
+
+// ListMySessions 列出当前用户 (viewer) 的所有庭审 session, 按 updated_at DESC。
+// v1.0-patch (2026-08-22): 用于首页"历史庭审"面板。
+//
+// Query params:
+//   - limit (optional, default 20, max 100)
+//   - offset (optional, default 0)
+//
+// 鉴权: 强制 WHERE owner_id = ? (来自 JWT), 防止越权读取他人 session。
+// 老 session (OwnerID == "") 在迁移时已 deprecated, 这里不返回 (前端也不会列)。
+func (h *Handler) ListMySessions(c *gin.Context) {
+	ownerID := auth.ViewerFromContext(c)
+	if ownerID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1401, "message": "missing viewer"})
+		return
+	}
+
+	// 解析 limit/offset, 给默认值与上限
+	limit := 20
+	offset := 0
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+			if limit > 100 {
+				limit = 100
+			}
+		}
+	}
+	if v := c.Query("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	if model.DB == nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"sessions": []gin.H{}, "count": 0}})
+		return
+	}
+
+	// 只查 owner_id = ? 的 session, 按 updated_at DESC 排序
+	var sessions []model.CourtSession
+	if err := model.DB.
+		Where("owner_id = ?", ownerID).
+		Order("updated_at desc").
+		Limit(limit).
+		Offset(offset).
+		Find(&sessions).Error; err != nil {
+		slog.Error("ListMySessions query failed", "error", err, "owner_id", ownerID)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1500, "message": "list sessions failed"})
+		return
+	}
+
+	items := make([]gin.H, 0, len(sessions))
+	for _, s := range sessions {
+		items = append(items, sessionResponse(s))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"sessions": items,
+			"count":    len(items),
+			"limit":    limit,
+			"offset":   offset,
+		},
+	})
 }
 
 func (h *Handler) StartTrial(c *gin.Context) {

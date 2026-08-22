@@ -33,6 +33,30 @@ export const api = {
           `/api/v1/courtrooms/${sessionUUID}`
         ),
 
+  // v1.0-patch (2026-08-22): 历史庭审列表 — 列出当前用户的所有 session。
+  // 用于首页 TrialHistoryList 组件, 跨设备同步。
+  listMySessions: (limit: number = 20) =>
+    useMock
+      ? Promise.resolve({ code: 0, data: { sessions: [], count: 0, limit, offset: 0 } })
+      : fetchJson<never, {
+          code: number;
+          data: {
+            sessions: Array<{
+              session_uuid: string;
+              title: string;
+              option_a: string;
+              option_b: string;
+              current_phase: string;
+              current_round: number;
+              status: string;
+              updated_at: string;
+            }>;
+            count: number;
+            limit: number;
+            offset: number;
+          };
+        }>(`/api/v1/courtrooms?limit=${limit}`),
+
   startTrial: (sessionUUID: string, idempotencyKey?: string) =>
     useMock
       ? mockApi.startTrial(sessionUUID)
