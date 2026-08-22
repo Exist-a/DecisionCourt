@@ -146,6 +146,10 @@ interface CourtroomState {
     beliefB: number,
   ) => void;
   addEvidence: (evidence: Evidence) => void;
+  // v1.0-patch (2026-08-22): 跨 session 切换时整体替换 evidence 数组,
+  // 避免不同庭审的 evidence 累积。addEvidence 单独添加 (庭审中提交新证据用),
+  // setEvidences 整体替换 (hydrate / 切换 session 用)。
+  setEvidences: (evidences: Evidence[]) => void;
   challengeEvidence: (evidenceId: string, reason: string) => void;
   addMessage: (message: Message) => void;
   addBeliefSnapshot: (snapshot: BeliefSnapshot) => void;
@@ -343,6 +347,11 @@ export const useCourtroomStore = create<CourtroomState>((set, get) => ({
   addEvidence: (evidence) =>
     set((state) => ({
       evidences: [...state.evidences, evidence],
+    })),
+
+  setEvidences: (evidences) =>
+    set((state) => ({
+      evidences,
     })),
 
   challengeEvidence: (evidenceId, reason) =>

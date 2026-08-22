@@ -31,6 +31,8 @@ export interface CourtroomHydrateActions {
   setSession: (s: CourtSession) => void;
   setAgents: (a: Agent[]) => void;
   addEvidence: (e: Evidence) => void;
+  // v1.0-patch (2026-08-22): hydrate 时整体替换 evidence, 避免跨 session 累积。
+  setEvidences: (e: Evidence[]) => void;
   setInvestigationFindings: (f: InvestigationFinding[]) => void;
   setBeliefDiffs: (d: BeliefDiff[]) => void;
   getStoredEvidences: () => Evidence[];
@@ -55,6 +57,7 @@ export async function hydrateCourtroomStore(
     setSession,
     setAgents,
     addEvidence,
+    setEvidences,
     setInvestigationFindings,
     setBeliefDiffs,
     getStoredEvidences,
@@ -82,16 +85,23 @@ export async function hydrateCourtroomStore(
     console.warn("[hydrate] agents failed:", err);
   }
 
-  // 3. Evidences (幂等去重)
+  // 3. Evidences (整体替换 — v1.0-patch 修跨 session 证据污染 bug)
+  //
+  // 之前用 addEvidence + 去重, 但 store 是全局的, 切 session 时:
+  //   trial A 跑完 → store.evidences = A 的 evidence
+  //   trial B 回看 → addEvidence(B) 因 evidence_id 不同追加成功
+  //   用户看到 A + B 的 evidence 混合 (你反馈的"点开不一样的庭审看到相同证据")
+  //
+  // 修复: hydrate 时 setEvidences (整体覆盖) 替换整个数组,
+  // 与 setSession / setAgents / setInvestigationFindings / setBeliefDiffs
+  // 行为一致 (hydrate 时整体覆盖, 不是增量)
   try {
     const evRes = await api.getEvidences(sessionUUID);
     if (evRes.code === 0 && Array.isArray(evRes.data.evidences)) {
-      const stored = getStoredEvidences();
-      for (const e of evRes.data.evidences) {
-        if (!stored.find((x) => x.evidence_id === e.evidence_id)) {
-          addEvidence(e);
-        }
-      }
+      setEvidences(evRes.data.evidences);
+    } else {
+      // 0 evidence 时清空 (防止上次 session 残留)
+      setEvidences([]);
     }
   } catch (err) {
     console.warn("[hydrate] evidences failed:", err);

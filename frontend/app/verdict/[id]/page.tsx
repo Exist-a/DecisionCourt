@@ -42,6 +42,8 @@ export default function VerdictPage() {
   const setSession = useCourtroomStore((s) => s.setSession);
   const setAgents = useCourtroomStore((s) => s.setAgents);
   const addEvidence = useCourtroomStore((s) => s.addEvidence);
+  // v1.0-patch: setEvidences 整体替换 (跨 session 切时清空旧 session 的 evidence)
+  const setEvidences = useCourtroomStore((s) => s.setEvidences);
   const setInvestigationFindings = useCourtroomStore(
     (s) => s.setInvestigationFindings,
   );
@@ -99,6 +101,7 @@ export default function VerdictPage() {
         setSession,
         setAgents,
         addEvidence,
+        setEvidences,
         setInvestigationFindings,
         setBeliefDiffs,
         getStoredEvidences: () => useCourtroomStore.getState().evidences,

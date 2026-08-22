@@ -24,6 +24,7 @@ export default function CourtPage() {
   const setSession = useCourtroomStore((s) => s.setSession);
   const setAgents = useCourtroomStore((s) => s.setAgents);
   const addEvidence = useCourtroomStore((s) => s.addEvidence);
+  const setEvidences = useCourtroomStore((s) => s.setEvidences);
   const setInvestigationFindings = useCourtroomStore(
     (s) => s.setInvestigationFindings,
   );
@@ -37,6 +38,7 @@ export default function CourtPage() {
         setSession,
         setAgents,
         addEvidence,
+        setEvidences,
         setInvestigationFindings,
         setBeliefDiffs,
         // 幂等去重要求:每次 hydrate 前看 store 当前内容
