@@ -34,11 +34,13 @@
 | **dozzle 移除** | ✅ | `29daff0`，Windows Docker Desktop npipe 不兼容 |
 | **D2 + D3 修复** | ✅ | `694a89e`，cross-exam silent error + 直接判决 fallback "共 0 轮" |
 | ADR 累计 | 35 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede |
-| Go 测试 | ~324 sub-test | v1.0.3 304 + PR-C1 20（parser 5 + aggregator 5 + store 5 + handler 5）|
-| Frontend 测试 | 84 (5 .test.ts) | v1.0.4 79 + v2.0 5 (silhouettes) |
+| Go 测试 | ~326 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) |
+| Frontend 测试 | 90 (7 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 (trialHistory 2 + BeliefDiffCard 2 + websocket 2) |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
-**当前阻塞**：无。下一决策是用户授权启动 **v2.0 REDESIGN** 阶段 1（PR-D1：装 r3f + drei + Canvas wrapper）。
+**v1.0-patch 系列**（2026-08-22~23，7 commit `d72f860..f3a93e0`）：浏览器 back bug / 历史庭审回看 / 跨 session 证据污染 / hydrate 补 messages / BeliefDiffCard 渲染崩溃 / WS 断连 toast / 质证 empty content 软降级。详见 [todo/bugfix-log-2026-08-23.md](./todo/bugfix-log-2026-08-23.md)。
+
+**当前阻塞**：⏸ **3 个未解决问题**（策略笔记 U1/U2/U3，见 [todo/bugfix-log-2026-08-23.md §二](./todo/bugfix-log-2026-08-23.md)）—— 判决书/历史庭审策略笔记为空 + 点击渲染出错。根因已定位（hydrate memory 映射读错字段层级），待下次 session 修复。修复后再决策 v2.0 REDESIGN 阶段 1（PR-D1）启动。
 
 ---
 
