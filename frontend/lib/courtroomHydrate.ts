@@ -71,7 +71,7 @@ export async function hydrateCourtroomStore(
     setInvestigationFindings,
     setBeliefDiffs,
     getStoredEvidences,
-    setMemoryEntries,
+    setMemoryEntries, // 保留以备 verdict page 整体替换使用, 当前 applyCourtEvent 路径走 store.appendMemoryEntry 已正确写入
     setMessages,
     setActiveInvestigation,
   } = actions;
@@ -175,6 +175,21 @@ export async function hydrateCourtroomStore(
   }
 
   // 6. Memory entries (a2a.message type)
+  //
+  // v1.0-patch (2026-08-23, fix U1/U2/U3): 唯一写路径改为 applyCourtEvent 循环。
+  //
+  // 旧实现额外调一次 setMemoryEntries(memory.map(...)) 用顶层 r.content 整体覆盖,
+  // 但后端 REST 返回结构里 content 在 row.payload.content 嵌套里 (见
+  // backend/internal/api/handler.go:908-921), 顶层 r.content 永远是 undefined
+  // → 全部 entry.content="" → 判决书 / 历史庭审策略笔记全空 (U1/U2)。
+  // 且 setMemoryEntries 整体替换, 在 applyCourtEvent 之后执行,
+  // 用空内容覆盖了正确数据; appendMemoryEntry 按 id 幂等 (store L499)
+  // 又阻断了 CourtroomScene 的二次补救, 救不回。
+  //
+  // 现在只走 applyCourtEvent 一条路径: store 的 a2a.message handler (L749-815)
+  // 已正确解析 payload.content / payload.stance / payload.confidence /
+  // payload.reasoning / payload.linked_evidence_ids, appendMemoryEntry (L496-509)
+  // 按 id 幂等 + 排序, 多次 hydrate 安全。
   try {
     const memRes = await api.getVisibleMemory(sessionUUID);
     if (
@@ -182,7 +197,6 @@ export async function hydrateCourtroomStore(
       Array.isArray((memRes.data as { memory?: unknown[] }).memory)
     ) {
       const memory = (memRes.data as { memory: Array<Record<string, unknown>> }).memory;
-      // 复用 verdict 页的 a2a.message 转换路径 (applyCourtEvent 已处理)
       for (const row of memory) {
         applyCourtEvent({
           type: "a2a.message",
@@ -191,21 +205,6 @@ export async function hydrateCourtroomStore(
             (row.created_at as string | undefined) ?? new Date().toISOString(),
         });
       }
-      setMemoryEntries(
-        memory.map((r) => ({
-          id: (r.id as string) ?? "",
-          kind: ((r.message_type as string) ?? "strategy_note") as MemoryEntry["kind"],
-          agentType: ((r.from as string) ?? "prosecutor") as MemoryEntry["agentType"],
-          round: (r.round as number) ?? 0,
-          phase: (r.phase as string) ?? "",
-          content: (r.content as string) ?? "",
-          // 兼容老数据: memory rows 可能不含 linked_evidence_ids, 默认为空数组
-          linkedEvidenceIds: Array.isArray(r.linked_evidence_ids)
-            ? (r.linked_evidence_ids as string[])
-            : [],
-          createdAt: (r.created_at as string) ?? new Date().toISOString(),
-        })),
-      );
     }
   } catch (err) {
     console.warn("[hydrate] memory failed:", err);

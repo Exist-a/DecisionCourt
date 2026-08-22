@@ -230,3 +230,115 @@ func TestGetVisibleMemory_MissingLister(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, w.Code, "body=%s", w.Body.String())
 	require.Contains(t, w.Body.String(), "memory lister not configured")
 }
+
+// TestGetVisibleMemory_PayloadNestedContract 锁定 v1.0-patch (2026-08-23)
+// fix U1/U2 发现的契约：memory 行的 content / stance / confidence /
+// reasoning 必须在 payload 子对象里, 顶层不得平铺。
+//
+// 根因 (docs/todo/bugfix-log-2026-08-23.md §U1):
+//   早期 frontend/lib/courtroomHydrate.ts 在 hydrate 完成后, 额外调一次
+//   setMemoryEntries(memory.map(r => ({ ..., content: r.content ?? "" }))),
+//   但 r.content 在顶层永远是 undefined, 正确字段在 r.payload.content。
+//   而且 setMemoryEntries 在 applyCourtEvent 之后执行, 用空字符串整体覆盖
+//   了已正确写入的数据, 导致判决书 / 历史庭审策略笔记全空。
+//
+// 此测试断言 envelope 形态不变, 防止未来重构破坏 schema, 强制前端
+// 必须走 payload.content 嵌套读取 (对齐 store.applyCourtEvent L749-815)。
+func TestGetVisibleMemory_PayloadNestedContract(t *testing.T) {
+	session := model.CourtSession{
+		ID:          uuid.New(),
+		SessionUUID: "mem-contract-" + uuid.New().String()[:8],
+		OwnerID:     "test-user",
+		Title:       "payload 嵌套契约测试",
+		OptionA:     "A",
+		OptionB:     "B",
+	}
+
+	// 完整结构化字段: content + stance + confidence + reasoning + linked_evidence_ids
+	payloadJSON, err := json.Marshal(map[string]interface{}{
+		"content":             "对方的核心论点是 X, 我方应从 Y 反驳",
+		"stance":              "challenge",
+		"confidence":           0.87,
+		"reasoning":           "证据 E001 显示 X 站不住脚, 因为 Z",
+		"linked_evidence_ids": []string{"E001", "E003"},
+	})
+	require.NoError(t, err)
+
+	rows := []model.A2AMessage{
+		{
+			ID:          uuid.New(),
+			SessionID:   session.ID,
+			MessageUUID: "mem-contract-001",
+			Round:       2,
+			Phase:       string(model.PhaseCrossExam),
+			FromAgent:   "prosecutor",
+			ToAgent:     "prosecutor",
+			MessageType: string(a2a.MessageTypeStrategyNote),
+			Visibility:  string(a2a.VisibilityPrivate),
+			Payload:     string(payloadJSON),
+		},
+	}
+
+	h := &Handler{
+		sessionLookup: func(u string) (model.CourtSession, bool) {
+			if u == session.SessionUUID {
+				return session, true
+			}
+			return model.CourtSession{}, false
+		},
+		memoryLister: &stubMemoryLister{rows: rows},
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/courtrooms/"+session.SessionUUID+"/memory", nil)
+	ginEngine(h).ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var body struct {
+		Code int `json:"code"`
+		Data struct {
+			Memory []map[string]interface{} `json:"memory"`
+			Count  int                      `json:"count"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Equal(t, 0, body.Code)
+	require.Equal(t, 1, body.Data.Count)
+
+	row := body.Data.Memory[0]
+
+	// === 契约 1: 顶层不得有 content 字段 ===
+	// (前端错误路径曾读 r.content 永远得到 undefined → 全空)
+	_, hasTopContent := row["content"]
+	require.False(t, hasTopContent,
+		"memory 行顶层不应有 content 字段; content 必须在 payload 子对象里")
+
+	// === 契约 2: payload 必须是 decoded map ===
+	require.IsType(t, map[string]interface{}{}, row["payload"])
+	payload := row["payload"].(map[string]interface{})
+
+	// === 契约 3: 结构化字段全部透传 ===
+	require.Equal(t, "对方的核心论点是 X, 我方应从 Y 反驳", payload["content"])
+	require.Equal(t, "challenge", payload["stance"])
+	require.Equal(t, float64(0.87), payload["confidence"])
+	require.Equal(t, "证据 E001 显示 X 站不住脚, 因为 Z", payload["reasoning"])
+
+	// === 契约 4: linked_evidence_ids 是 string[] (前端渲染"关联证据"链路用) ===
+	require.IsType(t, []interface{}{}, payload["linked_evidence_ids"])
+	evids := payload["linked_evidence_ids"].([]interface{})
+	require.Len(t, evids, 2)
+	require.Equal(t, "E001", evids[0])
+	require.Equal(t, "E003", evids[1])
+
+	// === 契约 5: envelope 字段名必须与 WS a2a.message 一致 ===
+	// (前端 applyCourtEvent a2a.message handler 读 p.from / p.to / p.message_type /
+	//  p.visibility / p.payload, 任何字段改名都会让 hydrate 失败)
+	require.Equal(t, "mem-contract-001", row["message_uuid"])
+	require.Equal(t, "prosecutor", row["from"])
+	require.Equal(t, "prosecutor", row["to"])
+	require.Equal(t, "strategy_note", row["message_type"])
+	require.Equal(t, "private", row["visibility"])
+	require.Equal(t, float64(2), row["round"])
+	require.NotEmpty(t, row["created_at"])
+}

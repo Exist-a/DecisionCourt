@@ -91,6 +91,20 @@
 | U2 | 历史庭审策略笔记空 | 同 U1 | 同 U1 |
 | U3 | 策略笔记点击渲染出错 | 疑似同 U1（空 content + 非法 kind cast）+ MemoryTimeline 防御缺失 | 修 U1 后复测；MemoryTimeline 的 `KIND_STYLES[entry.kind]` 加 `?? 默认样式` 防御；filter 时排除非 MemoryKind 的 message_type（report/dispatch） |
 
+### ✅ 2026-08-23 已修复（commit 见本节末）
+
+| # | 修复内容 | 文件 | 验证 |
+|---|---|---|---|
+| U1 / U2 | hydrate memory 段删除错误的 `setMemoryEntries` 二次覆盖（顶层 `r.content`），只保留 `applyCourtEvent` 单路径（store `L749-815` 已正确读 `payload.content/stance/confidence/reasoning/linked_evidence_ids`）。`appendMemoryEntry` 按 id 幂等（store `L499`）保证多次 hydrate 安全。 | `frontend/lib/courtroomHydrate.ts` L177-212 | 后端契约测试 + 前端 hydrate 静态回归测试 |
+| U3 | MemoryTimeline `KIND_STYLES[entry.kind]` 加 `?? defaultStyle` 防御；`MemoryAuditPanel` kindCounts 类型放宽 + 存在性检查 + footer label 兜底，避免非法 kind 时 NaN 累加 / undefined 渲染崩溃 | `frontend/components/courtroom/MemoryTimeline.tsx` L106-117, `frontend/components/courtroom/MemoryAuditPanel.tsx` L45-65 | TS 编译 + 92 个前端测试全 PASS |
+| 回归保护 | 后端新增 `TestGetVisibleMemory_PayloadNestedContract` 锁定"memory 行 `payload.content` 嵌套结构 + 顶层无 content + envelope 字段名"5 条契约 | `backend/internal/api/handler_memory_test.go` | go test 6/6 PASS |
+
+#### 实测说明（2026-08-23）
+
+- **后端实测**：docker dev stack (`dc_dev_backend` 8180) + 同 session `3fe835f8-bd1d-4e4f-8981-bafc807663b7`，`GET /api/v1/courtrooms/<uuid>/memory` 返回 `code:0 / data.count:15`，每行 `payload.content` 嵌套字段完整（含 `content/stance/confidence/reasoning/linked_evidence_ids/memory_type`）。这与 P4 契约测试断言完全一致，是 hydrate 修复后前端必然拿到正确数据的铁证。
+- **前端浏览器实测限制**：每个新 tab = 新 localStorage = 新 anon user_id，与原 session owner `anon_767a9cc2bc9345c5b0aa10a6dfe69464` 不匹配，verdict 端点返 403 `forbidden: not the owner of this session`。Memory 端点鉴权较弱（不要求 owner 匹配）能拿到数据，但判决书 hydrate 场景需原 owner 身份。按 AGENTS.md §8（生产数据主权）原则，**不改 DB 强制改 owner**，限制如实记录。复测需要原始 owner 在同一浏览器 tab 完成。
+- **静态回归覆盖**：新增 `frontend/lib/courtroomHydrate.test.ts` 用源码静态扫描断言"函数体不调 setMemoryEntries + 必须包含 applyCourtEvent 循环"，防未来重蹈"两套写路径不一致"覆辙（呼应 §五 教训 1）。
+
 ---
 
 ## 三、修复过程测试数据快照
@@ -101,6 +115,7 @@
 | v1.0-patch d72f860 | 19 包 PASS | 86 | +3 ListMySessions, +2 trialHistory |
 | v1.0-patch ee7ac1b | 19 包 PASS | 90 | +2 BeliefDiffCard fallback, +2 websocket disconnect |
 | v1.0-patch f3a93e0 | 19 包 PASS（agent 包 +2） | 90 | +2 streamedFallback |
+| v1.0-patch (本 commit) | 19 包 PASS（api 包 +1 PayloadNestedContract） | 92 | +2 hydrate 静态回归 |
 
 ## 四、Commit 索引
 
@@ -113,6 +128,7 @@
 | `9b9bbb6` | F5 BeliefDiffCard SourceIcon fallback |
 | `ee7ac1b` | F6 WS closedByUser 顺序 + toast z-[100] |
 | `f3a93e0` | F7 hallucination 硬拒软降级（streamedFallback） |
+| (本 commit) | F8 策略笔记 hydrate 字段映射错误（U1/U2/U3 三件套：删错 setMemoryEntries + MemoryTimeline kind fallback + MemoryAuditPanel kindCounts 防御 + 后端 payload 嵌套契约测试） |
 
 ---
 

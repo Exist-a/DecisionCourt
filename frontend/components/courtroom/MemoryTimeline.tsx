@@ -103,9 +103,18 @@ function hasStructuredFields(entry: MemoryEntry): boolean {
 }
 
 export function MemoryTimeline({ entry, redacted }: MemoryTimelineProps) {
-  const style = KIND_STYLES[entry.kind];
+  // v1.0-patch (2026-08-23, fix U3): 对未来后端新增 memory kind (kind 不在
+  // 4 个 MemoryKind union 内) 做兜底, 避免 KIND_STYLES[undefined].Icon 抛错。
+  // 守卫渲染时崩溃 → 触发 Next.js app/error.tsx "渲染此页面时遇到错误"。
+  const style = KIND_STYLES[entry.kind] ?? {
+    label: (entry.kind as string) || "策略笔记",
+    Icon: Lightbulb,
+    chip: "bg-stone-50 text-stone-700 border-stone-200",
+    dot: "bg-stone-400",
+    card: "border-l-stone-400 bg-stone-50/30",
+  };
   const Icon = style.Icon;
-  const agentLabel = AGENT_LABELS[entry.agentType] ?? entry.agentType;
+  const agentLabel = AGENT_LABELS[entry.agentType] ?? entry.agentType ?? "未知";
   const isStructured = hasStructuredFields(entry);
   const stanceInfo = entry.stance ? STANCE_LABELS[entry.stance] : undefined;
 

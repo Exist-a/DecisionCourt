@@ -42,15 +42,20 @@ export function MemoryAuditPanel({
 }: MemoryAuditPanelProps) {
   // Group counts so the empty/redacted state still shows something
   // informative ("策略笔记 × 3").
+  //
+  // v1.0-patch (2026-08-23, fix U3 联动防御): 类型放宽到 Record<string, number>
+  // + 存在性检查, 杜绝 entry.kind 非 4 个 union 值时 NaN 累加污染统计。
   const kindCounts = useMemo(() => {
-    const counts: Record<MemoryKind, number> = {
+    const counts: Record<string, number> = {
       strategy_note: 0,
       opponent_weakness: 0,
       self_correction: 0,
       evidence_eval: 0,
     };
     for (const e of entries) {
-      counts[e.kind] += 1;
+      if (typeof e.kind === "string" && e.kind in counts) {
+        counts[e.kind] += 1;
+      }
     }
     return counts;
   }, [entries]);
@@ -123,13 +128,16 @@ export function MemoryAuditPanel({
             {(Object.keys(kindCounts) as MemoryKind[]).map((k) => {
               const count = kindCounts[k];
               if (count === 0) return null;
+              // 兜底: 非 4 个 MemoryKind union 的 key 显示原始字符串,
+              // 避免 KIND_LABELS[undefined] 抛错 (U3 联动防御)。
+              const label = KIND_LABELS[k] ?? k;
               return (
                 <span
                   key={k}
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white border border-rule rounded-sm"
                   data-kind-count={k}
                 >
-                  <span className="text-ink">{KIND_LABELS[k]}</span>
+                  <span className="text-ink">{label}</span>
                   <span className="text-inkSoft">× {count}</span>
                 </span>
               );
