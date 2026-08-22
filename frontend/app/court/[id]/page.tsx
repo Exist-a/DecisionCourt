@@ -30,6 +30,9 @@ export default function CourtPage() {
   );
   const setBeliefDiffs = useCourtroomStore((s) => s.setBeliefDiffs);
   const setMemoryEntries = useCourtroomStore((s) => s.setMemoryEntries);
+  // v1.0-patch: hydrate 补 messages + activeInvestigation (原 verdict 老代码有, 抽函数时漏了)
+  const setMessages = useCourtroomStore((s) => s.setMessages);
+  const setActiveInvestigation = useCourtroomStore((s) => s.setActiveInvestigation);
 
   useEffect(() => {
     let mounted = true;
@@ -44,6 +47,8 @@ export default function CourtPage() {
         // 幂等去重要求:每次 hydrate 前看 store 当前内容
         getStoredEvidences: () => useCourtroomStore.getState().evidences,
         setMemoryEntries,
+        setMessages,
+        setActiveInvestigation,
       });
       if (mounted) setHydrated(true);
     })();

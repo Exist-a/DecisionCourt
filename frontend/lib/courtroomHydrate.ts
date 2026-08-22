@@ -25,6 +25,7 @@ import type {
   Evidence,
   InvestigationFinding,
   MemoryEntry,
+  Message,
 } from "@/types";
 
 export interface CourtroomHydrateActions {
@@ -37,6 +38,15 @@ export interface CourtroomHydrateActions {
   setBeliefDiffs: (d: BeliefDiff[]) => void;
   getStoredEvidences: () => Evidence[];
   setMemoryEntries: (m: MemoryEntry[]) => void;
+  // v1.0-patch (2026-08-22): hydrate 补 messages + activeInvestigation,
+  // 之前抽函数时漏了, 导致 court page 庭审记录 / 调查记录 Tab 没数据。
+  // 可选: verdict 页面用本地 useState<Message[]> 管 messages (不靠 store),
+  // verdict 页面也不需要重置 activeInvestigation (独立逻辑)。
+  // 所以这两个 setter 是 optional — court 页面传, verdict 不传。
+  setMessages?: (m: Message[]) => void;
+  setActiveInvestigation?: (
+    info: { dispatcher: string; query: string; startedAt: string } | null,
+  ) => void;
 }
 
 /**
@@ -62,6 +72,8 @@ export async function hydrateCourtroomStore(
     setBeliefDiffs,
     getStoredEvidences,
     setMemoryEntries,
+    setMessages,
+    setActiveInvestigation,
   } = actions;
 
   // 1. Session
@@ -107,21 +119,48 @@ export async function hydrateCourtroomStore(
     console.warn("[hydrate] evidences failed:", err);
   }
 
-  // 4. Investigations
+  // 4. Investigations (setInvestigationFindings 整体替换 — v1.0-patch 与 evidences 同)
+  // 之前 verdict 老代码在这里调, 但搬到 hydrate 函数时漏写了一段 try/catch。
+  // 现状: court page 庭审调查活动 Tab 没数据。
   try {
     const invRes = await api.getInvestigations(sessionUUID);
-    if (
-      invRes.code === 0 &&
-      Array.isArray((invRes.data as { findings?: InvestigationFinding[] }).findings)
-    ) {
-      const findings = (invRes.data as { findings: InvestigationFinding[] }).findings;
-      setInvestigationFindings(findings);
+    if (invRes.code === 0 && Array.isArray(invRes.data.findings)) {
+      setInvestigationFindings(invRes.data.findings);
+    } else {
+      setInvestigationFindings([]);
     }
   } catch (err) {
     console.warn("[hydrate] investigations failed:", err);
   }
 
-  // 5. Belief diffs
+  // 4. Investigations (已被 line 117 取代, 删除重复 block)
+
+  // 5. Messages (setMessages 整体替换 — v1.0-patch 防止跨 session 累积)
+  // 之前 verdict 页老代码调 api.getMessages + setMessages, court page 没调,
+  // 抽到 hydrate 时漏了。修: hydrate 也调, 与 setEvidences 同样覆盖语义。
+  // setMessages 是 optional (verdict 页面用本地 useState 不传)。
+  if (setMessages) {
+    try {
+      const msgRes = await api.getMessages(sessionUUID);
+      if (msgRes.code === 0 && Array.isArray(msgRes.data.messages)) {
+        setMessages(msgRes.data.messages);
+      } else {
+        setMessages([]);
+      }
+    } catch (err) {
+      console.warn("[hydrate] messages failed:", err);
+    }
+  }
+
+  // 5b. Active investigation (v0.9 调查员跑状态)
+  // hydrate 时重置为 null — 历史 session 不会有 "正在跑" 的 investigation,
+  // 防止旧 session 的 activeInvestigation 状态污染新 session。
+  // setActiveInvestigation 是 optional (verdict 页面不传)。
+  if (setActiveInvestigation) {
+    setActiveInvestigation(null);
+  }
+
+  // 6. Belief diffs
   try {
     const diffRes = await api.getBeliefDiffs(sessionUUID);
     if (

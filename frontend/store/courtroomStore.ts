@@ -152,6 +152,8 @@ interface CourtroomState {
   setEvidences: (evidences: Evidence[]) => void;
   challengeEvidence: (evidenceId: string, reason: string) => void;
   addMessage: (message: Message) => void;
+  // v1.0-patch (2026-08-22): hydrate 整体替换 messages (避免跨 session 累积)
+  setMessages: (messages: Message[]) => void;
   addBeliefSnapshot: (snapshot: BeliefSnapshot) => void;
   setPhase: (phase: CourtPhase, round?: number) => void;
   setVerdict: (verdict: Verdict) => void;
@@ -366,6 +368,11 @@ export const useCourtroomStore = create<CourtroomState>((set, get) => ({
   addMessage: (message) =>
     set((state) => ({
       messages: [...state.messages, message],
+    })),
+
+  setMessages: (messages) =>
+    set((state) => ({
+      messages,
     })),
 
   addBeliefSnapshot: (snapshot) =>

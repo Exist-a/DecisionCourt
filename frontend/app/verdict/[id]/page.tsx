@@ -106,6 +106,9 @@ export default function VerdictPage() {
         setBeliefDiffs,
         getStoredEvidences: () => useCourtroomStore.getState().evidences,
         setMemoryEntries,
+        // verdict 页面用本地 useState<Message[]> 管 messages (line 66),
+        // 不依赖 store, 所以不传 setMessages / setActiveInvestigation
+        // (hydrate 接口这两个是 optional, court 页面传, verdict 不传)
       });
       // 注意: 旧代码调 applyCourtEvent 灌 memory,但没存到 store。
       // 新实现已修复: hydrateCourtroomStore 既调 applyCourtEvent 又 setMemoryEntries。
