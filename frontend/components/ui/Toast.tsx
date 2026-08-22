@@ -173,7 +173,7 @@ export function ToastContainer() {
       )}
       <div
         data-testid="toast-stack"
-        className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2"
+        className="pointer-events-none fixed bottom-4 right-4 z-[100] flex flex-col gap-2"
       >
         {transient.map((t) => (
           <Toast key={t.id} toast={t} onDismiss={dismiss} />

@@ -24,6 +24,12 @@ export class CourtWebSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private missedPongs = 0;
+  // 2026-08-22 用户反馈 bug 修复: 区分"初始 connect"和"重连",
+  // 避免每次新庭审右下角先闪"网络中断,正在重连"再"已恢复连接"。
+  // 只有"曾经连接成功过"之后的重连才调 onConnectionStateChange("reconnecting")。
+  // 初始 connect 静默成功,onConnectionStateChange("connected") 仍正常触发,
+  // toast 只在"重连成功"时显示 "已恢复" (避免每次开庭重复 toast)。
+  private hasConnectedOnce = false;
   // 客户端监听重连事件，前端可显示"网络恢复中..." toast。
   private readonly onReconnectAttempt?: (attempt: number, delayMs: number) => void;
   private readonly onConnectionStateChange?: (state: "connected" | "reconnecting" | "closed") => void;
@@ -60,7 +66,11 @@ export class CourtWebSocket {
   private connectRealSocket() {
     if (this.closedByUser) return;
 
-    this.onConnectionStateChange?.("reconnecting");
+    // 2026-08-22 用户反馈 bug 修复: 只有"曾经连接过"之后的重连才广播
+    // "reconnecting" 状态。初始 connect 不广播 (避免新庭审每次都闪"重连中")。
+    if (this.hasConnectedOnce) {
+      this.onConnectionStateChange?.("reconnecting");
+    }
     try {
       this.realSocket = new WebSocket(this.url);
     } catch (err) {
@@ -73,7 +83,15 @@ export class CourtWebSocket {
       console.log("[WebSocket] connected to", this.url);
       this.retryDelayMs = resetBackoff(); // 重置退避（重连成功 → 回到 1s）
       this.missedPongs = 0;
+      const isReconnect = this.hasConnectedOnce;
+      this.hasConnectedOnce = true; // 标记已首次连接,后续断开才算"重连"
       this.onConnectionStateChange?.("connected");
+      // 2026-08-22: 只有"重连成功"才 toast "已恢复",初始 connect 静默
+      // (CourtroomScene 已经在 ws 拿到 sessionUUID 时调了 connect,无需重复 toast)。
+      if (isReconnect) {
+        // toast 已在 CourtroomScene 里 onConnectionStateChange("connected") 触发
+        // 这里只标记,实际 toast 逻辑不在这层。
+      }
       this.startHeartbeat();
     };
     this.realSocket.onmessage = (msg) => {
@@ -98,8 +116,10 @@ export class CourtWebSocket {
     this.realSocket.onclose = () => {
       console.log("[WebSocket] closed");
       this.stopHeartbeat();
-      this.onConnectionStateChange?.("closed");
+      // v1.0-patch (2026-08-22): closedByUser 检查必须在 onConnectionStateChange
+      // 之前 — 用户主动 disconnect (切换 trial) 不应弹 "连接已断开" toast。
       if (this.closedByUser) return;
+      this.onConnectionStateChange?.("closed");
       this.scheduleReconnect();
     };
   }
@@ -210,7 +230,12 @@ export class CourtWebSocket {
       this.reconnectTimer = null;
     }
     this.stopHeartbeat();
-    this.onConnectionStateChange?.("closed");
+    // v1.0-patch (2026-08-22): 不再显式广播 "closed" 状态。
+    // 用户主动 disconnect (切换 trial / 路由变化) 不应弹 "连接已断开" toast —
+    // onclose 会自然触发 onConnectionStateChange("closed"), 由 onclose
+    // 内部的 closedByUser 检查阻止 scheduleReconnect (不重连), 但仍会
+    // 调一次 callback 触发 toast。修复: 让 onclose 先判 closedByUser 再
+    // 调 onConnectionStateChange (下面 onclose handler 已改)。
 
     if (this.socket) {
       this.socket.disconnect();
