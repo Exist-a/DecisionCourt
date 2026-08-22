@@ -28,16 +28,17 @@
 | **v1.0.4 PR-C3** | ✅ | Framer Motion 微动效 + 6 variants + 4 组件 + 6 sub-test (`1e83a45`) |
 | **v1.0.4 PR-C4** | ✅ | release notes + ADR 0033 + V1-ROADMAP 同步（`726af6e`） |
 | **v2.0 PR-D1+D2** | ✅ | 厕所标识剪影小人 SVG + AgentAvatar 接入 + 5 sub-test (`50e1746`) |
-| **v2.0 PR-D3** | ✅ | release notes + ADR 0034 + V1-ROADMAP 同步（本 commit） |
+| **v2.0 PR-D3** | ✅ | release notes + ADR 0034 + V1-ROADMAP 同步（`c78182f` → `6e0588b`）|
+| **v2.0 REDESIGN 文档** | ✅ | 用户反馈"简陋，要重做" → r3f + drei + three-pathfinding 重构计划（[V2.0-REDESIGN-PLAN.md](./V2.0-REDESIGN-PLAN.md) + 4 stage 文档 + ADR 0034-supersede）|
 | **ArgumentMap 移除** | ✅ | ADR 0032 + `16332aa`，用户反馈"完全没用" |
 | **dozzle 移除** | ✅ | `29daff0`，Windows Docker Desktop npipe 不兼容 |
 | **D2 + D3 修复** | ✅ | `694a89e`，cross-exam silent error + 直接判决 fallback "共 0 轮" |
-| ADR 累计 | 34 | 含 0031 Prompt Lab + 0032 Remove ArgumentMap + 0033 LLM Trace + 0034 Silhouette |
+| ADR 累计 | 35 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede |
 | Go 测试 | ~324 sub-test | v1.0.3 304 + PR-C1 20（parser 5 + aggregator 5 + store 5 + handler 5）|
 | Frontend 测试 | 84 (5 .test.ts) | v1.0.4 79 + v2.0 5 (silhouettes) |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
-**当前阻塞**：无。下一决策是用户授权 v2.0 tag + push，或启动 v3.0（端侧 TTS）。
+**当前阻塞**：无。下一决策是用户授权启动 **v2.0 REDESIGN** 阶段 1（PR-D1：装 r3f + drei + Canvas wrapper）。
 
 ---
 

@@ -41,7 +41,8 @@
 | [0031](./0031-prompt-lab-architecture.md) | **Prompt Lab 架构：baseRules YAML 化 + 热加载 + LLM-as-judge Eval + A/B（v1.0.3 V1-ROADMAP M2）** | ✅ | `backend/prompts/base.yaml` (NEW) + `internal/promptlab/` (NEW) + REST `/api/v1/prompts/*` |
 | [0032](./0032-remove-argument-map.md) | **移除 ArgumentMap 观点地图（叙事流优先于信息图重写，v1.0.3）** | ✅ | 删除 `frontend/components/courtroom/ArgumentMap.tsx` + 移除 `reactflow` 依赖 + 更新 PRD / tech-spec / roadmap / README |
 | [0033](./0033-llm-trace-architecture.md) | **LLM Trace 架构：FileLogger JSON Lines 读端聚合 + REST + 前端时间轴可视化（v1.0.4 V1-ROADMAP M3）** | ✅ | `backend/internal/trace/` (NEW) + `backend/internal/api/handler_trace.go` (NEW) + `frontend/components/trace/` (NEW) + `frontend/lib/animations/` (NEW) |
-| [0034](./0034-silhouette-architecture.md) | **厕所标识剪影小人架构：原生 SVG + CSS keyframes + env var fallback（v2.0 V1-ROADMAP M4）** | ✅ | `frontend/components/courtroom/silhouettes/` (NEW) + `frontend/app/globals.css` (MODIFIED, + 90 行) + `frontend/components/courtroom/AgentAvatar.tsx` (MODIFIED) |
+| [0034](./0034-silhouette-architecture.md) | **厕所标识剪影小人架构：原生 SVG + CSS keyframes + env var fallback（v2.0 V1-ROADMAP M4）** | ⚠️ Superseded | `frontend/components/courtroom/silhouettes/` (NEW) + `frontend/app/globals.css` (MODIFIED, + 90 行) + `frontend/components/courtroom/AgentAvatar.tsx` (MODIFIED) |
+| [0034-supersede](./0034-supersede-2-5d-r3f.md) | **v2.0 剪影小人 supersede by 2.5D r3f 重构（用户反馈"简陋，要重做"，2026-08-22）** | ✅ Accepted | r3f + drei + three-pathfinding 选型；4 stage 串行推进；删除 silhouettes/ 整个目录 |
 
 ---
 
