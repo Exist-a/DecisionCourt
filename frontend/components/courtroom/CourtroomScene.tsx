@@ -131,91 +131,28 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     "messages" | "investigator" | "memory" | "belief"
   >("messages");
 
-  // Load initial data and connect WebSocket
+  // v1.0-patch (2026-08-22): hydrate 移到 app/court/[id]/page.tsx 共享
+  // hydrateCourtroomStore()。本 useEffect 只做 4 件事:
+  //   1. initAnalytics (绑定 sessionUUID 到埋点单例)
+  //   2. memory 降级到 localStorage 缓存 (D2-Memory 收尾,失败时 toast)
+  //   3. WebSocket 连接
+  //   4. TrialReplay Dialog 开关
+  //
+  // 之前这里有 6 段重复的 REST hydrate (session/agents/evidences/investigations/
+  // belief_diffs/memory), 与外层 hydrateCourtroomStore 双跑,
+  // 导致 evidences 数组里同 evidence_id 出现 2 次 → React key 重复警告。
+  // 修复: 删除本 useEffect 内的 REST hydrate, 改用 shared 函数。
+  useEffect(() => {
+    // v0.10 (ADR 0020):绑 sessionUUID 到 analytics 单例。
+    initAnalytics(sessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // 保留 D2-Memory 降级逻辑 (失败时从 localStorage 恢复 memory)
+  // — 独立 useEffect, 不依赖 store.evidences 等其他 store 字段
   useEffect(() => {
     let mounted = true;
-
-    // v0.10 (ADR 0020):绑 sessionUUID 到 analytics 单例。重复挂载同一 session
-    // (StrictMode dev 双调用 / 房间重连)安全——initAnalytics 幂等更新。
-    initAnalytics(sessionId);
-
-    async function load() {
-      try {
-        const sessionRes = await api.getSession(sessionId);
-        if (!mounted) return;
-        if (sessionRes.code === 0) {
-          setSession(sessionRes.data);
-        }
-      } catch (err) {
-        console.error("[Courtroom] failed to load session:", err);
-      }
-
-      try {
-        const agentsRes = await api.getAgents(sessionId);
-        if (!mounted) return;
-        if (agentsRes.code === 0) {
-          const agentsData = agentsRes.data as { agents?: Agent[] } | Agent[];
-          const agents = Array.isArray(agentsData)
-            ? agentsData
-            : (agentsData.agents ?? []);
-          setAgents(agents);
-        }
-      } catch (err) {
-        console.error("[Courtroom] failed to load agents:", err);
-      }
-
-      try {
-        const evidencesRes = await api.getEvidences(sessionId);
-        if (!mounted) return;
-        if (evidencesRes.code === 0) {
-          evidencesRes.data.evidences.forEach((e) => addEvidence(e));
-        }
-      } catch (err) {
-        console.error("[Courtroom] failed to load evidences:", err);
-      }
-
-      try {
-        const messagesRes = await api.getMessages(sessionId);
-        if (!mounted) return;
-        if (messagesRes.code === 0) {
-          messagesRes.data.messages.forEach((m) => addMessage(m));
-        }
-      } catch (err) {
-        console.error("[Courtroom] failed to load messages:", err);
-      }
-
-      // 历史调查发现：失败时不阻断 UI（老版本没有这个端点）。
-      try {
-        const invRes = await api.getInvestigations(sessionId);
-        if (!mounted) return;
-        if (invRes.code === 0 && Array.isArray(invRes.data.findings)) {
-          useCourtroomStore.getState().setInvestigationFindings(invRes.data.findings);
-        }
-      } catch (err) {
-        console.warn("[Courtroom] failed to load investigations (endpoint may be missing):", err);
-      }
-
-      // v0.6 信念轨迹历史：失败时不阻断 UI（老版本没这个端点）。
-      // 成功时把整张 belief_diffs 表塞进 store，让 reconnection 场景
-      // 也能恢复完整时间线，不需要等新一轮 belief.diff 事件。
-      try {
-        const diffRes = await api.getBeliefDiffs(sessionId);
-        if (!mounted) return;
-        if (diffRes.code === 0 && Array.isArray(diffRes.data.diffs)) {
-          setBeliefDiffs(diffRes.data.diffs);
-        }
-      } catch (err) {
-        console.warn("[Courtroom] failed to load belief diffs (endpoint may be missing):", err);
-      }
-
-      // v0.5 情节记忆时间线：失败时不阻断 UI（老版本没这个端点）。
-      // 成功时把每条 private memory 作为 `a2a.message` 事件回灌 store，
-      // 复用 applyCourtEvent 的同一条 parser 路径 —— 不再单独写一份
-      // 还原逻辑。这是 v0.8.3 修复"刷新后策略笔记 Tab 全空"的关键。
-      //
-      // D2-Memory (v0.10.x D2 silent-error-fix 收尾): 失败时降级到 localStorage 缓存,
-      // 并 toastWarning 提示用户。缓存来自上次成功拉到的 memory (按 session_uuid 隔离),
-      // 跨刷新仍可用。
+    async function loadMemory() {
       try {
         const memRes = await api.getVisibleMemory(sessionId);
         if (!mounted) return;
@@ -227,13 +164,11 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
               timestamp: row.created_at || new Date().toISOString(),
             });
           }
-          // 成功拉取 → 保存到 localStorage 备用
           const memory = useCourtroomStore.getState().memoryEntries;
           saveMemoryCache(sessionId, memory);
         }
       } catch (err) {
-        // fetchJson 失败 (5xx / 网络): 5xx 已 toastFatal (后端返回 envelope),
-        // 这里做"降级到 localStorage 缓存"补救
+        // 降级到 localStorage 缓存 (D2-Memory 收尾, 与外层 hydrate 解耦)
         const cached = loadMemoryCache(sessionId);
         if (cached) {
           for (const entry of cached.entries) {
@@ -248,14 +183,25 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
             "MEMORY_DEGRADED",
           );
         } else {
-          // 无缓存 + 失败 = 真没数据 (或首次访问)
           console.warn("[Courtroom] failed to load memory (no cache fallback):", err);
         }
       }
     }
+    void loadMemory();
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
-    load();
+  // v1.0-patch: 删除老的 load() 重复 hydrate 块 (session/agents/evidences/
+  // investigations/belief_diffs/memory 都移到外层 hydrateCourtroomStore + 
+  // 上方独立 memory useEffect)。本 useEffect 只做 WS + TrialReplay。
 
+  // WebSocket 连接 (原 useEffect 残留, 移出 try/catch 包裹)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let mounted = true;
     const socket = createCourtWebSocket(sessionId, {
       // v0.10.17 silent-error-fix PR 3: WS 连接状态变化 → toast 反馈。
       // 之前只在 console.log 打印,用户看不到。
