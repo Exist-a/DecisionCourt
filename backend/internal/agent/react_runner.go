@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -405,6 +406,9 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 			// LLM 在 stress 下违反频率 60%。失败时强制走非流式 retry,
 			// 让 LLM 看到错误信息重新生成。
 			streamSucceeded := false
+			// v1.0-patch (2026-08-22): hallucination 硬拒时保留 stream 内容作 fallback,
+			// retry 后仍空时恢复, 避免整轮 cross_exam 因空 content 中断。
+			var streamedFallback string
 			if r.cfg.OnSpeakChunk != nil {
 				if streamed, ok := r.streamSpeakContent(ctx, out, messages); ok {
 					out.Content = streamed
@@ -413,8 +417,23 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 			}
 			if streamSucceeded {
 				// 流式成功也跑 hallucination check,失败时回退到 retry 路径
+				// v1.0-patch (2026-08-22): 修复第一次质证 empty content 中断整轮 bug。
+				// 之前: validation 失败时 out.Content = "" 清空, retry 后仍失败 →
+				//   fall-through 返回空 content → saveAgentMessage guard 返 error →
+				//   整轮 cross_exam 中断 (用户反馈 "操作未能完成")。
+				// 现在: 保留 streamed content 在局部变量, retry 路径跑完后如果
+				//   out.Content 仍为空, 用 streamed content 恢复 (软降级, 不硬拒)。
+				//   反幻觉初衷保留: retry 有机会重新生成干净内容; retry 失败时
+				//   保留可能含具体数字的 stream 内容 (好过整轮中断)。
 				if valResult := ValidateAgainstHallucination(out.Content, out.EvidenceRefs, nil); !valResult.OK {
-					// 把 streamed content 丢掉,让 retry 路径重新生成
+					// 把 streamed content 存为 fallback (不清空 out.Content 之外的引用),
+					// 走 retry 路径让 LLM 重新生成
+					streamedFallback = out.Content
+					slog.Warn("streamSpeakContent hallucination validation failed, falling back to retry",
+						"mode", valResult.Issues[0].Mode,
+						"pattern", valResult.Issues[0].Pattern,
+						"content_len", len(streamedFallback),
+					)
 					streamSucceeded = false
 					out.Content = "" // 清空,触发 retry 路径
 				} else {
@@ -480,6 +499,14 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 				// If still invalid after retry, fall through with the
 				// partial output so we still produce a Speaker rather than
 				// aborting the user's turn.
+				// v1.0-patch (2026-08-22): retry 后 content 仍空时恢复
+				// streamedFallback (软降级), 避免整轮 cross_exam 中断。
+				if strings.TrimSpace(out.Content) == "" && streamedFallback != "" {
+					slog.Warn("retry failed, restoring streamed fallback content",
+						"fallback_len", len(streamedFallback),
+					)
+					out.Content = streamedFallback
+				}
 			}
 			step.ElapsedMs = time.Since(stepStart).Milliseconds()
 			steps = append(steps, step)
@@ -1017,6 +1044,19 @@ func (r *ReActRunner) streamSpeakContent(
 	}
 
 	if lastExtracted == "" {
+		// 2026-08-22 用户反馈 bug 修复: silent error 黑洞 — 流式解析可能收集了
+		// raw 但 lastExtracted 仍空(LLM 输出了畸形 JSON: `{"content":""}` 闭合 quote 后
+		// partial 提取到了空字符串;或 LLM 输出非 JSON markdown 代码块)。
+		// 打印 raw 帮助诊断 (上限 500 字符避免日志爆)。
+		rawDump := collected.String()
+		if len(rawDump) > 500 {
+			rawDump = rawDump[:500] + "...(truncated)"
+		}
+		slog.Warn("streamSpeakContent: empty lastExtracted",
+			"chunks", chunks,
+			"raw_len", collected.Len(),
+			"raw_preview", rawDump,
+		)
 		return "", false
 	}
 	return lastExtracted, true
