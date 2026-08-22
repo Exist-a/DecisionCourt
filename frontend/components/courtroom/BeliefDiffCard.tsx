@@ -54,7 +54,10 @@ function directionArrow(delta: number) {
 }
 
 export function BeliefDiffCard({ diff }: BeliefDiffCardProps) {
-  const SourceIcon = sourceIcons[diff.source];
+  // v1.0-patch (2026-08-22): 防御性 fallback - 后端可能返回 sourceIcons 表里没列出
+  // 的新 source 值 (如 agent_message / cross_exam_action), 否则
+  // <SourceIcon /> 渲染 undefined -> React 报 "Element type is invalid"。
+  const SourceIcon = sourceIcons[diff.source as keyof typeof sourceIcons] ?? null;
   const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
   const deltaSign = diff.delta_belief_a > 0 ? "+" : "";
   // Only show the source icon when it's not the default (evidence) — keeps
