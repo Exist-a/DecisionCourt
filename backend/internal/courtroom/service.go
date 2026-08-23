@@ -2046,6 +2046,19 @@ func (s *Service) saveAgentMessage(
 	log.Printf("[v0.6][saveAgentMessage] session=%s agentType=%s phase=%s round=%d agentID=%s len(content)=%d",
 		sessionID, agent.AgentType, phase, round, agent.ID, len(speaker.Content))
 
+	// 防御 (2026-08-22 用户反馈 bug 修复):
+	// 历史曾因 LLM 流式解析失败 + hallucination validation retry 也失败,导致
+	// saveAgentMessage 存入空 content → 前端气泡显示「」空内容。
+	// silent error 黑洞 (与 v0.10.17 修复的 react_runner silent fail 同类)。
+	// 这里加 hard reject: content 为空时返 error,不污染 DB。
+	if strings.TrimSpace(speaker.Content) == "" {
+		return fmt.Errorf(
+			"saveAgentMessage: refusing to persist empty content (silent error guard) "+
+				"session=%s agentType=%s phase=%s round=%d agentID=%s",
+			sessionID, agent.AgentType, phase, round, agent.ID,
+		)
+	}
+
 	msg := model.Message{
 		SessionID:    sessionID,
 		AgentID:      &agent.ID,

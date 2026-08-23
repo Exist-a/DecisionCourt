@@ -27,6 +27,7 @@ import (
 	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/decisioncourt/backend/internal/promptlab"
+	"github.com/decisioncourt/backend/internal/trace"
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/decisioncourt/backend/internal/util"
 	"github.com/gin-contrib/cors"
@@ -183,6 +184,19 @@ func main() {
 	handler.WithMetrics(metrics)
 	// v0.10 前端埋点 (ADR 0020)：复用同一个 eventRecorder,前端事件落同一张表。
 	handler.WithEventRecorder(eventRecorder)
+
+	// v1.0.4 PR-C1 (修复): 注入 trace.Store 让 /api/v1/courtrooms/:uuid/traces 路由可注册。
+	// 之前 PR-C1 在 handler 侧加了 traceStore 字段 + RegisterTraceRoutes,
+	// 但 main.go 忘了 NewFileTraceStore 注入, 导致 handler.traceStore == nil,
+	// RegisterTraceRoutes(nil) 静默 return, /traces 端点从未注册 → 404。
+	// 复用 AGENT_GATEWAY_LOG_DIR (与 agent_gateway.FileLogger 同目录),
+	// 单文件 LRU 100 entries 缓存 (FileTraceStore 默认)。
+	traceLogDir := os.Getenv("AGENT_GATEWAY_LOG_DIR")
+	if traceLogDir == "" {
+		traceLogDir = "logs"
+	}
+	handler.WithTraceStore(trace.NewFileTraceStore(traceLogDir))
+	slog.Info("trace store enabled", "log_dir", traceLogDir, "type", "FileTraceStore")
 
 	// v0.9 (ADR 0014): 每用户每天 N 次 StartTrial 限流(防弱网/脚本刷 trial 烧 LLM 配额)。
 	// 默认 5 次/24h,可通过 USER_TRIAL_LIMIT 环境变量调整;置 0 禁用。
