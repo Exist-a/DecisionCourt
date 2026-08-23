@@ -116,6 +116,7 @@
 | v1.0-patch ee7ac1b | 19 包 PASS | 90 | +2 BeliefDiffCard fallback, +2 websocket disconnect |
 | v1.0-patch f3a93e0 | 19 包 PASS（agent 包 +2） | 90 | +2 streamedFallback |
 | v1.0-patch (本 commit) | 19 包 PASS（api 包 +1 PayloadNestedContract） | 92 | +2 hydrate 静态回归 |
+| v1.0-patch Round 2 (本 session) | 19 包 PASS | 92 | 无新单测（修 UI + 类型补 + fail-fast log） |
 
 ## 四、Commit 索引
 
@@ -128,7 +129,12 @@
 | `9b9bbb6` | F5 BeliefDiffCard SourceIcon fallback |
 | `ee7ac1b` | F6 WS closedByUser 顺序 + toast z-[100] |
 | `f3a93e0` | F7 hallucination 硬拒软降级（streamedFallback） |
-| (本 commit) | F8 策略笔记 hydrate 字段映射错误（U1/U2/U3 三件套：删错 setMemoryEntries + MemoryTimeline kind fallback + MemoryAuditPanel kindCounts 防御 + 后端 payload 嵌套契约测试） |
+| `647a5dc` | F8 策略笔记 hydrate 字段映射错误（U1/U2/U3 三件套：删错 setMemoryEntries + MemoryTimeline kind fallback + MemoryAuditPanel kindCounts 防御 + 后端 payload 嵌套契约测试） |
+| `9353100` | F9 PR-C1 trace store 注入 + saveAgentMessage empty content guard + UTF-8 repro test |
+| `b705597` | F10 TrialReplay render-body setState 修复 + TraceRun 类型补 input/output/tags + 日期选择器 |
+| `9e80521` | F11 CourtroomScene 返回首页按钮 + verdict 回庭审跳转显式化 |
+| `ef79bda` | F12 TrialHistoryList 配色修正 + 新建庭审按钮 + 切 trial reset + 删除二次确认 |
+| `4c8e9f6` | F13 BeliefDiffTimeline/RebuttalTraceNode mock 数据 + traceStore nil fail-fast |
 
 ---
 
@@ -137,3 +143,8 @@
 1. 抽公共函数时必须**逐项核对**老代码的端点清单（F4 漏 messages 即此教训）。
 2. 后端 REST 返回嵌套结构（payload.content）与 WS 事件路径（applyCourtEvent）**字段层级不同**，映射时必须分别对齐（U1 根因）。
 3. 每次前端修改后必须浏览器实测，不能只靠 tsc + unit test（本 session 多个 bug 均由用户实测发现）。
+4. **React 反模式（render-body setState）会触发 console warn + 重复 fetch**：F10 TrialReplay L54-65 之前在 render body 里 setSelectedTraceID + 启动 fetchTrace，每次 re-render 重新拉。**所有组件**的状态变更必须包 useEffect，不能直接在函数体顶层调用 setState。
+5. **UI 头部必须有"返回/退出"按钮**：F11 CourtroomScene header 完全没有返回首页按钮，用户进入庭审后只能浏览器 back（跨页面残留 store）。**任何长流程页面**顶部都该有显式退出按钮 + reset()。
+6. **颜色类名必须与背景主题一致**：F12 PhaseChip 用了 dark theme (`bg-amber-900/30`) 但背景是 white，几乎不可见。**所有 chip / badge / status 组件**写代码时核对所在容器背景。
+7. **PR 半完成是隐性 bug 重灾区**：F9 PR-C1 历史漏注 trace store 导致 /traces 404，但启动期无任何告警。**任何 PR** 提交前 checklist 必须包含"实际启动后调端点验证 200"。F9+ F13 加 fail-fast log 正是防这种回归。
+8. **本机浏览器实测限制**：本环境 IAB webview 无法访问 docker dev stack localhost:3000（解析到 IAB 自己），所以 F11/F12 提交只能用静态分析 + 代码自检覆盖，浏览器实测依赖用户本地 merge 后跑一次。

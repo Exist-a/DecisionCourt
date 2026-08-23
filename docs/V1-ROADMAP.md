@@ -40,7 +40,17 @@
 
 **v1.0-patch 系列**（2026-08-22~23，7 commit `d72f860..f3a93e0`）：浏览器 back bug / 历史庭审回看 / 跨 session 证据污染 / hydrate 补 messages / BeliefDiffCard 渲染崩溃 / WS 断连 toast / 质证 empty content 软降级。详见 [todo/bugfix-log-2026-08-23.md](./todo/bugfix-log-2026-08-23.md)。
 
-**当前阻塞**：⏸ **3 个未解决问题**（策略笔记 U1/U2/U3，见 [todo/bugfix-log-2026-08-23.md §二](./todo/bugfix-log-2026-08-23.md)）—— 判决书/历史庭审策略笔记为空 + 点击渲染出错。根因已定位（hydrate memory 映射读错字段层级），待下次 session 修复。修复后再决策 v2.0 REDESIGN 阶段 1（PR-D1）启动。
+**v1.0-patch Round 2**（2026-08-23，5 commit `647a5dc..4c8e9f6`，合计 13 commit 含 Round 1）：
+- `647a5dc` U1/U2/U3 策略笔记 hydrate 字段映射错误（Round 1 已修）
+- `9353100` PR-C1 trace store 注入（v1.0.4 历史漏注）+ saveAgentMessage empty content guard + UTF-8 repro test
+- `b705597` TrialReplay render-body setState 反模式修复 + TraceRun 类型补 input/output/tags
+- `9e80521` CourtroomScene 返回首页按钮 + verdict 回庭审跳转显式化（用户反馈"庭审回访按钮全是 bug"）
+- `ef79bda` TrialHistoryList 配色修正 + 新建庭审按钮 + 切 trial reset
+- `4c8e9f6` BeliefDiffTimeline/RebuttalTraceNode mock 数据 + traceStore nil fail-fast
+- (本 commit): 文档同步
+详情见 [todo/bugfix-log-2026-08-23.md §F8-F12](./todo/bugfix-log-2026-08-23.md)。
+
+**当前阻塞**：✅ Round 1/2 共 12 个 bug 全修（8 个 v1.0-patch + 4 个 Round 2 高优）。剩余 deferred：D2 cross-exam content 空（`saveAgentMessage` 入口已加防御性 sanity check，等完整 silent-error 修复 PR）+ D3 direct_verdict fallback round + D1 安全审计 P1-P3（用户授权启动）+ M5 v3.0 端侧 TTS / v2.0 REDESIGN（用户 2026-08-23 确认不启动）。
 
 ---
 
