@@ -33,10 +33,16 @@ export default function CourtPage() {
   // v1.0-patch: hydrate 补 messages + activeInvestigation (原 verdict 老代码有, 抽函数时漏了)
   const setMessages = useCourtroomStore((s) => s.setMessages);
   const setActiveInvestigation = useCourtroomStore((s) => s.setActiveInvestigation);
+  // v1.0-patch-2 (Bug-UI-6 修复): 切 trial 时先 reset store, 防止前 session 残留
+  const reset = useCourtroomStore((s) => s.reset);
 
   useEffect(() => {
     let mounted = true;
     void (async () => {
+      // 先 reset store (清掉前一个 trial 的 session/agents/evidences/messages/
+      // belief_diffs/memoryEntries/investigationFindings/activeInvestigation/cotTrail 等),
+      // 然后再 hydrate 新 session — 避免切 trial 时残留显示前 session 数据。
+      reset();
       await hydrateCourtroomStore(sessionId, {
         setSession,
         setAgents,

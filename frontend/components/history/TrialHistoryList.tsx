@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, History, X, Scale, Gavel } from "lucide-react";
+import { ChevronDown, ChevronRight, History, X, Scale, Gavel, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,8 +55,12 @@ export function TrialHistoryList() {
     };
   }, []);
 
-  // 删除
-  function handleRemove(uuid: string) {
+  // 删除 — v1.0-patch-2 (Bug-UI-7 修复): 加二次确认防误删
+  function handleRemove(uuid: string, title: string) {
+    const ok = window.confirm(
+      `确认从历史列表中删除「${title}」?\n\nDB 数据会保留, 只是从首页列表隐藏。`,
+    );
+    if (!ok) return;
     removeHistoryItem(uuid);
     setItems((prev) => prev.filter((x) => x.sessionUUID !== uuid));
   }
@@ -71,6 +75,11 @@ export function TrialHistoryList() {
     router.push(`/court/${uuid}`);
   }
 
+  // v1.0-patch-2 (Bug-UI-5 修复): 新建庭审按钮 — 折叠面板展开后用户必须滚到顶部才能立案。
+  function handleNewTrial() {
+    router.push("/");
+  }
+
   // 折叠态: items=0 直接不渲染整个面板 (空 UI 无意义)
   if (items.length === 0) return null;
 
@@ -78,25 +87,38 @@ export function TrialHistoryList() {
     <section className="container mx-auto max-w-5xl px-6 pb-8">
       <Card className="bg-paperDeep border border-rule shadow-paper p-6">
         {/* 折叠头部 */}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center gap-2 text-ink hover:text-inkSoft w-full"
-          aria-expanded={!collapsed}
-          data-testid="trial-history-toggle"
-        >
-          {collapsed ? (
-            <ChevronRight className="w-4 h-4" />
-          ) : (
-            <ChevronDown className="w-4 h-4" />
-          )}
-          <History className="w-4 h-4 text-prosecution" />
-          <h3 className="text-display text-sm font-semibold tracking-wider">
-            历 史 庭 审
-          </h3>
-          <span className="text-[10px] text-inkFaint font-data ml-auto">
-            {items.length} 条
-          </span>
-        </button>
+        <div className="flex items-center justify-between gap-2">
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="flex items-center gap-2 text-ink hover:text-inkSoft"
+            aria-expanded={!collapsed}
+            data-testid="trial-history-toggle"
+          >
+            {collapsed ? (
+              <ChevronRight className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+            <History className="w-4 h-4 text-prosecution" />
+            <h3 className="text-display text-sm font-semibold tracking-wider">
+              历 史 庭 审
+            </h3>
+            <span className="text-[10px] text-inkFaint font-data ml-2">
+              {items.length} 条
+            </span>
+          </button>
+          {/* v1.0-patch-2 (Bug-UI-5 修复): 新建庭审按钮 — 折叠面板内也能一键立案 */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleNewTrial}
+            className="text-ink hover:bg-paper h-7 px-3 text-[10px] font-data tracking-wider print:hidden"
+            data-testid="trial-history-new"
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            新建庭审
+          </Button>
+        </div>
 
         {!collapsed && (
           <div className="mt-4 space-y-2">
@@ -148,7 +170,7 @@ export function TrialHistoryList() {
                   <Button
                     size="icon"
                     variant="ghost"
-                    onClick={() => handleRemove(item.sessionUUID)}
+                    onClick={() => handleRemove(item.sessionUUID, item.title)}
                     className="text-inkFaint hover:text-prosecution h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
                     aria-label="删除历史记录"
                     data-testid="trial-history-remove"
@@ -173,9 +195,12 @@ function PhaseChip({
   verdictReady: boolean;
 }) {
   const label = phaseToLabel(phase);
+  // v1.0-patch-2 (Bug-UI-3 P1 修复): 原配色 bg-amber-900/30 text-amber-300 是
+  // dark theme, 但 trial history item 背景是 bg-white (light theme), chip 几乎不可见。
+  // 改 light theme: verdictReady 用 amber-50/800/300, 进行中用 stone-100/700/300。
   const className = verdictReady
-    ? "bg-amber-900/30 text-amber-300 border-amber-700/40"
-    : "bg-stone-700/40 text-stone-300 border-stone-600/40";
+    ? "bg-amber-50 text-amber-800 border-amber-300"
+    : "bg-stone-100 text-stone-700 border-stone-300";
   return (
     <span
       className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border rounded-sm font-data ${className}`}
