@@ -27,6 +27,10 @@ const TraceDateFormat = "2006-01-02"
 //   - nil h.traceStore 时不注册路由 (降级 404)
 func (h *Handler) RegisterTraceRoutes(api *gin.RouterGroup) {
 	if h.traceStore == nil {
+		// v1.0-patch-2 (Bug-8 LOW 修复): 启动期 fail-fast — 之前静默 return,
+		// 若 main.go 漏注 traceStore, /traces 端点会返 404 但启动日志无任何告警,
+		// 难以追溯。改成 slog.Error 警告 + 仍不注册路由 (保持向后兼容)。
+		slog.Error("RegisterTraceRoutes: traceStore is nil — /traces 端点将 404, 检查 main.go 是否漏调 handler.WithTraceStore()")
 		return
 	}
 	api.GET("/courtrooms/:session_uuid/traces", h.ListTraces)

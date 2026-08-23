@@ -52,6 +52,14 @@ export function BeliefDiffTimeline({ sessionUUID }: BeliefDiffTimelineProps) {
 
   useEffect(() => {
     if (useMock) {
+      // v1.0-patch-2 (Bug-4 MEDIUM 修复): mock 模式填一组 demo 数据, 不再静默空态。
+      // 首页 demo 场景下用户能看到信念曲线功能, 不需要拉真实 trial。
+      setData([
+        { round: 0, prosecutor: 0.5, defender: 0.5, investigator: 0.5, judge: 0.5 },
+        { round: 1, prosecutor: 0.65, defender: 0.45, investigator: 0.55, judge: 0.5 },
+        { round: 2, prosecutor: 0.7, defender: 0.4, investigator: 0.6, judge: 0.55 },
+        { round: 3, prosecutor: 0.72, defender: 0.38, investigator: 0.58, judge: 0.6 },
+      ]);
       setLoading(false);
       return;
     }
@@ -72,8 +80,13 @@ export function BeliefDiffTimeline({ sessionUUID }: BeliefDiffTimelineProps) {
         for (const d of diffs) {
           const existing = byRound.get(d.round) ?? { round: d.round };
           // posterior_belief_a 是更新后的值,直接采样
+          // v1.0-patch-2 (Bug-5 MEDIUM): agent_type 不在 agentColors 时静默丢点 → 加 debug 日志
           if (d.agent_type in agentColors) {
             (existing as Record<string, number>)[d.agent_type] = d.posterior_belief_a;
+          } else {
+            console.debug(
+              `[BeliefDiffTimeline] skip agent_type=${d.agent_type} (clerk 等非画线角色)`,
+            );
           }
           byRound.set(d.round, existing);
         }
