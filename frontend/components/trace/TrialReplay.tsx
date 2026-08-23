@@ -13,7 +13,7 @@
 //   useTraces(sessionUUID, date) → traces[] → 左侧列表
 //   fetchTrace(sessionUUID, traceID) → 详情 (含 tree) → AgentTraceNode 渲染
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Activity, TrendingUp, Swords } from "lucide-react";
 import {
   Dialog,
@@ -44,29 +44,47 @@ function formatDuration(startIso: string, endIso: string): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+// v1.0-patch-2 (2026-08-23): date state 加 UI 默认今天, 后端 ?date=YYYY-MM-DD 查询参数已支持。
+// v1.0-patch-2: 修 render-body setState 反模式 (selectedTraceID / fetchTrace 都抽到 useEffect)。
+function todayStr(): string {
+  // 本地时区 YYYY-MM-DD (与后端 handler_trace.go:42 接受格式对齐)
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function TrialReplay({ sessionUUID, open, onOpenChange }: TrialReplayProps) {
-  const { traces, loading } = useTraces(sessionUUID, "");
+  const [date, setDate] = useState<string>(todayStr());
+  const { traces, loading } = useTraces(sessionUUID, date);
   const [selectedTraceID, setSelectedTraceID] = useState<string | null>(null);
   const [traceDetail, setTraceDetail] = useState<Trace | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // 自动选第一个 trace
-  if (selectedTraceID === null && traces.length > 0) {
-    setSelectedTraceID(traces[0].trace_id);
-  }
+  // v1.0-patch-2 (Bug-1 修复): traces 加载完成后自动选第一个, 抽到 useEffect 防 render-body setState。
+  useEffect(() => {
+    if (selectedTraceID === null && traces.length > 0) {
+      setSelectedTraceID(traces[0].trace_id);
+    }
+  }, [traces, selectedTraceID]);
 
-  // 选中 trace 时拉详情
-  if (selectedTraceID && (!traceDetail || traceDetail.trace_id !== selectedTraceID)) {
+  // v1.0-patch-2 (Bug-1 修复): 选中 trace 时拉详情, 抽到 useEffect + cancelled 守卫防竞态。
+  useEffect(() => {
+    if (!selectedTraceID) return;
+    let cancelled = false;
     setDetailLoading(true);
     void fetchTrace(sessionUUID, selectedTraceID).then((t) => {
+      if (cancelled) return;
       setTraceDetail(t);
       setDetailLoading(false);
     });
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionUUID, selectedTraceID]);
 
   function handleSelectTrace(traceID: string) {
     setSelectedTraceID(traceID);
-    setTraceDetail(null); // 触发重新拉
+    setTraceDetail(null); // 触发 useEffect 重 fetch
   }
 
   return (
@@ -78,6 +96,32 @@ export function TrialReplay({ sessionUUID, open, onOpenChange }: TrialReplayProp
             按时间轴回顾所有 LLM 调用,展开 trace 看 prompt/output 详情
           </DialogDescription>
         </DialogHeader>
+
+        {/* v1.0-patch-2 (Bug-2 修复): 日期选择器 — 后端 ?date=YYYY-MM-DD 已支持, 之前写死空串永远查今天。 */}
+        <div className="flex items-center gap-2 text-xs text-stone-400 px-1">
+          <label htmlFor="trial-replay-date" className="font-data tracking-wider">
+            日期:
+          </label>
+          <input
+            id="trial-replay-date"
+            type="date"
+            value={date}
+            onChange={(e) => {
+              setDate(e.target.value);
+              setSelectedTraceID(null); // 切日期时清掉选中
+              setTraceDetail(null);
+            }}
+            className="bg-stone-900 border border-stone-700 text-stone-200 rounded px-2 py-1 text-xs font-data"
+            data-testid="trial-replay-date"
+          />
+          <button
+            type="button"
+            onClick={() => setDate(todayStr())}
+            className="text-stone-500 hover:text-stone-200 text-xs font-data underline"
+          >
+            今天
+          </button>
+        </div>
 
         <div className="grid grid-cols-[200px_1fr] gap-3 mt-2 min-h-[400px]">
           {/* 左侧 trace 列表 */}

@@ -117,6 +117,23 @@ export function AgentTraceNode({ node, depth = 0 }: AgentTraceNodeProps) {
             <div className="text-stone-500">
               <span className="font-mono">trace_id:</span> {run.trace_id}
             </div>
+            {/* v1.0-patch-2 (Bug-3): 显示后端 omitempty input/output/tags 字段 */}
+            {run.input && Object.keys(run.input).length > 0 && (
+              <div>
+                <div className="text-stone-500 font-mono mb-1">input:</div>
+                <pre className="bg-stone-900/60 p-2 rounded text-stone-300 overflow-x-auto whitespace-pre-wrap break-words">
+                  {JSON.stringify(run.input, null, 2)}
+                </pre>
+              </div>
+            )}
+            {run.output && (
+              <div>
+                <div className="text-stone-500 font-mono mb-1">output:</div>
+                <pre className="bg-stone-900/60 p-2 rounded text-stone-300 overflow-x-auto whitespace-pre-wrap break-words">
+                  {run.output}
+                </pre>
+              </div>
+            )}
             {run.error_msg && (
               <pre className="bg-stone-900/60 p-2 rounded text-red-300 overflow-x-auto whitespace-pre-wrap break-words">
                 {run.error_msg}

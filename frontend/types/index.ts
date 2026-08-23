@@ -597,6 +597,11 @@ export interface TraceRun {
   status: "ok" | "error";
   error_msg?: string;
   retry_count: number;
+  // v1.0-patch-2 (Bug-3): 后端 Run.Input/Output/Tags (omitempty) 字段补到前端类型,
+  // 否则将来 AgentTraceNode 想展开 prompt/output 时字段缺失 → undefined。
+  input?: Record<string, unknown>;
+  output?: string;
+  tags?: Record<string, string>;
 }
 
 export interface TraceRunNode {
