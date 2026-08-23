@@ -29,11 +29,14 @@
 | **v1.0.4 PR-C4** | ✅ | release notes + ADR 0033 + V1-ROADMAP 同步（`726af6e`） |
 | **v2.0 PR-D1+D2** | ✅ | 厕所标识剪影小人 SVG + AgentAvatar 接入 + 5 sub-test (`50e1746`) |
 | **v2.0 PR-D3** | ✅ | release notes + ADR 0034 + V1-ROADMAP 同步（`c78182f` → `6e0588b`）|
-| **v2.0 REDESIGN 文档** | ✅ | 用户反馈"简陋，要重做" → r3f + drei + three-pathfinding 重构计划（[V2.0-REDESIGN-PLAN.md](./V2.0-REDESIGN-PLAN.md) + 4 stage 文档 + ADR 0034-supersede）|
+| **v2.0 REDESIGN 文档** | ⚠️ **已 SUPERSEDED** | 2026-08-22 用户反馈"简陋，要重做" → r3f + drei + three-pathfinding 重构计划（[V2.0-REDESIGN-PLAN.md](./V2.0-REDESIGN-PLAN.md) + 4 stage 文档 + ADR 0034-supersede）|
+| **v2.0 REDESIGN PR-D1** | ⚠️ **已回退** | r3f + drei + three-pathfinding 基础设施 + Playwright E2E（`5856c95`，git reset 已消失）|
+| **v2.0 REDESIGN PR-D2 ~ D2.9** | ⚠️ **已回退** | 9 个 commit 试错 3D 重构失败（深木 → 浅橡木 → 游戏风格），git reset 已消失 |
+| **Postmortem v2.0 REDESIGN 3D PIVOT** | ✅ | [完整复盘](./postmortem/v2.0-redesign-3d-pivot.md) — 5 Whys 根因 + 教训 + 行动项 |
 | **ArgumentMap 移除** | ✅ | ADR 0032 + `16332aa`，用户反馈"完全没用" |
 | **dozzle 移除** | ✅ | `29daff0`，Windows Docker Desktop npipe 不兼容 |
 | **D2 + D3 修复** | ✅ | `694a89e`，cross-exam silent error + 直接判决 fallback "共 0 轮" |
-| ADR 累计 | 35 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede |
+| ADR 累计 | 36 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) |
 | Go 测试 | ~326 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) |
 | Frontend 测试 | 90 (7 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 (trialHistory 2 + BeliefDiffCard 2 + websocket 2) |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |

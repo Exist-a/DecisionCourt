@@ -125,6 +125,23 @@ Agent 需要熟悉以下核心文档：
 - `docs/V1-ROADMAP.md` — v1 → v2 路线图（M0 ✅ / M1 候选 4 / M2 商业化 / M3 安全 P1 / M4 v2.0）
 - `docs/adr/0029-deepseek-v4-migration.md` — DeepSeek v3→v4 模型硬迁移决策
 
+### 6.2d v2.0 REDESIGN PIVOT 历史（2026-08-22 → 23，**已完全回退**）
+
+> **⚠️ 关键历史**：v2.0 REDESIGN 尝试 3D r3f 重构（11 个 commit 累计 9 commit 视觉试错失败），用户决定放弃 3D 路线，**git reset --hard 5fd803b 完全回退**。当前项目状态是 v1.0.4 PR-C4，v2.0 原始剪影方案保留。
+
+**相关文档**（全部为历史/归档）：
+- [`docs/postmortem/v2.0-redesign-3d-pivot.md`](postmortem/v2.0-redesign-3d-pivot.md) — **完整复盘**（5 Whys 根因 + 教训 + 行动项）— 新代码改动前必读
+- [`docs/V2.0-REDESIGN-PLAN.md`](V2.0-REDESIGN-PLAN.md) — 3D r3f 重构规划（**已 SUPERSEDED**）
+- [`docs/v2-redesign/`](v2-redesign/) — 阶段 1-4 详细文档（**全部 SUPERSEDED**）
+- [`docs/adr/0034-archive-3d-pivot.md`](adr/0034-archive-3d-pivot.md) — 三次决策链终态（剪影 → r3f → 二次归档）
+- [`docs/adr/0034-supersede-2-5d-r3f.md`](adr/0034-supersede-2-5d-r3f.md) — supersede 原版（状态 ⚠️ Archived by 0034-archive）
+
+**给未来 Agent 的新规则**（从 postmortem §5 提炼）：
+1. **能力边界前置评估**——超出 Agent 能力的任务（3D / 美术 / 真实照片），**不开始**
+2. **3 次失败换方向**——同一任务连续 ≥3 次用户反馈负面，**主动报告**"需要换方向"，不"再调一下"
+3. **抽象 > 模拟**——法庭的"语义"（天平 / 金色 / 对比）能用 CSS 表达，不需要 3D 物理真实
+4. **"用户给参考图"是视觉重做的正确路径**——不"自由发挥"
+
 ## 7. 禁止事项
 
 Agent 在工作过程中禁止：

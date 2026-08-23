@@ -2,7 +2,9 @@
 
 > **ADR**（Architecture Decision Record）是业界标准的"决策追溯"机制 —— 每份记录一个**已确定**的关键架构决策，包含**背景 / 选项对比 / 决策 / 后果**，便于后续维护者理解"为什么是这样"。
 >
-> 本目录收录 34 份关键决策，编号递增。修改 ADR 必须保留"决策当时"的上下文；如果决策变更，应该新增一份"撤销 / 替代"的 ADR。
+> 本目录收录 36 份关键决策（含 2 份 ⚠️ Archived — 0034-supersede / 0034-archive v2.0 REDESIGN 3D 路线），编号递增。修改 ADR 必须保留"决策当时"的上下文；如果决策变更，应该新增一份"撤销 / 替代"的 ADR。
+>
+> **最新更新 (2026-08-23)**：v2.0 REDESIGN 3D r3f 重构路线**完全放弃**——11 个 commit 通过 `git reset --hard 5fd803b` 已回退。详见 [Postmortem](../postmortem/v2.0-redesign-3d-pivot.md) 与 [0034-archive](./0034-archive-3d-pivot.md)。
 
 ---
 
@@ -42,7 +44,8 @@
 | [0032](./0032-remove-argument-map.md) | **移除 ArgumentMap 观点地图（叙事流优先于信息图重写，v1.0.3）** | ✅ | 删除 `frontend/components/courtroom/ArgumentMap.tsx` + 移除 `reactflow` 依赖 + 更新 PRD / tech-spec / roadmap / README |
 | [0033](./0033-llm-trace-architecture.md) | **LLM Trace 架构：FileLogger JSON Lines 读端聚合 + REST + 前端时间轴可视化（v1.0.4 V1-ROADMAP M3）** | ✅ | `backend/internal/trace/` (NEW) + `backend/internal/api/handler_trace.go` (NEW) + `frontend/components/trace/` (NEW) + `frontend/lib/animations/` (NEW) |
 | [0034](./0034-silhouette-architecture.md) | **厕所标识剪影小人架构：原生 SVG + CSS keyframes + env var fallback（v2.0 V1-ROADMAP M4）** | ⚠️ Superseded | `frontend/components/courtroom/silhouettes/` (NEW) + `frontend/app/globals.css` (MODIFIED, + 90 行) + `frontend/components/courtroom/AgentAvatar.tsx` (MODIFIED) |
-| [0034-supersede](./0034-supersede-2-5d-r3f.md) | **v2.0 剪影小人 supersede by 2.5D r3f 重构（用户反馈"简陋，要重做"，2026-08-22）** | ✅ Accepted | r3f + drei + three-pathfinding 选型；4 stage 串行推进；删除 silhouettes/ 整个目录 |
+| [0034-supersede](./0034-supersede-2-5d-r3f.md) | **v2.0 剪影小人 supersede by 2.5D r3f 重构（用户反馈"简陋，要重做"，2026-08-22）** | ⚠️ **Archived** by [0034-archive](./0034-archive-3d-pivot.md) | r3f + drei + three-pathfinding 选型；4 stage 串行推进；删除 silhouettes/ 整个目录 — **PR-D2.9 二次归档，最终未采用 3D 路线** |
+| [0034-archive](./0034-archive-3d-pivot.md) | **v2.0 REDESIGN 3D 路线二次归档（PR-D2.9 放弃，2026-08-23）** | ✅ **Archived** | 用户决定"放弃 3D，保留圆点"——git reset --hard 5fd803b 完全回退 11 个 commit。详见 [Postmortem](../postmortem/v2.0-redesign-3d-pivot.md) |
 
 ---
 

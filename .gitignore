@@ -45,6 +45,10 @@ coverage/
 
 # Test artifacts（集成测试输出的 UUID-named JSON 快照；本地保留，仓库不追踪）
 backend/test-output/
+# v2.0 REDESIGN PR-D1 加: Playwright E2E 产物 (截图 / video / trace)
+# 见 docs/postmortem/v2.0-redesign-3d-pivot.md (2026-08-23 回退后, 规则保留以防未来重启用)
+frontend/test-output/
+frontend/test-results/
 
 # Database
 *.db
