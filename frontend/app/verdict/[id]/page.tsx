@@ -281,13 +281,14 @@ export default function VerdictPage() {
           <div className="flex items-center gap-3">
             {/* v1.0-patch (2026-08-22): 顶部显眼"返回庭审现场"按钮 — 替代藏底部的 reopen_trial。
                 用户反馈"判决书要加返回按钮"实际 reopen_trial 已存在, 只是位置隐藏。
-                这里用 router.back() 而非 reopen_trial, 让浏览器 back 与按钮行为一致
-                (不调 reopen_trial 重新跑状态机, 保持 verdict 页当前 phase 静止)。
+                v1.0-patch-2 (Bug-UI-2 修复): 改用 router.push(/court/<uuid>) 显式跳转,
+                不再用 router.back() — 因为首页 TrialHistoryList 直接 push /verdict/<uuid>,
+                无浏览器历史可 back, 旧实现什么也不做或跳回首页。
                 底部原"重新开庭"按钮保留, 用于用户主动 reopen 重新辩论。 */}
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.back()}
+              onClick={() => router.push(`/court/${sessionId}`)}
               className="text-ink hover:bg-paper rounded-sm px-2 h-8 text-xs font-data tracking-wider print:hidden"
               data-testid="verdict-back-button"
             >

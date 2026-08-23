@@ -57,6 +57,7 @@ import {
   Brain,
   Activity,
   History,
+  ArrowLeft, // v1.0-patch-2: 返回首页按钮
 } from "lucide-react";
 
 interface CourtroomSceneProps {
@@ -93,6 +94,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     setVerdict,
     toggleRealCourthouseMode,
     setBeliefDiffs,
+    reset, // v1.0-patch-2: 返回首页按钮 + handleViewVerdict 都用
   } = useCourtroomStore();
 
   const [ws, setWs] = useState<ReturnType<typeof createCourtWebSocket> | null>(
@@ -426,8 +428,20 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     const res = await api.getVerdict(sessionId);
     if (res.code === 0) {
       setVerdict(res.data);
+      // v1.0-patch-2: verdict 页会重新 hydrate, 不需要这里 reset()。但保险起见
+      // 也清掉 cotTrail / pendingUserAction (本地 UI 状态), 防止 verdict 页残留。
+      reset();
       router.push(`/verdict/${sessionId}`);
     }
+  };
+
+  // v1.0-patch-2 (Bug-UI-1 修复): 用户反馈"庭审回访按钮全是 bug"之一。
+  // 原 CourtroomScene header 只有案件标题 + 庭审回放 + 开庭/查看判决書/直接判决,
+  // 没有"返回首页"按钮, 用户进入庭审后只能浏览器 back (会跨页面残留 store)。
+  // 修复: header 左上加返回按钮, 跳首页前先 reset() 清 store 防残留。
+  const handleReturnHome = () => {
+    reset();
+    router.push("/");
   };
 
   const prosecutor = agents.find((a) => a.agent_type === "prosecutor");
@@ -463,6 +477,17 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
       <header className="border-b border-rule bg-paperDeep sticky top-0 z-10">
         <div className="container mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
           <div className="flex items-baseline gap-4">
+            {/* v1.0-patch-2 (Bug-UI-1 修复): 返回首页按钮 — 替代原"庭审页只能浏览器 back" */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleReturnHome}
+              className="text-ink hover:bg-paper rounded-sm px-2 h-8 text-xs font-data tracking-wider print:hidden"
+              data-testid="courtroom-back-home-button"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+              返回首页
+            </Button>
             {/* 案卷章 */}
             <span className="seal-stamp w-10 h-10 text-base leading-none flex items-center justify-center">
               判
