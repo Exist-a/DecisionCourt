@@ -29,6 +29,12 @@
 | **v1.0.4 PR-C4** | ✅ | release notes + ADR 0033 + V1-ROADMAP 同步（`726af6e`） |
 | **v2.0 PR-D1+D2** | ✅ | 厕所标识剪影小人 SVG + AgentAvatar 接入 + 5 sub-test (`50e1746`) |
 | **v2.0 PR-D3** | ✅ | release notes + ADR 0034 + V1-ROADMAP 同步（`c78182f` → `6e0588b`）|
+| **v2.1 F1** | ✅ | JudgeBiasMeter 冲击波位置修复（视觉 bug, 跟随 targetPosition）|
+| **v2.1 F2** | ✅ | TrialReplay phaseBelief 按 phase 过滤（UI 逻辑 bug, 三层 fallback）|
+| **v2.1 F3** | ✅ | isJudging 死代码清理 + ADR 0035（5 组件 prop 删除, judgeVariant 保留）|
+| **v2.1 F4** | ✅ | LLM_API_KEY 启动检测 + /health/llm + 前端 banner（AGENTS.md §8 红线遵守）|
+| **v2.1 F5** | ✅ | 三个默认开关全开（smart_compression / cache / breaker, .env=false 回滚）|
+| **v2.1 F6** | ✅ | release notes + V1-ROADMAP + SWITCH-SOAK.md + ADR 0035 README 索引 |
 | **v2.0 REDESIGN 文档** | ⚠️ **已 SUPERSEDED** | 2026-08-22 用户反馈"简陋，要重做" → r3f + drei + three-pathfinding 重构计划（[V2.0-REDESIGN-PLAN.md](./V2.0-REDESIGN-PLAN.md) + 4 stage 文档 + ADR 0034-supersede）|
 | **v2.0 REDESIGN PR-D1** | ⚠️ **已回退** | r3f + drei + three-pathfinding 基础设施 + Playwright E2E（`5856c95`，git reset 已消失）|
 | **v2.0 REDESIGN PR-D2 ~ D2.9** | ⚠️ **已回退** | 9 个 commit 试错 3D 重构失败（深木 → 浅橡木 → 游戏风格），git reset 已消失 |
@@ -37,8 +43,8 @@
 | **dozzle 移除** | ✅ | `29daff0`，Windows Docker Desktop npipe 不兼容 |
 | **D2 + D3 修复** | ✅ | `694a89e`，cross-exam silent error + 直接判决 fallback "共 0 轮" |
 | ADR 累计 | 36 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) |
-| Go 测试 | ~326 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) |
-| Frontend 测试 | 90 (7 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 (trialHistory 2 + BeliefDiffCard 2 + websocket 2) |
+| Go 测试 | ~332 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + **v2.1 F4+F5 6** |
+| Frontend 测试 | 101 (8 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 + **v2.1 F1+F2+F3+F4 11** |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
 **v1.0-patch 系列**（2026-08-22~23，7 commit `d72f860..f3a93e0`）：浏览器 back bug / 历史庭审回看 / 跨 session 证据污染 / hydrate 补 messages / BeliefDiffCard 渲染崩溃 / WS 断连 toast / 质证 empty content 软降级。详见 [todo/bugfix-log-2026-08-23.md](./todo/bugfix-log-2026-08-23.md)。
