@@ -56,7 +56,12 @@ type AgentGatewayConfig struct {
 type Config struct {
 	Port        string `mapstructure:"PORT"`
 	DatabaseURL string `mapstructure:"DATABASE_URL"`
-	RedisURL    string `mapstructure:"REDIS_URL"`
+	// RedisURL: v2.1 F4 标注 — 当前 v1.x 不消费此配置。
+	// in-memory sync.Map 在 DAU < 5000 trial/天足够 (详见各模块注释:
+	// agent_gateway/cache.go / idempotency/idempotency.go / ratelimit/)。
+	// 触发条件: DAU > 5000 时切 Redis 替换为分布式实现。
+	// 当前保留 env 读取仅为 loadSummary 输出, 不影响行为。
+	RedisURL string `mapstructure:"REDIS_URL"`
 
 	LLMProvider string `mapstructure:"LLM_PROVIDER"`
 	LLMAPIKey   string `mapstructure:"LLM_API_KEY"`
@@ -167,20 +172,24 @@ func Load() {
 			RejectWhenExhausted:    envOrDefaultBool("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", true),
 			BudgetSlidingWindowSec:  envOrDefaultInt("AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC", 300),
 
-			// Prompt Compression v2
-			SmartCompression:       envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION", false),
+			// v2.1 F5: 三个 ADR 0013 能力默认全开 (本地开发模式验证可用性)
+//   - SmartCompression: v2 评分压缩器 (pipeline: 评分 / 原子组 / 贪心)
+//   - CacheEnabled: in-memory LRU + TTL 响应缓存 (5min TTL, 10000 上限)
+//   - BreakerEnabled: sony/gobreaker 三态熔断 + keyword fallback
+// 回滚: .env 设 AGENT_GATEWAY_SMART_COMPRESSION=false 等即可 (无需重编译)
+SmartCompression:       envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION", true),
 			KeepRecentForcedN:      envOrDefaultInt("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3),
 			SummaryInsertThreshold: envOrDefaultInt("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 5),
 			ScoreThreshold:         envOrDefaultFloat("AGENT_GATEWAY_SCORE_THRESHOLD", 0.3),
 
-			// v0.9 三大新能力 (ADR 0013)
-			LLMTimeoutSec:  envOrDefaultInt("AGENT_GATEWAY_LLM_TIMEOUT_SEC", 90),
-			CacheEnabled:   envOrDefaultBool("AGENT_GATEWAY_CACHE_ENABLED", false),
-			CacheTTLSec:    envOrDefaultInt("AGENT_GATEWAY_CACHE_TTL_SEC", 300),
+			// v0.9 三大新能力 (ADR 0013) — v2.1 F5 默认全开
+			LLMTimeoutSec:   envOrDefaultInt("AGENT_GATEWAY_LLM_TIMEOUT_SEC", 90),
+			CacheEnabled:    envOrDefaultBool("AGENT_GATEWAY_CACHE_ENABLED", true),
+			CacheTTLSec:     envOrDefaultInt("AGENT_GATEWAY_CACHE_TTL_SEC", 300),
 			CacheMaxEntries: envOrDefaultInt("AGENT_GATEWAY_CACHE_MAX_ENTRIES", 10000),
 
-			// Circuit Breaker
-			BreakerEnabled:             envOrDefaultBool("AGENT_GATEWAY_BREAKER_ENABLED", false),
+			// Circuit Breaker — v2.1 F5 默认全开 (本地开发模式验证可用性)
+			BreakerEnabled:             envOrDefaultBool("AGENT_GATEWAY_BREAKER_ENABLED", true),
 			BreakerFailureRatio:        envOrDefaultFloat("AGENT_GATEWAY_BREAKER_FAILURE_RATIO", 0.5),
 			BreakerMinRequests:         envOrDefaultInt("AGENT_GATEWAY_BREAKER_MIN_REQUESTS", 10),
 			BreakerOpenTimeoutSec:      envOrDefaultInt("AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC", 30),
