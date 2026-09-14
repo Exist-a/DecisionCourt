@@ -276,3 +276,124 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 |---|---|---|---|---|
 | 2026-07-12 | _待 user 提供_ | — | — | v0.10.18 Deploy 失败时建立本节 |
 | 2026-08-05 | `47.239.152.177` | `admin` | `~/.ssh/id_rsa` | **本节正式填充**。30 天生产沉淀 + 备份验证时发现：`id_ed25519` Permission denied，`id_rsa` 可用；同步修正 `secrets/ecs.env` + 加此行记录。配套：[`docs/archive/ecs-end-of-life-2026-08-05.md`](docs/archive/ecs-end-of-life-2026-08-05.md) + [`docs/deployment/_archived/production-retrospective-2026-08-05.md`](docs/deployment/_archived/production-retrospective-2026-08-05.md)。**2026-08-05 用户决策不续购 ECS，但 SSH_KEY 信息保留供将来部署到自有云时复用；本表无新增行** |
+
+---
+
+## 11. Docker 业务测试规范（DOCKER_TEST_POLICY · 2026-09-14 增补）
+
+### 11.1 触发背景
+
+2026-09-14 v2.1 F5 收尾时，Agent 仅做了**静态冒烟**（源码默认值检查 + `TestF5DefaultSwitchesTrue` / `TestF5DefaultsRespectedFromEnv` 两个测试 PASS + 跑 `go test ./...` 全量），**没有跑真实业务链路**：
+
+- 没启动 backend → 没确认 `/api/v1/health/llm` 实际返回什么
+- 没启动 frontend → 没确认 LLM banner 在浏览器里显示什么样
+- 没创建 trial → 没确认 `AGENT_GATEWAY_SMART_COMPRESSION=true` 默认值下，长庭审 token 是不是真降了
+- 没看 `/api/v1/metrics` → 没验证 `agent_gateway_llm_total_tokens_per_call` 在 500-2000 健康范围
+
+**根因**：AGENTS.md §3 只规定「跑 `*_test.go`」和 §9 §5「soak 脚本占位」，没明确说"**业务功能验证必须启动 docker**"。Agent 倾向"测试过了就行"——但单元测试覆盖的是内部约定，**业务集成（容器间网络 / host ↔ container / 真实 LLM 调用）必须靠 docker 启动验证**。
+
+**事实**：本机 Docker Desktop 可用，`docker-compose.dev.yml` 是已实装的开发栈（postgres + redis + backend + frontend，源码 bind mount，HMR 即时生效）。Agent 启动 dev compose 即可**完整跑业务链路**，不需要 user 中转。
+
+### 11.2 触发条件（什么时候必须启动 docker 测）
+
+以下场景，Agent **必须**启动 dev compose 跑业务验证（不能只跑单元测试就交差）：
+
+| 场景 | 原因 |
+|---|---|
+| 修改 `docker-compose*.yml` / `Dockerfile*` | 容器编排变更直接影响启动 |
+| 修改 `config.go` 默认值（v2.1 F5 教训） | env 优先级 / viper.SetDefault / container env 注入路径是经典踩坑点 |
+| 修改 `/api/v1/health/*` / 启动检测逻辑（v2.1 F4 教训） | fail-fast 行为只能通过真实启动看到 |
+| 修改 WebSocket / courtroom 状态机 | 后端 ↔ 前端实时链路，单测覆盖有限 |
+| 修改 LLM Gateway / Agent Runner / Prompt Lab | 涉及真实 LLM 调用，单测都用 mock |
+| 修改 frontend `NEXT_PUBLIC_*` | 构建期注入，运行时改无效 |
+| 修改 `Caddyfile` / 反代 / 路由 | 反代层在容器外 |
+| 任何 release notes / PR-4 阶段（用户授权打 tag 之前） | 防止"测试过但用户跑不起来" |
+
+**反例**（**不**需要 docker）：
+- 纯函数 / 工具方法 / variants / 动画参数
+- 前端组件 props / 视觉微调（能用浏览器 HMR 看的）
+- 后端类型 / 接口定义 / ORM model
+- 单测覆盖 ≥ 80% 且不涉及外部依赖的逻辑
+
+### 11.3 允许 Agent 直接执行的 Docker 操作
+
+| 操作 | 命令模板 | 适用场景 |
+|------|----------|----------|
+| 启动 dev 栈（首次/重建） | `docker compose -f docker-compose.dev.yml up -d --build` | 任何 docker 业务测试的起点 |
+| 启动 dev 栈（增量） | `docker compose -f docker-compose.dev.yml up -d` | 改完代码 HMR 自动生效 |
+| 查看容器状态 | `docker compose -f docker-compose.dev.yml ps` | 启动后看 4 个容器都 healthy |
+| 查看 backend 日志 | `docker compose -f docker-compose.dev.yml logs --tail=50 backend` | 调试启动 / fail-fast |
+| 查看 frontend 日志 | `docker compose -f docker-compose.dev.yml logs --tail=30 frontend` | 浏览器看到异常时 |
+| 查看 postgres 日志 | `docker compose -f docker-compose.dev.yml logs --tail=20 postgres` | DB 连接问题 |
+| 进入容器跑命令 | `docker compose -f docker-compose.dev.yml exec backend sh` | 临时调试（如查 mounted 文件 / 跑 curl） |
+| 容器内 curl 后端 | `docker compose -f docker-compose.dev.yml exec backend wget -qO- http://127.0.0.1:8080/health` | 容器内健康检查 |
+| 单服务重启 | `docker compose -f docker-compose.dev.yml restart backend` | 仅后端代码改动（前端 HMR 自动） |
+| 关闭 dev 栈 | `docker compose -f docker-compose.dev.yml down` | 测试完毕收尾（**保留** named volumes） |
+| 关闭 + 清数据 | `docker compose -f docker-compose.dev.yml down -v` | 脏数据污染后重来（**需 user 授权**，破坏 trial 数据） |
+
+### 11.4 禁止 Agent 直接执行的 Docker 操作
+
+| 操作 | 原因 |
+|------|---|
+| `docker compose -f docker-compose.yml up -d`（prod compose） | 端口冲突（80/443）+ 容器名前缀 `dc_*` 撞 prod；只用于 ECS 部署 |
+| `docker system prune -a` / `docker volume prune` | 销毁性，可能清掉用户其他项目的容器 |
+| `docker rm -f $(docker ps -aq)` | 无差别杀容器 |
+| 修改 `backend/.env` | §8 红线，含真实 key |
+| `docker compose down -v` 不告知 | trial 数据可能丢 |
+
+### 11.5 业务验证 checklist（最小集）
+
+启动 dev 栈后，按顺序验证：
+
+```bash
+# 1. 启动 + 看 healthy
+docker compose -f docker-compose.dev.yml up -d --build
+docker compose -f docker-compose.dev.yml ps
+# 期望: dc_dev_postgres / dc_dev_redis / dc_dev_backend / dc_dev_frontend 都 healthy / running
+
+# 2. 业务端点健康检查
+curl http://localhost:8180/health
+# 期望: {"status":"ok",...}
+
+# 3. v2.1 F4: LLM health
+curl http://localhost:8180/api/v1/health/llm | jq
+# 期望有 key: {"configured":true,"provider":"deepseek","model":"deepseek-v4-flash","key_preview":"sk-***xxxx"}
+# 期望无 key: {"configured":false,...}
+
+# 4. v2.1 F5: metrics 翻动（需先建 1 个 trial）
+curl http://localhost:8180/api/v1/metrics | jq '.counters, .gauges'
+# 期望: agent_gateway_llm_total_tokens_per_call 在 500-2000
+
+# 5. 前端验证（用 web-gui-tester 或手动）
+# - 首页 http://localhost:3000 加载正常
+# - 无 key 时: 顶部 amber banner 显示（不可关闭）
+# - 建 trial → quick mode 全流程跑通
+
+# 6. 测试完毕收尾
+docker compose -f docker-compose.dev.yml down
+```
+
+### 11.6 关键纪律
+
+1. **必须先告知再启动**：启动 dev 栈会占 5432/6379/8180/3000 端口，先看 user 是否有其他进程占用
+2. **超时保护**：dev 栈首次 `--build` 可能 5-10 分钟（Next.js + Go 依赖下载），用 `command_timeout: 600000`（10 分钟）
+3. **不污染 prod**：`dc_dev_*` 容器名前缀 + 8180 端口 + 命名 volumes `dc_dev_*`，与 prod 栈物理隔离
+4. **测试完必须 down**：跑完不关 → 5432/6379 端口长期占着 → 影响 user 其他工作
+5. **异常上报**：容器反复 restart / healthcheck 不过 / backend fail-fast exit 1 → **不**自动 `down -v` 重来，先看 logs 找 root cause 报 user
+6. **§8 红线优先**：任何会写到 `backend/.env` 的操作（即使只是"加一行注释"）一律不做，**用 `$env:VAR='value'` 临时环境变量注入**
+
+### 11.7 异常处理
+
+| 现象 | 排查方向 |
+|---|---|
+| `dc_dev_backend` 反复 restart | `logs --tail=50 backend` 看 fail-fast 原因（v0.10.18 fail-fast 检查清单在 `/workspace/DecisionCourt/docs/V1-ROADMAP.md` §F1-F7） |
+| `dc_dev_postgres` unhealth | 检查 host 5432 端口是否被占 / `docker volume ls` 看 `dc_dev_postgres_data` 是否损坏 |
+| Next.js HMR 不生效 | 看 frontend 容器内 `CHOKIDAR_USEPOLLING=true` 环境变量是否生效（v0.9.2 加的跨平台修复） |
+| backend 起不来：`DATABASE_URL invalid port` | `.env` 里 `POSTGRES_PASSWORD` 含 `/` 没 URL-encoded（v1.0.3 PR-B1 修过；如复发说明 .env 被手工改坏） |
+| `Bind for 0.0.0.0:3000 failed: port already allocated` | host 上有别的进程占 3000；改 `frontend.ports` 或停占端口进程 |
+
+### 11.8 与既有规范的关系
+
+- **§3 测试维护规范**：§3 是"改完跑 `*_test.go`"，**§11 是"跑完测试还要跑 docker 业务"**——两者**互补**，不替代
+- **§9 ECS 运维连接**：§9 是"线上 ECS SSH 诊断"，**§11 是"本机 dev compose 业务验证"**——本地 vs 远端
+- **§8 敏感文件红线**：§11.6 #6 强调，docker 操作不绕过 §8
