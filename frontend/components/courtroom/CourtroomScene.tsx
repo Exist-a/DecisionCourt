@@ -473,9 +473,9 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   }
 
   return (
-    <div className="min-h-screen bg-paper text-ink flex flex-col overflow-x-clip overflow-y-hidden">
+    <div className="h-screen bg-paper text-ink flex flex-col overflow-x-clip overflow-y-hidden">
       {/* Header — 案卷封面 */}
-      <header className="border-b border-rule bg-paperDeep sticky top-0 z-10">
+      <header className="border-b border-rule bg-paperDeep shrink-0">
         <div className="container mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
           <div className="flex items-baseline gap-4">
             {/* v1.0-patch-2 (Bug-UI-1 修复): 返回首页按钮 — 替代原"庭审页只能浏览器 back" */}
@@ -649,7 +649,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
       )}
 
       {/* Main content */}
-      <div className="flex-1 h-[calc(100vh-64px)] container mx-auto max-w-6xl px-6 py-5 flex gap-5 overflow-hidden">
+      <div className="flex-1 min-h-0 container mx-auto max-w-6xl px-6 py-5 flex gap-5 overflow-hidden">
         {/* Courtroom scene
             v2.1 修横向滚动 (Bug-UI-侧栏溢出):
             - overflow-y-auto 改为 overflow-y-auto + overflow-x-clip,防御气泡/长内容撑出
