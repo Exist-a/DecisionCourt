@@ -83,13 +83,16 @@ export function EvidenceBoard({ evidences, onSubmit, sessionId }: EvidenceBoardP
             尚无证据归档 · 请在下方提交第一份证据
           </div>
         ) : (
-          <div className="flex gap-3 overflow-x-auto pb-3">
+          // v2.2 fix(evidence): 改 grid wrap, 跟 globals.css 隐藏 scrollbar 一致
+          //   - 之前 flex overflow-x-auto 在滑块隐藏后用户看不到能横滚的提示
+          //   - 改 grid grid-cols-2 md:grid-cols-3 自动换行, 永远不出现横滚
+          <div className="grid grid-cols-2 gap-3 pb-3 md:grid-cols-3">
             {evidences.map((evidence) => {
               const colorCfg = sourceColors[evidence.source] ?? sourceColors.user;
               return (
                 <div
                   key={evidence.evidence_id}
-                  className="evidence-folder flex-shrink-0 w-64 relative"
+                  className="evidence-folder relative"
                   style={{ ["--folder-tab" as string]: colorCfg.tab }}
                 >
                   {/* 卷宗签条 */}
