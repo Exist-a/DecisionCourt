@@ -12,7 +12,7 @@
 
 ---
 
-## 0. 当前进度快照（2026-08-21）
+## 0. 当前进度快照（2026-09-14）
 
 | 维度 | 状态 | 说明 |
 |---|---|---|
@@ -35,16 +35,20 @@
 | **v2.1 F4** | ✅ | LLM_API_KEY 启动检测 + /health/llm + 前端 banner（AGENTS.md §8 红线遵守）|
 | **v2.1 F5** | ✅ | 三个默认开关全开（smart_compression / cache / breaker, .env=false 回滚）|
 | **v2.1 F6** | ✅ | release notes + V1-ROADMAP + SWITCH-SOAK.md + ADR 0035 README 索引 |
-| **v2.0 REDESIGN 文档** | ⚠️ **已 SUPERSEDED** | 2026-08-22 用户反馈"简陋，要重做" → r3f + drei + three-pathfinding 重构计划（[V2.0-REDESIGN-PLAN.md](./V2.0-REDESIGN-PLAN.md) + 4 stage 文档 + ADR 0034-supersede）|
-| **v2.0 REDESIGN PR-D1** | ⚠️ **已回退** | r3f + drei + three-pathfinding 基础设施 + Playwright E2E（`5856c95`，git reset 已消失）|
-| **v2.0 REDESIGN PR-D2 ~ D2.9** | ⚠️ **已回退** | 9 个 commit 试错 3D 重构失败（深木 → 浅橡木 → 游戏风格），git reset 已消失 |
-| **Postmortem v2.0 REDESIGN 3D PIVOT** | ✅ | [完整复盘](./postmortem/v2.0-redesign-3d-pivot.md) — 5 Whys 根因 + 教训 + 行动项 |
-| **ArgumentMap 移除** | ✅ | ADR 0032 + `16332aa`，用户反馈"完全没用" |
-| **dozzle 移除** | ✅ | `29daff0`，Windows Docker Desktop npipe 不兼容 |
-| **D2 + D3 修复** | ✅ | `694a89e`，cross-exam silent error + 直接判决 fallback "共 0 轮" |
+| **v2.1 F7** | ✅ | DotAvatar 视觉优化 + 庭审中央案卷化（scene-shell / 装订线 / 印章 / 天平）|
+| **v2.1** | ✅ | v2.1 tag 推送（7 commit `a6d2d5e..d6a9fd3`）|
+| **v2.2 P0-1** | ✅ | 气泡绝对定位（庭审横向滑动修复）|
+| **v2.2 P0-2** | ✅ | 全局隐藏 scrollbar（庭审滑块丑修复）|
+| **v2.2 P0-3** | ✅ | EvidenceBoard 改 grid wrap（跟全局隐藏 scrollbar 一致）|
+| **v2.2 P0-4** | ✅ | 庭审记录文字渲染修复（MessageHistory + TrialReplay + RebuttalTraceNode）|
+| **v2.2 P0-5** | ✅ | TrialHistoryList 防撑宽 + lucide Scale 图标一致化 |
+| **v2.2 P0-6** | ✅ | dev compose Next.js rewrites（前端 404 修复）|
+| **v2.2 P0-7** | ✅ | 整个页面 h-screen 100vh（庭审记录面板高度修复）|
+| **v2.2** | ✅ | v2.2 推送（9 commit `88a3716..ec46438`）|
+| **AGENTS.md §11** | ✅ | Docker 业务测试规范（DOCKER_TEST_POLICY）|
 | ADR 累计 | 36 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) |
 | Go 测试 | ~332 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + **v2.1 F4+F5 6** |
-| Frontend 测试 | 101 (8 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 + **v2.1 F1+F2+F3+F4 11** |
+| Frontend 测试 | 103 (9 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 + **v2.1 F1+F2+F3+F4 11** + **v2.2 2** |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
 **v1.0-patch 系列**（2026-08-22~23，7 commit `d72f860..f3a93e0`）：浏览器 back bug / 历史庭审回看 / 跨 session 证据污染 / hydrate 补 messages / BeliefDiffCard 渲染崩溃 / WS 断连 toast / 质证 empty content 软降级。详见 [todo/bugfix-log-2026-08-23.md](./todo/bugfix-log-2026-08-23.md)。
