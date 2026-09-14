@@ -41,9 +41,14 @@ test("Silhouette.tsx speaking 状态触发走路/举手指控动画 class", () =
 
 test("RoleSilhouette.tsx 含 mode=circle fallback 路径", () => {
   const src = readFile("components/courtroom/silhouettes/RoleSilhouette.tsx");
-  assert.match(src, /mode\?: "silhouette" \| "circle"/, "类型定义含 silhouette/circle");
+  // v2.1: mode 扩展为 "silhouette" | "circle" | "dot";保留 v1.0.4 fallback 契约
+  assert.match(src, /mode\?\s*:\s*RoleMode/, "mode 用 RoleMode alias");
+  assert.match(src, /RoleMode\s*=\s*"silhouette"\s*\|\s*"circle"\s*\|\s*"dot"/, "RoleMode 含三态 literal");
   assert.match(src, /function CircleAvatarFallback/, "有 CircleAvatarFallback 组件");
   assert.match(src, /data-mode="circle-fallback"/, "circle fallback 打 data-mode 属性");
+  // v2.1: dot mode 必须路由到 DotAvatar
+  assert.match(src, /import \{ DotAvatar \}/, "import DotAvatar");
+  assert.match(src, /mode === "dot"/, "dot mode 路由分支");
 });
 
 test("globals.css 含 5 角色 CSS var + 走路/点头/举手/敲锤/放大镜 keyframes", () => {
@@ -66,5 +71,8 @@ test("AgentAvatar.tsx 接入 RoleSilhouette + NEXT_PUBLIC_USE_CIRCLE_AVATAR env 
   const src = readFile("components/courtroom/AgentAvatar.tsx");
   assert.match(src, /import \{ RoleSilhouette \}/, "AgentAvatar import RoleSilhouette");
   assert.match(src, /NEXT_PUBLIC_USE_CIRCLE_AVATAR/, "AgentAvatar 读 NEXT_PUBLIC_USE_CIRCLE_AVATAR env var");
-  assert.match(src, /mode=\{useCircleAvatar \? "circle" : "silhouette"\}/, "mode 切换 fallback");
+  // v2.1: mode 切换为三态 (circle / silhouette opt-in / 默认 dot)
+  assert.match(src, /useCircleAvatar \? "circle"/, "circle fallback 路径");
+  assert.match(src, /NEXT_PUBLIC_USE_SILHOUETTE_AVATAR/, "读 silhouette opt-in env var");
+  assert.match(src, /"dot"/, "默认走 dot mode");
 });

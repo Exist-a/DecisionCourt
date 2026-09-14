@@ -11,10 +11,14 @@ import { SpeechBubbleAnimated } from "./animations/SpeechBubbleAnimated";
 // v2.0: 厕所标识剪影小人 SVG + 向后兼容圆形头像 fallback
 import { RoleSilhouette } from "./silhouettes/RoleSilhouette";
 
-// v2.0: env var NEXT_PUBLIC_USE_CIRCLE_AVATAR=true 时回退到旧圆形头像
-// 默认 false → 用剪影小人 SVG (V2.0 视觉飞跃)
-// 设计理由: 老 v1.0.x 用户升级想看回圆形头像时, 可不修改代码仅设环境变量
+// v2.1: 抛弃人型剪影,默认走 dot mode (纯几何抽象 + 6 状态动效)
+// v2.0: env var NEXT_PUBLIC_USE_CIRCLE_AVATAR=true 时回退到旧圆形头像 (v1 静态色盘)
+// 设计理由:
+//   - 老 v1.0.x 用户想看回最初圆形头像: NEXT_PUBLIC_USE_CIRCLE_AVATAR=true
+//   - 想看回 v2.0 剪影小人: NEXT_PUBLIC_USE_SILHOUETTE_AVATAR=true (opt-in)
+//   - 默认 false → 走 dot (V2.1 视觉方案)
 const useCircleAvatar = process.env.NEXT_PUBLIC_USE_CIRCLE_AVATAR === "true";
+const useSilhouetteAvatar = process.env.NEXT_PUBLIC_USE_SILHOUETTE_AVATAR === "true";
 
 interface AgentAvatarProps {
   agent: Agent;
@@ -233,7 +237,7 @@ export function AgentAvatar({
         />
       </SpeechBubbleAnimated>
 
-      {/* v2.0: 厕所标识剪影小人 SVG (默认) — NEXT_PUBLIC_USE_CIRCLE_AVATAR=true 回退到圆形 */}
+      {/* v2.1: 默认走 DotAvatar (纯几何抽象 + 状态动效) — silhouette/circle 仍 opt-in 可用 */}
       <AvatarAnimations
         state={deriveAnimationState({
           isSpeaking,
@@ -247,15 +251,16 @@ export function AgentAvatar({
             isSpeaking={isSpeaking}
             isThinking={showThinking}
             isSearching={isSearching}
-            isJudging={agent.agent_type === "judge" && isSpeaking}
             size={48}
-            mode={useCircleAvatar ? "circle" : "silhouette"}
+            mode={
+              useCircleAvatar ? "circle" : useSilhouetteAvatar ? "silhouette" : "dot"
+            }
           />
-          {/* 发言时：金色印章点 (兼容 silhouette + circle) */}
-          {isSpeaking && !useCircleAvatar && (
+          {/* 发言时：金色印章点 (兼容 silhouette 模式; dot 模式自带 halo) */}
+          {isSpeaking && useSilhouetteAvatar && (
             <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-gold border-2 border-paper" />
           )}
-          {/* 调查时：旋转 spinner 环 (CSS animate-spin, 仅 circle 模式需要) */}
+          {/* 调查时：旋转 spinner 环 (CSS animate-spin, 仅 circle fallback 模式需要) */}
           {isSearching && useCircleAvatar && (
             <span
               className="absolute inset-0 rounded-full border-2 border-transparent border-t-inkSoft animate-spin pointer-events-none"

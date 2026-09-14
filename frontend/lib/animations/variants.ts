@@ -41,22 +41,25 @@ export const thinkVariant: Variants = {
   },
 };
 
-// 3. 律师 "倾听中" — 静止但有 "点头回应"
-//   设计: 仅 y 微浮,模拟"在听对方说,偶尔点头"
-//   持续: 3s 极慢,表示专注
+// 3. 律师 "倾听中" — 完全静止 (v2.1 O-3 修:移除 y 微浮)
+//   设计: 调查员/律师在 idle 时色盘静止,避免在 GPU compositor 上被错
+//   解释为微小 rotateZ 让用户感觉色盘倾斜。专注由 .dot-speak-ring 等
+//   装饰层提供,不动色盘本体。
+//   持续: N/A — 静止
 export const listenVariant: Variants = {
-  initial: { y: 0 },
-  listening: { y: [0, 2, 0], transition: { duration: 3, repeat: Infinity } },
+  initial: { y: 0, scale: 1, rotate: 0 },
+  listening: { y: 0, scale: 1, rotate: 0 },
 };
 
-// 4. 调查员 "调查中" — 旋转 + 放大镜微闪
-//   设计: rotate -15° ↔ 15°,模拟"摇头搜索证据"
-//   持续: 1.5s 中等 cycle
+// 4. 调查员 "调查中" — 旋转 (v2.1 Bug-2 修:rotate 极缩 + 增加 transform-origin)
+//   设计: rotate -8° ↔ 8° 微幅 (从 ±15° 缩小),模拟轻微"左右寻找"
+//   持续: 1.8s 中等 cycle,比原 1.5s 慢 20%
+//   transform-origin: center (motion 默认) 保证围绕中心旋转,避免外圈扫描错觉
 export const searchVariant: Variants = {
-  initial: { rotate: 0 },
+  initial: { rotate: 0, transformOrigin: "center" },
   searching: {
-    rotate: [0, 15, -15, 0],
-    transition: { duration: 1.5, repeat: Infinity, ease: EASE_STANDARD },
+    rotate: [0, 8, -8, 0],
+    transition: { duration: 1.8, repeat: Infinity, ease: EASE_STANDARD },
   },
 };
 

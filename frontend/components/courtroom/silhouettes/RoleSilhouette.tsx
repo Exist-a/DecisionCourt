@@ -1,28 +1,30 @@
 "use client";
 
-// v2.0 RoleSilhouette — 包装 Silhouette,提供向后兼容 fallback
+// v2.0 RoleSilhouette — 包装 Silhouette/DotAvatar,提供向后兼容 fallback
 //
-// 设计要点 (V2.0-PLAN.md §1.5):
-//   - mode="silhouette" (默认) → 渲染 SVG 剪影
-//   - mode="circle" → 回退到旧圆形头像 (env var NEXT_PUBLIC_USE_CIRCLE_AVATAR=true 触发)
-//   - 包装组件隔离 fallback 逻辑,避免污染 AgentAvatar.tsx
+// v2.1 演进 (V2.1-OPTIMIZATION-PLAN.md §Phase A):
+//   - mode="dot" → v2.1 默认值,继承 v1 小球视觉 + 6 状态动效装饰层
+//   - mode="silhouette" → v2.0 剪影小人 (保留 opt-in)
+//   - mode="circle" → v1 静态色盘 fallback (NEXT_PUBLIC_USE_CIRCLE_AVATAR=true)
 //
-// 接入:
-//   - AgentAvatar 默认使用 Silhouette
-//   - 老 v1.0.x 用户升级想看圆形头像: 设 NEXT_PUBLIC_USE_CIRCLE_AVATAR=true 重启
-//   - 未来 v2.1+ 可加 mode="lottie" 升级
+// 设计意图:
+//   - 默认从 silhouette → dot (用户决定抛弃人型剪影)
+//   - 不删 silhouette 代码,老用户可经 mode="silhouette" 回滚
+//   - AgentAvatar 仍 import { RoleSilhouette },不在 AgentAvatar 里分支,避免污染
 
 import type { AgentType } from "@/types";
 import { Silhouette } from "./Silhouette";
+import { DotAvatar } from "../avatars/DotAvatar";
+
+type RoleMode = "silhouette" | "circle" | "dot";
 
 interface RoleSilhouetteProps {
   agentType: AgentType;
   isSpeaking?: boolean;
   isThinking?: boolean;
   isSearching?: boolean;
-  isJudging?: boolean;
   size?: number;
-  mode?: "silhouette" | "circle";
+  mode?: RoleMode;
 }
 
 export function RoleSilhouette({
@@ -30,22 +32,34 @@ export function RoleSilhouette({
   isSpeaking,
   isThinking,
   isSearching,
-  isJudging,
   size = 48,
-  mode = "silhouette",
+  mode = "dot",
 }: RoleSilhouetteProps) {
-  // 旧圆形头像 fallback — 仅当 NEXT_PUBLIC_USE_CIRCLE_AVATAR=true
+  // v2.1: 抛弃人型剪影,改用纯抽象 (色盘 + 状态装饰层)
+  if (mode === "dot") {
+    return (
+      <DotAvatar
+        agentType={agentType}
+        isSpeaking={isSpeaking}
+        isThinking={isThinking}
+        isSearching={isSearching}
+        size={size}
+      />
+    );
+  }
+
+  // 旧圆形头像 fallback — 仅 NEXT_PUBLIC_USE_CIRCLE_AVATAR=true 时由 AgentAvatar 触发
   if (mode === "circle") {
     return <CircleAvatarFallback agentType={agentType} size={size} />;
   }
 
+  // mode="silhouette" — v2.0 剪影小人 (保留 opt-in)
   return (
     <Silhouette
       agentType={agentType}
       isSpeaking={isSpeaking}
       isThinking={isThinking}
       isSearching={isSearching}
-      isJudging={isJudging}
       size={size}
     />
   );

@@ -3,10 +3,14 @@
 // v1.0.4 PR-C3: AvatarAnimations — 包装头像元素,根据 agent 状态选 motion variant
 //
 // 设计要点:
-//   - 6 个状态 → 6 个 variants (speak / think / listen / search / judge / confront)
-//   - 状态优先级: search > judge > speak > think > confront > listen (互斥)
-//   - 调查员专属 search,法官专属 judge,其余角色 speak/think/listen
+//   - 5 个状态 → 5 个 variants (speak / think / listen / search / confront)
+//   - 状态优先级: search > speak > think > confront > listen (互斥)
+//   - 调查员专属 search,其余角色 speak/think/listen
 //   - confront 是庭审级别 (cross_exam 阶段),由 CourtroomScene 控制 enableConfront
+//
+// v2.1 F3 (ADR 0035): 删除 "judging" 状态 + judgeVariant 引用。
+// judge 不主动发言, isJudging 触发条件不成立。judgeVariant 在
+// lib/animations/variants.ts 保留以备未来启用。
 //
 // 复用:
 //   - AgentAvatar 用 <AvatarAnimations> 包裹圆形头像 div
@@ -19,7 +23,6 @@ import {
   thinkVariant,
   listenVariant,
   searchVariant,
-  judgeVariant,
   confrontVariant,
 } from "@/lib/animations/variants.ts";
 
@@ -28,7 +31,6 @@ export type AvatarAnimationState =
   | "thinking"
   | "listening"
   | "searching"
-  | "judging"
   | "confronting"
   | "idle";
 
@@ -50,11 +52,9 @@ export function AvatarAnimations({ state, children, className }: AvatarAnimation
         ? thinkVariant
         : state === "searching"
           ? searchVariant
-          : state === "judging"
-            ? judgeVariant
-            : state === "confronting"
-              ? confrontVariant
-              : listenVariant; // listening + idle 都用 listenVariant (微弱 y 浮动)
+          : state === "confronting"
+            ? confrontVariant
+            : listenVariant; // listening + idle 都用 listenVariant (微弱 y 浮动)
 
   return (
     <motion.div
@@ -73,23 +73,20 @@ export function AvatarAnimations({ state, children, className }: AvatarAnimation
  *
  * 优先级:
  *   1. isSearching (调查员专属) → "searching"
- *   2. isJudging (法官敲锤, 未来接入) → "judging"
- *   3. isSpeaking → "speaking"
- *   4. showThinking → "thinking"
- *   5. enableConfront (cross_exam 阶段) → "confronting"
- *   6. else → "listening"
+ *   2. isSpeaking → "speaking"
+ *   3. showThinking → "thinking"
+ *   4. enableConfront (cross_exam 阶段) → "confronting"
+ *   5. else → "listening"
  *
  * 设计: 调查/说话/思考是互斥动作 (同一时刻只能一个),与现有 CSS 动画一致。
  */
 export function deriveAnimationState(opts: {
   isSpeaking?: boolean;
   isSearching?: boolean;
-  isJudging?: boolean;
   showThinking?: boolean;
   enableConfront?: boolean;
 }): AvatarAnimationState {
   if (opts.isSearching) return "searching";
-  if (opts.isJudging) return "judging";
   if (opts.isSpeaking) return "speaking";
   if (opts.showThinking) return "thinking";
   if (opts.enableConfront) return "confronting";

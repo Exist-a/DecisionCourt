@@ -22,7 +22,6 @@ interface SilhouetteProps {
   isSpeaking?: boolean;
   isThinking?: boolean;
   isSearching?: boolean;
-  isJudging?: boolean;
   size?: number;
 }
 
@@ -30,13 +29,15 @@ interface SilhouetteProps {
  * 入口组件 — 根据 agentType 选对应 SVG 组件。
  * 5 角色 SVG 拆成独立子组件 (ProsecutorSilhouette / DefenderSilhouette 等),
  * 便于未来单独调整某个角色的姿势而互不影响。
+ *
+ * v2.1 F3 (ADR 0035): 删除 isJudging prop — judge 不主动发言,
+ * 触发条件不成立。silhouette-gavel CSS class 保留以备未来启用。
  */
 export function Silhouette({
   agentType,
   isSpeaking,
   isThinking,
   isSearching,
-  isJudging,
   size = 64,
 }: SilhouetteProps) {
   const className = `silhouette-${agentType} silhouette-avatar`;
@@ -51,7 +52,7 @@ export function Silhouette({
         <InvestigatorSilhouette className={className} size={size} isSearching={isSearching} />
       );
     case "judge":
-      return <JudgeSilhouette className={className} size={size} isJudging={isJudging} />;
+      return <JudgeSilhouette className={className} size={size} />;
     case "clerk":
       return <ClerkSilhouette className={className} size={size} isThinking={isThinking} />;
     default:
@@ -215,12 +216,12 @@ function InvestigatorSilhouette({
 function JudgeSilhouette({
   className,
   size,
-  isJudging,
 }: {
   className: string;
   size: number;
-  isJudging?: boolean;
 }) {
+  // v2.1 F3 (ADR 0035): 删除 isJudging prop 与 data-judging 属性。
+  // silhouette-gavel CSS class 在 globals.css 保留, 未来启用时可加回。
   return (
     <svg
       viewBox="0 0 64 64"
@@ -229,21 +230,19 @@ function JudgeSilhouette({
       height={size}
       className={className}
       data-role="judge"
-      data-judging={isJudging ? "true" : "false"}
     >
       <circle cx="32" cy="14" r="8" fill="currentColor" />
       {/* 坐姿: 身体短 + 腿横向 */}
       <rect x="20" y="22" width="24" height="20" rx="2" fill="currentColor" />
       {/* 双腿横向 (坐姿) */}
       <rect x="14" y="42" width="36" height="6" rx="1" fill="currentColor" />
-      {/* 法槌 (右上角) */}
+      {/* 法槌 (右上角, 静态) */}
       <rect
         x="46"
         y="8"
         width="4"
         height="12"
         rx="1"
-        className={isJudging ? "silhouette-gavel" : ""}
         fill="currentColor"
       />
       <rect x="44" y="6" width="8" height="4" rx="1" fill="currentColor" />
