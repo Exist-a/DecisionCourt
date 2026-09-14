@@ -128,9 +128,9 @@ export function TrialHistoryList() {
                 className="bg-white border border-rule rounded-sm px-4 py-3 flex items-center gap-3 group"
                 data-testid="trial-history-item"
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm text-display font-semibold text-ink truncate">
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-sm text-display font-semibold text-ink truncate flex-1 min-w-0">
                       {item.title}
                     </p>
                     <PhaseChip
@@ -138,9 +138,22 @@ export function TrialHistoryList() {
                       verdictReady={item.verdictReady}
                     />
                   </div>
-                  <p className="text-[10px] text-inkFaint font-data mt-0.5">
-                    {item.optionA} <span className="mx-1 text-inkFaint">⚖</span>{" "}
-                    {item.optionB}
+                  {/* v2.2 fix(history): 加 flex items-center + Scale 图标 + truncate
+                      - 之前 optionA/optionB 极长时撑破 layout, 挤掉右侧按钮
+                      - 改 inline-block max-w-[40%] truncate 单行截断
+                      - ⚖ emoji 升为 lucide Scale 图标, 跟 CourtroomScene 一致 */}
+                  <p className="text-[10px] text-inkFaint font-data mt-0.5 flex items-center gap-1 truncate">
+                    <span className="truncate inline-block max-w-[45%]">
+                      {item.optionA}
+                    </span>
+                    <Scale
+                      className="w-3 h-3 shrink-0 text-inkFaint"
+                      strokeWidth={1.5}
+                      aria-hidden
+                    />
+                    <span className="truncate inline-block max-w-[45%]">
+                      {item.optionB}
+                    </span>
                   </p>
                 </div>
 
