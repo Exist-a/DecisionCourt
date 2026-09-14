@@ -132,7 +132,7 @@ export function RebuttalTraceNode({ sessionUUID }: RebuttalTraceNodeProps) {
                   <Badge variant="outline" className={statusColors[link.status] ?? ""}>
                     {link.aggressor_agent}
                   </Badge>
-                  <span className="flex-1 break-words">
+                  <span className="flex-1 whitespace-pre-wrap break-words">
                     {link.rationale || <em className="text-stone-500">(无理由)</em>}
                   </span>
                 </li>

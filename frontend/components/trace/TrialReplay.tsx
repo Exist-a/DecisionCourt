@@ -403,7 +403,7 @@ export function TrialReplay({ sessionUUID, open, onOpenChange }: TrialReplayProp
                             msg.agent_type ??
                             "系统"}
                         </Badge>
-                        <p className="text-xs text-ink leading-relaxed flex-1 min-w-0 break-words">
+                        <p className="text-xs text-ink leading-relaxed flex-1 min-w-0 whitespace-pre-wrap break-words">
                           {msg.content}
                         </p>
                       </div>
