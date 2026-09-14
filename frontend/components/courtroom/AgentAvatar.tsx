@@ -179,13 +179,17 @@ export function AgentAvatar({
         : "speak";
 
   return (
-    <div className="flex flex-col items-center gap-1.5 px-3 py-1 relative">
+    <div className="flex flex-col items-center gap-1.5 px-3 py-1 relative w-full max-w-[200px]">
       {/* 气泡（搜索 / 思考 / 流式 / 发言）共用同一个锚点 */}
       {/* v1.0.4 PR-C3: SpeechBubbleAnimated 接管 mount/unmount 淡入淡出 */}
+      {/* v2.2 fix(court): 气泡改相对定位 (relative) + max-w-[200px] + z-10
+            - 之前 absolute + w-60 (240px) 撑宽外层 grid cell, 导致庭审中央横向滑动
+            - 改 relative 后气泡占 layout 空间但 max-w 限 200px, 不会再撑宽
+            - z-10 防被 investigator/clerk 同列头像遮挡 */}
       <SpeechBubbleAnimated
         bubbleId={`${agent.agent_type ?? "unknown"}-${bubbleKind}-${(visibleBubble ?? "").slice(0, 32)}`}
         visible={!!visibleBubble}
-        className={`absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-60 max-h-40 overflow-y-auto z-50 ${
+        className={`relative mb-1 max-w-[200px] max-h-32 overflow-y-auto z-10 ${
           bubbleKind === "thinking"
             ? "thinking-bubble"
             : bubbleKind === "searching"
