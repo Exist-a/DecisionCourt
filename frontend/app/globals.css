@@ -809,3 +809,26 @@
   .scene-seal-mini { display: none; }
   .scene-binding { display: none; }
 }
+
+/* =============================================================================
+ * v2.2 style(css): 全局隐藏 scrollbar (用户反馈"庭审现场滑块太丑")
+ *
+ *   - WebKit / Blink (Chrome / Edge / Safari): display: none
+ *   - Firefox: scrollbar-width: none
+ *   - IE / Edge legacy: -ms-overflow-style: none
+ *
+ *   保留滚动能力 (鼠标滚轮 / 触摸滑动 / 键盘),仅隐藏视觉指示器。
+ *   关联:
+ *     - 气泡 w-60 修 max-w-[200px] (AgentAvatar.tsx) — 横向滑动根因
+ *     - EvidenceBoard flex overflow-x-auto 修 grid wrap (EvidenceBoard.tsx)
+ *       — 横滚容器改为自动 wrap, 配合 scrollbar 隐藏
+ * ============================================================================= */
+* {
+  scrollbar-width: none;       /* Firefox */
+  -ms-overflow-style: none;    /* IE / Edge legacy */
+}
+*::-webkit-scrollbar {
+  display: none;               /* Chrome / Safari / Edge (Blink) */
+  width: 0;
+  height: 0;
+}
