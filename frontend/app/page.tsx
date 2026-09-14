@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,25 @@ export default function Home() {
   const [optionB, setOptionB] = useState("");
   const [context, setContext] = useState("");
   const [mode, setMode] = useState<"quick" | "standard" | "deep">("standard");
+
+  // v2.1 F4: 启动时检测 backend LLM 是否配置, 未配置显示不可关闭 banner。
+  // 网络错误不打扰用户 (本地 backend 未启动也常见)。
+  const [llmWarning, setLlmWarning] = useState<string | null>(null);
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_USE_MOCK === "true") return; // mock 模式不检测
+    void fetch("/api/v1/health/llm")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((h: { configured?: boolean; provider?: string; model?: string } | null) => {
+        if (!h || h.configured === false) {
+          setLlmWarning(
+            `⚠ LLM 未配置（需要 ${h?.provider ?? "deepseek"} / ${h?.model ?? "deepseek-v4-flash"}），庭审功能不可用。请检查 backend .env 后重启 backend 容器。`
+          );
+        }
+      })
+      .catch(() => {
+ /* 网络错误不打扰用户 */
+ });
+  }, []);
 
   const modeLabels: Record<typeof mode, string> = {
     quick: "快速模式 · 二轮庭审",
@@ -138,6 +157,19 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {/* v2.1 F4: LLM 未配置 banner — 不可关闭, 顶部固定, 琥珀背景红边 */}
+      {llmWarning && (
+        <div
+          className="w-full bg-amber-50 border-b-2 border-red-600 text-ink"
+          role="alert"
+          data-testid="llm-warning-banner"
+        >
+          <div className="container mx-auto max-w-5xl px-6 py-3 text-sm leading-relaxed whitespace-pre-line">
+            {llmWarning}
+          </div>
+        </div>
+      )}
 
       {/* ============ Hero ============ */}
       <section className="container mx-auto max-w-5xl px-6 pt-16 pb-10">

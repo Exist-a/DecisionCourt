@@ -2,8 +2,16 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
+
+// ErrProviderNotImplemented 用于 main.go 启动时判断是否启用 tavily 等
+// 未实现的 provider, 输出明确错误而非 log.Fatalf。
+//
+// v2.1 F4: tavily 仍是占位, 但用户设 SEARCH_PROVIDER=tavily + 无 key 时
+// 不再 log.Fatalf, 而是 ErrProviderNotImplemented 让 main.go 优雅降级。
+var ErrProviderNotImplemented = errors.New("search provider not implemented; see ADR 0035+")
 
 type Result struct {
 	Title   string
@@ -66,8 +74,9 @@ func NewProvider(providerName, apiKey string) (Provider, error) {
 		}
 		return NewBochaProvider(apiKey), nil
 	case "tavily":
-		// tavily 实现尚未交付;留 case 防止 switch 静默回落到 default
-		return nil, fmt.Errorf("tavily provider not implemented yet")
+		// tavily 实现尚未交付; 留 case 防止 switch 静默回落到 default。
+		// v2.1 F4: 返回 sentinel error 让 main.go 检测, 避免 log.Fatalf。
+		return nil, fmt.Errorf("%w: tavily", ErrProviderNotImplemented)
 	case "":
 		// providerName 为空(没设 SEARCH_PROVIDER)→ 按 apiKey 自动选
 		if apiKey != "" {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -60,8 +62,16 @@ func main() {
 
 	llmClient, err := llm.NewClient()
 	if err != nil {
-		log.Printf("warning: LLM client not initialized: %v", err)
-		log.Println("courtroom service will not be available until LLM_API_KEY is set")
+		// v2.1 F4: 静默启动修复 — 升级 warn → ERROR + 染色 banner
+		slog.Error("LLM client not initialized — courtroom disabled",
+			"error", err,
+			"help", "set LLM_API_KEY in .env (see .env.example)",
+		)
+		// 染色 banner 绕过 JSON handler, 用户启动时一眼能看到
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "\x1b[31m[FATAL-LITE] LLM_API_KEY not set.\x1b[0m")
+		fmt.Fprintln(os.Stderr, "\x1b[33m          Courtroom service is disabled until LLM_API_KEY is configured.\x1b[0m")
+		fmt.Fprintln(os.Stderr, "\x1b[33m          See .env.example for setup instructions.\x1b[0m")
 	}
 
 	// Agent Gateway 白盒子集：把所有 LLM 调用过 Recorder，写入
@@ -157,7 +167,23 @@ func main() {
 
 	orchestrator := agent.NewOrchestrator(gatewayClient, bus, memRepo, nil, nil)
 	evidenceSvc := evidence.NewService(model.DB, gatewayClient)
-	searcher, _ := search.NewProvider(config.AppConfig.SearchProvider, config.AppConfig.BochaAPIKey)
+
+	// v2.1 F4: search provider 启动检测。未实现的 provider 输出明确错误
+	// 而非静默走 mock (用户配错时不会感知)。
+	searcher, err := search.NewProvider(config.AppConfig.SearchProvider, config.AppConfig.BochaAPIKey)
+	if err != nil {
+		if errors.Is(err, search.ErrProviderNotImplemented) {
+			slog.Error("search provider not implemented",
+				"provider", config.AppConfig.SearchProvider,
+				"supported", []string{"mock", "bocha"})
+			// 不 log.Fatalf: 让用户能在前端看到警告后改 .env 重启
+			// 暂时回退到 mock 避免服务起不来
+			searcher = search.NewMockProvider()
+		} else {
+			slog.Error("search provider init failed", "error", err, "provider", config.AppConfig.SearchProvider)
+			searcher = search.NewMockProvider()
+		}
+	}
 
 	courtroomSvc := courtroom.NewService(model.DB, orchestrator, evidenceSvc, searcher, bus, hub.Broadcast)
 	// v0.10.23 候选 2: 注入 HistoryProvider, 让 orchestrator 拉同 agent 历史发言

@@ -14,6 +14,7 @@ import (
 	"github.com/decisioncourt/backend/internal/auth"
 	"github.com/decisioncourt/backend/internal/courtroom"
 	"github.com/decisioncourt/backend/internal/investigation"
+	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/ratelimit"
@@ -165,6 +166,8 @@ func (h *Handler) lookupSession(sessionUUID string) (model.CourtSession, bool) {
 // 鉴权 /api/v1/* 由 RegisterAPIRoutes 注册到带 auth 中间件的 group。
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.GET("/health", h.HealthHandler)
+	// v2.1 F4: LLM 健康端点, 前端首页 banner 检测用
+	r.GET("/api/v1/health/llm", h.HealthLLMHandler)
 }
 
 // RegisterAPIRoutes 把 /api/v1/* 路由注册到传入的 group。
@@ -231,6 +234,17 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 
 func (h *Handler) HealthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// v2.1 F4: HealthLLMHandler 返回 LLM 客户端健康状态。
+// 用于前端首页检测 LLM 是否配置, 触发不可关闭的 banner 提示用户。
+//
+// 设计纪律 (AGENTS.md §8 红线):
+//   - 不回显完整 LLM_API_KEY (返回字段为 maskKey 生成的 "sk-***xxxx")
+//   - 不在日志 / metric 中输出完整 key
+//   - 公开端点, no auth (与 /health 一致)
+func (h *Handler) HealthLLMHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, llm.GetHealth())
 }
 
 // checkSessionAccess 是 P0-1 + P0-5 鉴权核心:
