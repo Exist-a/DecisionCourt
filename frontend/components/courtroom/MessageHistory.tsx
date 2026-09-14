@@ -122,7 +122,7 @@ export function MessageHistory({ messages }: MessageHistoryProps) {
                 </header>
 
                 {/* 内容（serif 引用体） */}
-                <p className="text-[13px] text-ink leading-relaxed text-display">
+                <p className="text-[13px] text-ink leading-relaxed text-display whitespace-pre-wrap break-words">
                   {msg.action_type === "system" ? (
                     <span className="text-inkSoft italic">— {msg.content}</span>
                   ) : msg.action_type === "submit_evidence" ? (

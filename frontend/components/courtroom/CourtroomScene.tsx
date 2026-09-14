@@ -649,7 +649,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
       )}
 
       {/* Main content */}
-      <div className="flex-1 container mx-auto max-w-6xl px-6 py-5 flex gap-5 overflow-hidden">
+      <div className="flex-1 h-[calc(100vh-64px)] container mx-auto max-w-6xl px-6 py-5 flex gap-5 overflow-hidden">
         {/* Courtroom scene
             v2.1 修横向滚动 (Bug-UI-侧栏溢出):
             - overflow-y-auto 改为 overflow-y-auto + overflow-x-clip,防御气泡/长内容撑出
