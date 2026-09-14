@@ -84,6 +84,23 @@ const nextConfig = {
       },
     ];
   },
+
+  // v2.2 chore(dev): dev 反代
+  //
+  // dev compose 缺反代层 (prod 走 Caddy, dev 没有), 导致浏览器 fetch
+  //   /api/v1/* 直接打 Next.js dev server 自己 → 404。
+  // 这里把 /api/* 和 /ws/* 转到 backend (容器内走 docker 网络 BACKEND_INTERNAL_URL;
+  //   浏览器 fetch 仍走 NEXT_PUBLIC_API_URL 直连 host:8180)。
+  //
+  // 注意: prod compose 用 deploy/caddy/Caddyfile, 不走这里。
+  async rewrites() {
+    const apiBase =
+      process.env.BACKEND_INTERNAL_URL || "http://localhost:8180";
+    return [
+      { source: "/api/:path*", destination: `${apiBase}/api/:path*` },
+      { source: "/ws/:path*", destination: `${apiBase}/ws/:path*` },
+    ];
+  },
 };
 
 export default nextConfig;
