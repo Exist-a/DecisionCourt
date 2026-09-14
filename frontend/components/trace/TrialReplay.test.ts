@@ -89,3 +89,31 @@ test("F2: reviewPhase 没发生过时自动跳到最后一个已发生 phase", (
     "未发生 phase 应 fallback 到最后一个已发生"
   );
 });
+
+// v2.2 fix(trace): TrialReplay 对话流文字加 whitespace-pre-wrap
+//
+// 原 <p>{msg.content}</p> 直接渲染, 后端 LLM 输出含 \n\n (段落) 会被
+// HTML 折叠成空格, 多段内容渲染成单行 — 用户看到的"庭审回访对话流
+// 文字渲染问题" 之一。
+//
+// 修复: <p> 加 whitespace-pre-wrap + break-words, 保留 \n + 自动断行。
+test("v2.2 修复: 对话流 <p> 应含 whitespace-pre-wrap", () => {
+  const src = readFile("components/trace/TrialReplay.tsx");
+
+  // 验证 1: 修复存在 — phaseMessages 渲染的 <p> 必须含 whitespace-pre-wrap
+  // 抓 phaseMessages.map 到 msg.content 的整段 JSX (Badge 中间有 ~150 字符)
+  const msgBlock = src.match(/phaseMessages\.map\([\s\S]{0,1500}msg\.content/);
+  assert.ok(msgBlock, "应能找到 phaseMessages.map 块");
+  assert.match(
+    msgBlock![0],
+    /whitespace-pre-wrap/,
+    "v2.2: 对话流 <p> 必须含 whitespace-pre-wrap, 保留 LLM 输出 \\n\\n 段落"
+  );
+
+  // 验证 2: 保留 break-words (防英文长词溢出)
+  assert.match(
+    msgBlock![0],
+    /break-words/,
+    "v2.2: 对话流 <p> 必须保留 break-words 防英文长词溢出"
+  );
+});
