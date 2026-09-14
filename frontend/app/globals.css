@@ -455,3 +455,357 @@
 .silhouette-avatar * {
   will-change: transform;
 }
+
+/* =============================================================================
+ * v2.1 DotAvatar — 抛弃人型剪影,改用纯几何抽象元素 + 6 状态动效
+ *   设计动机 (V2.1-OPTIMIZATION-PLAN.md §Phase A):
+ *     - v1 小球 (48px 色盘 + 角色汉字) 复用作底
+ *     - 6 状态机 (speak/think/search/judge/confront/listen) 各有可识别动效
+ *     - 不靠"人物剪影"也能秒懂"谁在做什么"
+ *     - 0 新依赖:CSS keyframes + 复用现有 token (gold/prosecution/defense/judge)
+ *   设计原则 (postmortem §5 规则 3「抽象 > 模拟」):
+ *     - 抽象层 (halo/orbit/scan/confront/seal) 与色盘 div 互相独立
+ *     - framer-motion 驱动色盘 (保留现有 <AvatarAnimations> 6 variants)
+ *     - CSS keyframes 驱动外部装饰层
+ *     - Playwright 钩子 (data-role/data-speaking/data-searching/data-judging) 必须保留
+ *   ============================================================================ */
+
+/* ---------- speaking: 金色 halo 呼吸 + 外扩 ---------- */
+@keyframes dot-speak-halo {
+  0%, 100% {
+    box-shadow:
+      0 0 0 3px var(--dot-gold, #D4A24C),
+      0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px var(--dot-gold, #D4A24C),
+      0 0 0 7px transparent;
+  }
+}
+
+.dot-speak-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+  animation: dot-speak-halo 1.4s ease-in-out infinite;
+}
+
+/* ---------- thinking: 3 颗伴星圆周轨道 ---------- */
+.dot-orbit {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+  animation: dot-orbit-rotate 12s linear infinite;
+}
+
+.dot-orbit-sat {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--dot-orbit-color, #7A5C3F);
+  top: 50%;
+  left: 50%;
+  margin-top: -2px;
+  margin-left: -2px;
+  /* 起始位置:半径 30px,角度 0deg */
+  transform-origin: 2px 2px;
+  transform: rotate(0deg) translate(0, -28px) rotate(0deg);
+}
+
+.dot-orbit-sat-1 {
+  background: #B53A2E; /* 绛红第一颗 */
+}
+
+.dot-orbit-sat-2 {
+  background: #2C5470; /* 深青第二颗 */
+}
+
+.dot-orbit-sat-3 {
+  background: #7A5C3F; /* 棕金第三颗 */
+}
+
+@keyframes dot-orbit-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- searching: 调查员专属 conic-gradient 扫描环 ---------- */
+.dot-search-ring {
+  position: absolute;
+  inset: -8px;
+  width: calc(100% + 16px);
+  height: calc(100% + 16px);
+  border-radius: 9999px;
+  pointer-events: none;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    rgba(122, 92, 63, 0.55) 12%,
+    transparent 25%,
+    transparent 100%
+  );
+  -webkit-mask:
+    radial-gradient(circle, transparent calc(50% - 2px), #000 calc(50% - 2px), #000 50%, transparent 50%);
+  mask:
+    radial-gradient(circle, transparent calc(50% - 2px), #000 calc(50% - 2px), #000 50%, transparent 50%);
+  animation: dot-search-rotate 1.2s linear infinite;
+}
+
+@keyframes dot-search-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- judging: 法官专属金印落下冲击波 ---------- */
+.dot-judge-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+.dot-judge-shock {
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  border: 2px solid var(--dot-judge-gold, #D4A24C);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dot-judge-shock-active {
+  animation: dot-judge-shock 0.6s cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+}
+
+@keyframes dot-judge-shock {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+/* ---------- confronting: 控辩对峙双色外环挤压 ---------- */
+.dot-confront-out {
+  position: absolute;
+  inset: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+.dot-confront-active {
+  animation: dot-confront-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dot-confront-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--dot-confront-color, currentColor);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 4px var(--dot-confront-color, currentColor);
+  }
+}
+
+/* 对峙阶段打印色:控/辩/审 P0-1 ~ P0-6 in v0.8.3 print 样式统一为深色,
+   对 Phase C confront-line 也复用 */
+/* ---------- v2.1 O-5: 法官偏倚指针冲击波 (override of dot-judge-shock 不冲突 transform) ---------- */
+.dot-judge-shock-pointer {
+  position: absolute;
+  border-radius: 2px;
+  border: 1.5px solid var(--dot-judge-gold, #D4A24C);
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 0 4px var(--dot-judge-gold, #D4A24C);
+  width: 8px;
+  height: 14px;
+}
+
+@keyframes dot-judge-shock-pointer {
+  0% {
+    opacity: 0.9;
+    width: 8px;
+    height: 14px;
+  }
+  100% {
+    opacity: 0;
+    width: 48px;
+    height: 28px;
+  }
+}
+
+.dot-judge-shock-pointer-active {
+  animation: dot-judge-shock-pointer 0.7s cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+}
+
+@media print {
+  .dot-judge-shock-pointer { display: none !important; }
+}
+
+/* ---------- Print safeguard (不破坏现有 .print:hidden) ---------- */
+@media print {
+  .dot-speak-ring,
+  .dot-orbit,
+  .dot-search-ring,
+  .dot-judge-shock,
+  .dot-confront-out,
+  .scene-binding,
+  .scene-fold-tl,
+  .scene-fold-tr,
+  .scene-fold-bl,
+  .scene-fold-br,
+  .scene-seal-mini {
+    display: none !important;
+  }
+}
+
+/* =============================================================================
+ * v2.1 O-3: 庭审现场面板「卷宗封面」装饰 (CSS-only)
+ *
+ * 设计动机 (V2.1-OPTIMIZATION-PLAN.md §Phase O-3):
+ *   - 当前庭审现场面板是纯白卡 + shadow,「没有案卷感」
+ *   - 用纯 CSS 模拟案卷/装订簿的特征:左侧装订圆孔 + 四角折角 + 右下迷你印章
+ *   - 不引入图片/PNG,不动 inline className
+ *   - 复用现有 token:rule (#E8E2D5) / paperDeep (#F2EDE3) / seal (#C8342A) / judge.soft
+ *
+ * 实现要点:
+ *   - .scene-shell 内包含 ::before/::after 表达装订线
+ *   - 4 个折角用绝对定位 div (独立 elements),size 28px
+ *   - 印章 mini 用现有 seal-stamp 变体 (max-size,char-only)
+ *
+ * 不破坏:
+ *   - bg-white border shadow-paper 现有视觉保留,装饰叠加在内部
+ *   - min-w-0 overflow-x-clip 不变
+ *   - 庭审主面板 wrapper 不变
+ *   ============================================================================ */
+
+.scene-shell {
+  position: relative;
+  background-image: var(--paper-grain, none);
+}
+
+/* 左侧装订线 — 纵虚线 + 3 个圆孔 */
+.scene-binding {
+  position: absolute;
+  left: 14px;
+  top: 16px;
+  bottom: 16px;
+  width: 1px;
+  border-left: 1px dashed rgba(168, 159, 142, 0.55);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.scene-binding::before,
+.scene-binding::after,
+.scene-binding > .scene-binding-hole {
+  content: "";
+  position: absolute;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  background: var(--paper, #FAF8F4);
+  border: 1px solid rgba(168, 159, 142, 0.45);
+}
+
+.scene-binding::before { top: 0; }
+.scene-binding::after { bottom: 0; }
+.scene-binding-hole {
+  top: 50% !important;
+  margin-top: -4px;
+}
+
+/* 四角折角 — 28px 三角 */
+.scene-fold-tl,
+.scene-fold-tr,
+.scene-fold-bl,
+.scene-fold-br {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.scene-fold-tl {
+  top: -1px;
+  left: -1px;
+  border-top: 16px solid rgba(168, 159, 142, 0.18);
+  border-right: 16px solid transparent;
+}
+
+.scene-fold-tr {
+  top: -1px;
+  right: -1px;
+  border-top: 16px solid rgba(168, 159, 142, 0.18);
+  border-left: 16px solid transparent;
+}
+
+.scene-fold-bl {
+  bottom: -1px;
+  left: -1px;
+  border-bottom: 16px solid rgba(168, 159, 142, 0.18);
+  border-right: 16px solid transparent;
+}
+
+.scene-fold-br {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 16px solid rgba(168, 159, 142, 0.18);
+  border-left: 16px solid transparent;
+}
+
+/* 印章 mini (案卷·印章 风格延续) — 左下 28x28 (避开 speaker-hint 在右上) */
+.scene-seal-mini {
+  position: absolute;
+  bottom: 12px;
+  left: 24px;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at center, rgba(200, 52, 42, 0.85) 0%, rgba(200, 52, 42, 0.55) 60%, transparent 70%);
+  border: 1px solid rgba(74, 15, 10, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 1px 0 rgba(74, 15, 10, 0.3), 0 2px 4px rgba(74, 15, 10, 0.15);
+  transform: rotate(-6deg);
+}
+
+.scene-seal-mini::before {
+  content: "判";
+  font-family: serif;
+  font-size: 14px;
+  color: rgba(74, 15, 10, 0.7);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+/* 印章 mini 不要遮住现有右上 speaker-hint — 缩到右上偏左 */
+@media (max-width: 768px) {
+  .scene-seal-mini { display: none; }
+  .scene-binding { display: none; }
+}
