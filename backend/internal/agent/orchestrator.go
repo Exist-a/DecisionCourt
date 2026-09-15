@@ -103,7 +103,10 @@ func (o *Orchestrator) ProsecutorSpeak(
 	evidences []model.Evidence,
 	messages []model.Message,
 ) (Speaker, error) {
-	prompt := ProsecutorPrompt(agent, session, evidences, "")
+	prompt, err := ProsecutorPrompt(agent, session, evidences, "")
+	if err != nil {
+		return Speaker{}, err
+	}
 	enhanced := withArgumentSummary(messages, model.AgentProsecutor, model.AgentDefender)
 	speaker, err := o.speak(ctx, agent, prompt, enhanced, len(evidences) > 0)
 	if err != nil {
@@ -120,7 +123,10 @@ func (o *Orchestrator) DefenderSpeak(
 	evidences []model.Evidence,
 	messages []model.Message,
 ) (Speaker, error) {
-	prompt := DefenderPrompt(agent, session, evidences, "")
+	prompt, err := DefenderPrompt(agent, session, evidences, "")
+	if err != nil {
+		return Speaker{}, err
+	}
 	enhanced := withArgumentSummary(messages, model.AgentDefender, model.AgentProsecutor)
 	speaker, err := o.speak(ctx, agent, prompt, enhanced, len(evidences) > 0)
 	if err != nil {
@@ -189,7 +195,7 @@ func (o *Orchestrator) lawyerSpeakReAct(
 	stepHook StepHook,
 	chunkCb SpeakChunkCallback,
 ) (Speaker, []Step, error) {
-	var promptBuilder func(model.Agent, model.CourtSession, []model.Evidence, string) string
+	var promptBuilder func(model.Agent, model.CourtSession, []model.Evidence, string) (string, error)
 	switch self {
 	case model.AgentProsecutor:
 		promptBuilder = ProsecutorPrompt
@@ -206,7 +212,10 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		)
 	}
 
-	systemPrompt := promptBuilder(agent, session, evidences, toolBlockForPrompt(toolMap))
+	systemPrompt, err := promptBuilder(agent, session, evidences, toolBlockForPrompt(toolMap))
+	if err != nil {
+		return Speaker{}, nil, err
+	}
 	systemPrompt = systemPrompt + withArgumentSummaryText(messages, self, opponent)
 	// v0.5: inject the agent's episodic memory (private strategy notes from
 	// prior rounds). Order matters — argument summary first (immediate
@@ -544,7 +553,10 @@ func (o *Orchestrator) InvestigatorSpeak(
 	evidences []model.Evidence,
 	messages []model.Message,
 ) (Speaker, error) {
-	prompt := InvestigatorPrompt(session, evidences)
+	prompt, err := InvestigatorPrompt(session, evidences)
+	if err != nil {
+		return Speaker{}, err
+	}
 	agent := model.Agent{
 		AgentUUID: "agent_inv_001",
 		AgentType: model.AgentInvestigator,
@@ -583,7 +595,10 @@ func (o *Orchestrator) GenerateVerdict(
 	log.Printf("[GenerateVerdict] start session=%s preferred=%s beliefA=%.2f beliefB=%.2f",
 		session.SessionUUID, judgeDecision.Preferred, judgeDecision.BeliefA, judgeDecision.BeliefB)
 
-	prompt := ClerkPromptWithJudgeDecision(session, evidences, messages, judgeDecision)
+	prompt, err := ClerkPromptWithJudgeDecision(session, evidences, messages, judgeDecision)
+	if err != nil {
+		return nil, err
+	}
 	log.Printf("[GenerateVerdict] prompt length=%d", len(prompt))
 
 	ctx = traceFor(ctx, session, model.AgentClerk, "verdict")
@@ -627,7 +642,10 @@ func (o *Orchestrator) ClerkSummary(
 	messages []model.Message,
 	round int,
 ) (string, error) {
-	prompt := ClerkSummaryPrompt(session, evidences, messages, round)
+	prompt, err := ClerkSummaryPrompt(session, evidences, messages, round)
+	if err != nil {
+		return "", err
+	}
 
 	ctx = traceFor(ctx, session, model.AgentClerk, "summary")
 	content, _, err := o.llmClient.Complete(ctx, prompt, []llm.Message{}, llm.CompletionOptions{
@@ -660,7 +678,10 @@ func (o *Orchestrator) JudgeAssess(
 	evidences []model.Evidence,
 	messages []model.Message,
 ) (beliefA, beliefB float64, reasoning string, err error) {
-	prompt := JudgePrompt(session, evidences, messages, judge.BeliefA, judge.BeliefB)
+	prompt, err := JudgePrompt(session, evidences, messages, judge.BeliefA, judge.BeliefB)
+	if err != nil {
+		return 0, 0, "", err
+	}
 
 	ctx = traceFor(ctx, session, model.AgentJudge, "assess")
 	content, _, err := o.llmClient.Complete(ctx, prompt, []llm.Message{}, llm.CompletionOptions{
@@ -720,7 +741,10 @@ func (o *Orchestrator) JudgeFinalDecision(
 	evidences []model.Evidence,
 	messages []model.Message,
 ) (JudgeDecision, error) {
-	prompt := JudgeFinalPrompt(session, evidences, messages, judge.BeliefA, judge.BeliefB)
+	prompt, err := JudgeFinalPrompt(session, evidences, messages, judge.BeliefA, judge.BeliefB)
+	if err != nil {
+		return JudgeDecision{}, err
+	}
 
 	ctx = traceFor(ctx, session, model.AgentJudge, "final")
 	content, _, err := o.llmClient.Complete(ctx, prompt, []llm.Message{}, llm.CompletionOptions{
