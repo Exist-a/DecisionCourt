@@ -46,8 +46,16 @@
 | **v2.2 P0-7** | ✅ | 整个页面 h-screen 100vh（庭审记录面板高度修复）|
 | **v2.2** | ✅ | v2.2 推送（9 commit `88a3716..ec46438`）|
 | **AGENTS.md §11** | ✅ | Docker 业务测试规范（DOCKER_TEST_POLICY）|
-| ADR 累计 | 36 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) |
-| Go 测试 | ~332 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + **v2.1 F4+F5 6** |
+| **v2.3 observability-impl** | ✅ | agent_gateway 全量 metrics 注入骨架（Gateway / cache / breaker / compressor / throttler / budget / retryer 7 文件构造器加 metrics 参数；nil-safe）|
+| **v2.3 observability-gateway** | ✅ | gateway.go 加埋点（call_total / tokens / duration / cache_put / stream / budget_rejected）|
+| **v2.3 observability-cache** | ✅ | cache.go 加埋点（hit / miss / put{insert,update} / evict{lru,session} / size gauge）|
+| **v2.3 observability-breaker** | ✅ | breaker.go 加埋点（state_change{from,to} / state gauge / fallback{reason}）|
+| **v2.3 observability-compressor** | ✅ | prompt_compressor.go 加埋点（ratio / duration / summary_inserted + skipped_normal 路径）|
+| **v2.3 observability-throttler-budget-retryer** | ✅ | throttler / token_budget / retryer 3 文件加埋点 |
+| **v2.3 observability-tests** | ✅ | metrics_test.go 9 个新 sub-test（cache / breaker / compressor / throttler / retryer / gateway E2E / nil safe / budget）|
+| **v2.3 docs** | ✅ | ADR 0037 + release-notes/v2.3 + SWITCH-SOAK.md §2 表格对齐 + 端口冲突文档清理 + AGENTS.md §11.7 curl 中文乱码排查 |
+| ADR 累计 | 37 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + **0037 agent-gateway-observability** |
+| Go 测试 | ~341 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + v2.1 F4+F5 6 + **v2.3 observability-tests 9** |
 | Frontend 测试 | 103 (9 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 + **v2.1 F1+F2+F3+F4 11** + **v2.2 2** |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
