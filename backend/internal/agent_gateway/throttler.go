@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/decisioncourt/backend/internal/llm"
+	"github.com/decisioncourt/backend/internal/observability"
 )
 
 // Throttler 在 token 预算接近上限时降低 max_tokens 与 temperature，
@@ -46,10 +47,14 @@ type ThrottleInfo struct {
 }
 
 // Throttler 是无状态限流器。
-type Throttler struct{}
+type Throttler struct {
+	// v2.3 (ADR 0037) 注入 metrics；nil 时所有埋点 no-op
+	metrics observability.Metrics
+}
 
 // NewThrottler 构造限流器。
-func NewThrottler() *Throttler { return &Throttler{} }
+// metrics 传 nil 时所有埋点 no-op（向后兼容）。
+func NewThrottler(metrics observability.Metrics) *Throttler { return &Throttler{metrics: metrics} }
 
 // Apply 根据预算状态返回限流后的 CompletionOptions。
 // taskType 命中豁免列表时保留原 max_tokens 不变，仅记录 Exempted=true。
@@ -70,6 +75,9 @@ func (th *Throttler) Apply(opts llm.CompletionOptions, bs BudgetSnapshot, taskTy
 		// temperature 仍可降，鼓励确定性格式
 		out := opts
 		out.Temperature = 0.2
+		if th.metrics != nil {
+			th.metrics.IncCounter(observability.MetricLLMThrottleExemptedTotal, map[string]string{"task_type": taskType})
+		}
 		return out, info
 	}
 	info.Applied = true
@@ -91,5 +99,9 @@ func (th *Throttler) Apply(opts llm.CompletionOptions, bs BudgetSnapshot, taskTy
 	}
 	out.MaxTokens = scaled
 	info.MaxTokensAfter = scaled
+
+	if th.metrics != nil {
+		th.metrics.IncCounter(observability.MetricLLMThrottleAppliedTotal, map[string]string{"task_type": taskType})
+	}
 	return out, info
 }

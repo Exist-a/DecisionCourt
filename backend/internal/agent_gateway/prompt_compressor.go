@@ -1,7 +1,10 @@
 package agent_gateway
 
 import (
+	"time"
+
 	"github.com/decisioncourt/backend/internal/llm"
+	"github.com/decisioncourt/backend/internal/observability"
 )
 
 // PromptCompressor 在 token 预算紧张时压缩历史上下文。MVP 策略简单：
@@ -38,7 +41,9 @@ type CompressionInfo struct {
 
 // PromptCompressor 是无状态压缩器，根据 cfg 选择 legacy / scored 策略。
 type PromptCompressor struct {
-	cfg SmartCompressionConfig
+	cfg     SmartCompressionConfig
+	// v2.3 (ADR 0037) 注入 metrics；nil 时所有埋点 no-op
+	metrics observability.Metrics
 }
 
 // SmartCompressionConfig 由 Gateway 注入；Compress 据此判断走哪条路径。
@@ -50,7 +55,8 @@ type SmartCompressionConfig struct {
 }
 
 // NewPromptCompressor 构造压缩器。
-func NewPromptCompressor(cfg SmartCompressionConfig) *PromptCompressor {
+// metrics 传 nil 时所有埋点 no-op（向后兼容）。
+func NewPromptCompressor(cfg SmartCompressionConfig, metrics observability.Metrics) *PromptCompressor {
 	if cfg.KeepRecentForcedN <= 0 {
 		cfg.KeepRecentForcedN = 3
 	}
@@ -60,7 +66,7 @@ func NewPromptCompressor(cfg SmartCompressionConfig) *PromptCompressor {
 	if cfg.ScoreThreshold <= 0 {
 		cfg.ScoreThreshold = 0.3
 	}
-	return &PromptCompressor{cfg: cfg}
+	return &PromptCompressor{cfg: cfg, metrics: metrics}
 }
 
 // Compress 根据预算状态与 cfg 选择策略：
@@ -68,19 +74,45 @@ func NewPromptCompressor(cfg SmartCompressionConfig) *PromptCompressor {
 //   - cfg.Enabled == false → legacy（保留 system + 最近 5 条）
 //   - cfg.Enabled == true  → scored（三阶段管道：评分 / 原子组 / 贪心打包）
 func (pc *PromptCompressor) Compress(messages []llm.Message, bs BudgetSnapshot) ([]llm.Message, CompressionInfo) {
+	start := time.Now()
 	info := CompressionInfo{BeforeCount: len(messages)}
 	if len(messages) == 0 {
 		return nil, info
 	}
 	if bs.Status != StatusCompress && bs.Status != StatusThrottle && bs.Status != StatusExhausted {
+		// v2.3 (ADR 0037) 跳过路径也埋点，便于计算触发率。
+		if pc.metrics != nil {
+			pc.metrics.IncCounter(observability.MetricCompressionApplied, map[string]string{"status": "skipped_normal"})
+		}
 		return messages, info
 	}
 	info.Applied = true
 
+	var out []llm.Message
 	if pc.cfg.Enabled {
-		return CompressScored(messages, bs, pc.cfg, info)
+		out, info = CompressScored(messages, bs, pc.cfg, info)
+	} else {
+		out, info = CompressLegacy(messages, info)
 	}
-	return CompressLegacy(messages, info)
+
+	// v2.3 (ADR 0037) 压缩完成后埋点：strategy / ratio / dropped / duration / summary_inserted。
+	if pc.metrics != nil {
+		dur := time.Since(start).Seconds()
+		labels := map[string]string{
+			"strategy": info.Strategy,
+			"trigger":  string(bs.Status),
+		}
+		pc.metrics.IncCounter(observability.MetricCompressionApplied, labels)
+		pc.metrics.ObserveHistogram(observability.MetricPromptCompressionDuration, labels, dur)
+		if info.BeforeLength > 0 {
+			ratio := float64(info.AfterLength) / float64(info.BeforeLength)
+			pc.metrics.ObserveHistogram(observability.MetricPromptCompressionRatio, labels, ratio)
+		}
+		if info.SummarizedBlocks > 0 {
+			pc.metrics.IncCounter(observability.MetricPromptCompressionSummaryTotal, labels)
+		}
+	}
+	return out, info
 }
 
 // CompressLegacy 保留 v0.5+ 的 "system + 最近 5 条 + 超长截断" 行为；

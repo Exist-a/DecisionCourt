@@ -3,6 +3,8 @@ package agent_gateway
 import (
 	"context"
 	"time"
+
+	"github.com/decisioncourt/backend/internal/observability"
 )
 
 // Retryer 对 LLM 调用做退避重试。MVP 仅对 Complete 生效；
@@ -18,21 +20,24 @@ const (
 type Retryer struct {
 	backoffDurations []time.Duration
 	lastCount        int
+	// v2.3 (ADR 0037) 注入 metrics；nil 时所有埋点 no-op
+	metrics observability.Metrics
 }
 
 // RetryResult 把每次 operation 的结果暴露给调用方。调用方在闭包里更新
 // 自己的 result 变量；Retryer 只负责重试与计数。
-func NewRetryer() *Retryer {
+func NewRetryer(metrics observability.Metrics) *Retryer {
 	return NewRetryerWithBackoff([]time.Duration{
 		defaultBackoffBase,
 		2 * defaultBackoffBase,
 		4 * defaultBackoffBase,
-	})
+	}, metrics)
 }
 
 // NewRetryerWithBackoff 用自定义退避构造；空切片表示不重试。
-func NewRetryerWithBackoff(durations []time.Duration) *Retryer {
-	return &Retryer{backoffDurations: durations}
+// metrics 传 nil 时所有埋点 no-op（向后兼容）。
+func NewRetryerWithBackoff(durations []time.Duration, metrics observability.Metrics) *Retryer {
+	return &Retryer{backoffDurations: durations, metrics: metrics}
 }
 
 // Do 执行 operation，失败时按退避重试。返回最终 error；调用方闭包可
@@ -48,6 +53,9 @@ func (r *Retryer) Do(operation func() error) error {
 		case <-time.After(d):
 		}
 		r.lastCount++
+		if r.metrics != nil {
+			r.metrics.IncCounter(observability.MetricLLMRetryAttemptTotal, nil)
+		}
 		if err = operation(); err == nil {
 			return nil
 		}
@@ -69,6 +77,9 @@ func (r *Retryer) DoContext(ctx context.Context, operation func() error) error {
 		case <-time.After(d):
 		}
 		r.lastCount++
+		if r.metrics != nil {
+			r.metrics.IncCounter(observability.MetricLLMRetryAttemptTotal, nil)
+		}
 		if err = operation(); err == nil {
 			return nil
 		}

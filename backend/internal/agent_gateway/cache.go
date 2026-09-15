@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/decisioncourt/backend/internal/llm"
+	"github.com/decisioncourt/backend/internal/observability"
 )
 
 // CachedResponse 缓存的 LLM 响应。
@@ -97,12 +98,17 @@ type ResponseCache struct {
 
 	hits   uint64
 	misses uint64
+	// v2.3 (ADR 0037) 注入 metrics；nil 时所有埋点 no-op
+	metrics observability.Metrics
+	// lastGaugeSize 用于 llm_cache_size gauge：避免每次 Get/Put 都全表遍历
+	lastGaugeSize int
 }
 
 // NewResponseCache 构造一个 ResponseCache。
 //   - ttl:entry 过期时间,0 → 默认 5min
 //   - max:LRU 上限 entry 数,0 → 默认 10000
-func NewResponseCache(ttl time.Duration, max int) *ResponseCache {
+//   - metrics:nil 时所有埋点 no-op（向后兼容）
+func NewResponseCache(ttl time.Duration, max int, metrics observability.Metrics) *ResponseCache {
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
@@ -114,7 +120,21 @@ func NewResponseCache(ttl time.Duration, max int) *ResponseCache {
 		ll:      list.New(),
 		ttl:     ttl,
 		max:     max,
+		metrics: metrics,
 	}
+}
+
+// updateGauge 刷新 llm_cache_size gauge（仅当 size 变化时调用 SetGauge，避免高频写）。
+func (c *ResponseCache) updateGauge() {
+	if c == nil || c.metrics == nil {
+		return
+	}
+	size := c.ll.Len()
+	if size == c.lastGaugeSize {
+		return
+	}
+	c.lastGaugeSize = size
+	c.metrics.SetGauge(observability.MetricLLMCacheSize, nil, float64(size))
 }
 
 // Get 查 cache。命中返回 (value, true),未命中返回 (nil, false)。
@@ -129,6 +149,9 @@ func (c *ResponseCache) Get(key CacheKey, sessionID string) (*CachedResponse, bo
 	if !ok {
 		c.mu.RUnlock()
 		atomic.AddUint64(&c.misses, 1)
+		if c.metrics != nil {
+			c.metrics.IncCounter(observability.MetricLLMCacheMissTotal, nil)
+		}
 		return nil, false
 	}
 	entry := el.Value.(*cacheEntry)
@@ -140,9 +163,13 @@ func (c *ResponseCache) Get(key CacheKey, sessionID string) (*CachedResponse, bo
 		if el, ok := c.entries[key]; ok {
 			c.ll.Remove(el)
 			delete(c.entries, key)
+			c.updateGauge()
 		}
 		c.mu.Unlock()
 		atomic.AddUint64(&c.misses, 1)
+		if c.metrics != nil {
+			c.metrics.IncCounter(observability.MetricLLMCacheMissTotal, nil)
+		}
 		return nil, false
 	}
 	c.mu.RUnlock()
@@ -151,6 +178,9 @@ func (c *ResponseCache) Get(key CacheKey, sessionID string) (*CachedResponse, bo
 	c.ll.MoveToFront(el)
 	c.mu.Unlock()
 	atomic.AddUint64(&c.hits, 1)
+	if c.metrics != nil {
+		c.metrics.IncCounter(observability.MetricLLMCacheHitTotal, nil)
+	}
 	return entry.value, true
 }
 
@@ -171,6 +201,9 @@ func (c *ResponseCache) Put(key CacheKey, sessionID string, value *CachedRespons
 		entry.expiresAt = now.Add(c.ttl)
 		entry.sessionID = sessionID
 		c.ll.MoveToFront(el)
+		if c.metrics != nil {
+			c.metrics.IncCounter(observability.MetricLLMCachePutTotal, map[string]string{"reason": "update"})
+		}
 		return
 	}
 
@@ -183,6 +216,9 @@ func (c *ResponseCache) Put(key CacheKey, sessionID string, value *CachedRespons
 		oldEntry := oldest.Value.(*cacheEntry)
 		c.ll.Remove(oldest)
 		delete(c.entries, oldEntry.key)
+		if c.metrics != nil {
+			c.metrics.IncCounter(observability.MetricLLMCacheEvictTotal, map[string]string{"reason": "lru"})
+		}
 	}
 
 	entry := &cacheEntry{
@@ -193,6 +229,10 @@ func (c *ResponseCache) Put(key CacheKey, sessionID string, value *CachedRespons
 	}
 	el := c.ll.PushFront(entry)
 	c.entries[key] = el
+	if c.metrics != nil {
+		c.metrics.IncCounter(observability.MetricLLMCachePutTotal, map[string]string{"reason": "insert"})
+		c.updateGauge()
+	}
 }
 
 // EvictSession 删除指定 session 的所有 entry。
@@ -218,6 +258,10 @@ func (c *ResponseCache) EvictSession(sessionID string) int {
 		c.ll.Remove(el)
 		delete(c.entries, entry.key)
 		evicted++
+	}
+	if c.metrics != nil && evicted > 0 {
+		c.metrics.AddCounter(observability.MetricLLMCacheEvictTotal, map[string]string{"reason": "session"}, float64(evicted))
+		c.updateGauge()
 	}
 	return evicted
 }

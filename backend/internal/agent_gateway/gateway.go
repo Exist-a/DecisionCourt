@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/decisioncourt/backend/internal/llm"
+	"github.com/decisioncourt/backend/internal/observability"
 )
 
 // Gateway 是装饰后的 llm.Client，所有业务侧通过它调 LLM。
@@ -30,10 +31,14 @@ type Gateway struct {
 	breaker      *LLMBreaker    // v0.9 (ADR 0013 §决策 3),可为 nil
 	cfg          GatewayConfig
 	defaultModel string
+	// v2.3 (ADR 0037) 注入 observability.Metrics，cache / breaker / compressor / throttler /
+	// budget / retryer 共用同一实例。nil 时所有埋点都是 no-op（不依赖 metrics）。
+	metrics observability.Metrics
 }
 
 // NewWithConfig 用完整配置构造 Gateway。
-func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg GatewayConfig) *Gateway {
+// metrics 传 nil 时所有埋点 no-op（向后兼容：单元测试 / 离线脚本可不必构造 metrics）。
+func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg GatewayConfig, metrics observability.Metrics) *Gateway {
 	cfg = cfg.Normalize()
 	if rec == nil {
 		rec = NewRecorder(RecorderConfig{Enabled: false, Provider: "unknown"}, nil)
@@ -55,7 +60,7 @@ func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg Gat
 		// v2：构造 MemStore 时携带 limit + cost + 阈值 + sliding 时长
 		slidingWindow := time.Duration(cfg.BudgetSlidingWindowSec) * time.Second
 		store := NewMemStore(cfg.BudgetPerSession, 0, cfg.CompressionThreshold, cfg.ThrottlingThreshold, slidingWindow)
-		budget = NewTokenBudgetWithStore(store)
+		budget = NewTokenBudgetWithStore(store, metrics)
 	}
 	if cfg.IsPromptCompressionEnabled() {
 		compressor = NewPromptCompressor(SmartCompressionConfig{
@@ -63,13 +68,13 @@ func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg Gat
 			KeepRecentForcedN:      cfg.KeepRecentForcedN,
 			SummaryInsertThreshold: cfg.SummaryInsertThreshold,
 			ScoreThreshold:         cfg.ScoreThreshold,
-		})
+		}, metrics)
 	}
 	if cfg.IsThrottlingEnabled() {
-		throttler = NewThrottler()
+		throttler = NewThrottler(metrics)
 	}
 	if cfg.IsFallbackEnabled() {
-		retryer = NewRetryer()
+		retryer = NewRetryer(metrics)
 	}
 	if cfg.IsFileLoggerEnabled() {
 		logger = NewFileLogger(cfg.LogDir)
@@ -78,10 +83,11 @@ func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg Gat
 		cache = NewResponseCache(
 			time.Duration(cfg.CacheTTLSec)*time.Second,
 			cfg.CacheMaxEntries,
+			metrics,
 		)
 	}
 	if cfg.Breaker.Enabled {
-		breaker = NewLLMBreaker(cfg.Breaker, DefaultKeywordFallback)
+		breaker = NewLLMBreaker(cfg.Breaker, DefaultKeywordFallback, metrics)
 	}
 
 	return &Gateway{
@@ -96,12 +102,13 @@ func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg Gat
 		breaker:      breaker,
 		cfg:          cfg,
 		defaultModel: defaultModel,
+		metrics:      metrics,
 	}
 }
 
 // Wrap 保持旧签名：仅启用审计落库，不启用高级能力。用于测试与向后兼容。
 func Wrap(inner llm.Client, rec *Recorder, defaultModel string) llm.Client {
-	return NewWithConfig(inner, rec, defaultModel, GatewayConfig{})
+	return NewWithConfig(inner, rec, defaultModel, GatewayConfig{}, nil)
 }
 
 // Complete 实现 llm.Client.Complete 装饰器。
@@ -138,6 +145,23 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 	if g.cache != nil {
 		cacheKey = MakeCacheKey(model, systemPrompt, messages, opts.Temperature)
 		if cached, ok := g.cache.Get(cacheKey, tr.SessionUUID); ok {
+			// v2.3 (ADR 0037) cache hit 路径埋点：cache_hit counter + tokens。
+			if g.metrics != nil {
+				g.metrics.IncCounter(observability.MetricLLMCallTotal, map[string]string{
+					"model": model,
+					"agent": tr.AgentType,
+					"task":  tr.TaskType,
+					"cache": "hit",
+				})
+				g.metrics.AddCounter(observability.MetricLLMCallTokens, map[string]string{
+					"model": model,
+					"type":  "input_cached",
+				}, float64(cached.Usage.PromptTokens))
+				g.metrics.AddCounter(observability.MetricLLMCallTokens, map[string]string{
+					"model": model,
+					"type":  "output_cached",
+				}, float64(cached.Usage.CompletionTokens))
+			}
 			g.recorder.Record(CallInput{
 				Trace:   tr,
 				Model:   model,
@@ -156,6 +180,13 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 	// 1b. v2 预算耗尽拒绝（D4 决策）
 	if g.cfg.IsRejectWhenExhaustedEnabled() && bs.Status == StatusExhausted {
 		err := fmt.Errorf("%w (session=%s ratio=%.2f)", ErrBudgetExhausted, tr.SessionUUID, bs.Ratio)
+		// v2.3 (ADR 0037) 预算耗尽拒绝埋点。
+		if g.metrics != nil {
+			g.metrics.IncCounter(observability.MetricBudgetRejectedTotal, map[string]string{
+				"model": model,
+				"agent": tr.AgentType,
+			})
+		}
 		// 仍写一条审计日志，让业务可以事后看 budget_exhausted 拒绝记录
 		g.recorder.Record(CallInput{
 			Trace:   tr,
@@ -181,6 +212,16 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 	}
 
 	// 4. 退避重试调用 + Circuit Breaker (v0.9 ADR 0013 §决策 3)
+	// v2.3 (ADR 0037) 进入 LLM call 阶段埋点：发起计数。
+	if g.metrics != nil {
+		g.metrics.IncCounter(observability.MetricLLMCallTotal, map[string]string{
+			"model":    model,
+			"agent":    tr.AgentType,
+			"task":     tr.TaskType,
+			"phase":    string(compInfo.Strategy),
+			"cache":    "miss",
+		})
+	}
 	start := time.Now()
 	var content string
 	var usage llm.Usage
@@ -217,6 +258,35 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 		retryCount = g.retryer.LastCount()
 	}
 	latency := time.Since(start)
+
+	// v2.3 (ADR 0037) LLM call 出口埋点：duration + status + tokens。
+	if g.metrics != nil {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		durLabels := map[string]string{
+			"model":  model,
+			"agent":  tr.AgentType,
+			"status": status,
+		}
+		g.metrics.ObserveHistogram(observability.MetricLLMCallDuration, durLabels, latency.Seconds())
+		g.metrics.AddCounter(observability.MetricLLMCallTokens, map[string]string{
+			"model": model,
+			"type":  "input",
+		}, float64(usage.PromptTokens))
+		g.metrics.AddCounter(observability.MetricLLMCallTokens, map[string]string{
+			"model": model,
+			"type":  "output",
+		}, float64(usage.CompletionTokens))
+		if retryCount > 0 {
+			g.metrics.AddCounter(observability.MetricLLMCallTotal, map[string]string{
+				"model":  model,
+				"agent":  tr.AgentType,
+				"status": "retried",
+			}, float64(retryCount))
+		}
+	}
 
 	// 5. 记录使用到预算
 	if g.budget != nil && tr.SessionUUID != "" {
@@ -267,6 +337,16 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 	}
 	tr := FromContext(ctx)
 
+	// v2.3 (ADR 0037) 流式调用发起计数：stream=true label 区分。
+	if g.metrics != nil {
+		g.metrics.IncCounter(observability.MetricLLMCallTotal, map[string]string{
+			"model":  model,
+			"agent":  tr.AgentType,
+			"task":   tr.TaskType,
+			"stream": "true",
+		})
+	}
+
 	// v0.9 (ADR 0013 §决策 1): per-call Timeout,流式也受同一超时约束。
 	// 整次流式生成超过 90s 会被 cancel → inner StreamComplete 立即终止 +
 	// for-range loop 退出。注意:cancel 必须在 goroutine 结束时调用(不
@@ -284,6 +364,14 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 	// 1b. v2 预算耗尽拒绝（流式：直接 emit Done+Err 然后关 channel）
 	if g.cfg.IsRejectWhenExhaustedEnabled() && bs.Status == StatusExhausted {
 		err := fmt.Errorf("%w (session=%s ratio=%.2f)", ErrBudgetExhausted, tr.SessionUUID, bs.Ratio)
+		// v2.3 (ADR 0037) 流式预算耗尽拒绝埋点。
+		if g.metrics != nil {
+			g.metrics.IncCounter(observability.MetricBudgetRejectedTotal, map[string]string{
+				"model":  model,
+				"agent":  tr.AgentType,
+				"stream": "true",
+			})
+		}
 		out <- llm.StreamChunk{Done: true, Err: err}
 		close(out)
 		cancel() // 预算耗尽路径提前 return:必须主动 cancel 防止 context leak (vet 警告)
@@ -330,6 +418,26 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 			usage.TotalTokens = approx
 			usage.CompletionTokens = approx
 			g.budget.AddUsage(ctx, tr.SessionUUID, BudgetUsage{OutputTokens: approx})
+		}
+
+		// v2.3 (ADR 0037) 流式出口埋点：duration + tokens + status。
+		if g.metrics != nil {
+			status := "success"
+			if firstErr != nil {
+				status = "error"
+			}
+			durLabels := map[string]string{
+				"model":  model,
+				"agent":  tr.AgentType,
+				"status": status,
+				"stream": "true",
+			}
+			g.metrics.ObserveHistogram(observability.MetricLLMCallDuration, durLabels, latency.Seconds())
+			g.metrics.AddCounter(observability.MetricLLMCallTokens, map[string]string{
+				"model":  model,
+				"type":   "output_stream_estimated",
+				"stream": "true",
+			}, float64(usage.CompletionTokens))
 		}
 
 		g.recorder.Record(CallInput{

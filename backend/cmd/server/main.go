@@ -107,7 +107,7 @@ func main() {
 		SummaryInsertThreshold: config.AppConfig.AgentGateway.SummaryInsertThreshold,
 		ScoreThreshold:         config.AppConfig.AgentGateway.ScoreThreshold,
 	}
-	gatewayClient := agent_gateway.NewWithConfig(llmClient, recorder, defaultModel, gatewayCfg)
+	gatewayClient := agent_gateway.NewWithConfig(llmClient, recorder, defaultModel, gatewayCfg, metrics)
 
 	// v0.8 白盒化：把 metrics + GormEventRecorder 注入到 gatewayClient 装饰器层，
 	// 让所有 LLM 调用的指标自动归集到 metrics，业务级 span 自动写入 decision_events。

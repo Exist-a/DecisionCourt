@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/decisioncourt/backend/internal/llm"
+	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/sony/gobreaker"
 )
 
@@ -70,6 +71,8 @@ type LLMBreaker struct {
 	cb       *gobreaker.CircuitBreaker
 	fallback FallbackFn
 	enabled  bool
+	// v2.3 (ADR 0037) 注入 metrics；nil 时所有埋点 no-op
+	metrics observability.Metrics
 
 	// 状态统计(给 audit / observability 用)
 	totalTrips    uint64 // 累计触发熔断次数
@@ -79,12 +82,14 @@ type LLMBreaker struct {
 
 // NewLLMBreaker 用配置构造 breaker。
 // fallback 为 nil 时,熔断状态会返回 ErrBreakerOpen 给调用方。
-func NewLLMBreaker(cfg BreakerConfig, fallback FallbackFn) *LLMBreaker {
+// metrics 传 nil 时所有埋点 no-op（向后兼容）。
+func NewLLMBreaker(cfg BreakerConfig, fallback FallbackFn, metrics observability.Metrics) *LLMBreaker {
 	cfg = cfg.Normalize()
 
 	breaker := &LLMBreaker{
 		fallback: fallback,
 		enabled:  cfg.Enabled,
+		metrics:  metrics,
 	}
 
 	settings := gobreaker.Settings{
@@ -103,11 +108,46 @@ func NewLLMBreaker(cfg BreakerConfig, fallback FallbackFn) *LLMBreaker {
 			if from == gobreaker.StateClosed && to == gobreaker.StateOpen {
 				atomic.AddUint64(&breaker.totalTrips, 1)
 			}
+			if breaker.metrics != nil {
+				breaker.metrics.IncCounter(observability.MetricLLMBreakerStateChangeTotal, map[string]string{
+					"from": stateName(from),
+					"to":   stateName(to),
+				})
+				breaker.metrics.SetGauge(observability.MetricLLMBreakerState, nil, float64(stateCode(to)))
+			}
 		},
 	}
 
 	breaker.cb = gobreaker.NewCircuitBreaker(settings)
 	return breaker
+}
+
+// stateName 把 gobreaker.State 序列化为字符串 label。
+func stateName(s gobreaker.State) string {
+	switch s {
+	case gobreaker.StateClosed:
+		return "closed"
+	case gobreaker.StateHalfOpen:
+		return "half-open"
+	case gobreaker.StateOpen:
+		return "open"
+	default:
+		return "unknown"
+	}
+}
+
+// stateCode 把 gobreaker.State 转为 gauge 数值：0=closed, 1=half-open, 2=open。
+func stateCode(s gobreaker.State) int {
+	switch s {
+	case gobreaker.StateClosed:
+		return 0
+	case gobreaker.StateHalfOpen:
+		return 1
+	case gobreaker.StateOpen:
+		return 2
+	default:
+		return -1
+	}
 }
 
 // IsEnabled 返回 breaker 是否启用。
@@ -186,6 +226,9 @@ func (b *LLMBreaker) triggerFallback(
 	reason string,
 ) (string, llm.Usage, error) {
 	atomic.AddUint64(&b.totalFallbacks, 1)
+	if b.metrics != nil {
+		b.metrics.IncCounter(observability.MetricLLMBreakerFallbackTotal, map[string]string{"reason": reason})
+	}
 
 	if b.fallback == nil {
 		return "", llm.Usage{}, fmt.Errorf("%w (reason=%s)", ErrBreakerOpen, reason)

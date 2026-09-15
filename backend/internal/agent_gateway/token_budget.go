@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/decisioncourt/backend/internal/observability"
 )
 
 // 预算状态常量 — Compressor 与 Throttler 通过这些字符串判断行为。
@@ -20,8 +22,10 @@ const (
 type TokenBudget struct {
 	store        BudgetStore
 	warningFuncs []OnWarningFunc
+	// v2.3 (ADR 0037) 注入 metrics；nil 时所有埋点 no-op
+	metrics observability.Metrics
 
-	mu       sync.Mutex
+	mu         sync.Mutex
 	warningMux sync.RWMutex // protects warningFuncs
 }
 
@@ -33,15 +37,16 @@ type TokenBudget struct {
 func NewTokenBudget(limitPerSession int, compressRatio, throttleRatio float64) *TokenBudget {
 	return NewTokenBudgetWithStore(NewMemStore(
 		limitPerSession, 0, compressRatio, throttleRatio, 5*time.Minute,
-	))
+	), nil)
 }
 
 // NewTokenBudgetWithStore 接受任意 BudgetStore，便于接入 RedisStore 等。
-func NewTokenBudgetWithStore(store BudgetStore) *TokenBudget {
+// metrics 传 nil 时所有埋点 no-op（向后兼容）。
+func NewTokenBudgetWithStore(store BudgetStore, metrics observability.Metrics) *TokenBudget {
 	if store == nil {
 		store = NewMemStore(20000, 0, 0.7, 0.8, 5*time.Minute)
 	}
-	return &TokenBudget{store: store}
+	return &TokenBudget{store: store, metrics: metrics}
 }
 
 // AddUsage 记录一次 LLM 调用的用量；调用 Gateway.Complete 内层返回后触发。
@@ -89,6 +94,13 @@ func (tb *TokenBudget) maybeFireWarning(ctx context.Context, sessionUUID string,
 	tb.warningMux.RLock()
 	funcs := append([]OnWarningFunc(nil), tb.warningFuncs...)
 	tb.warningMux.RUnlock()
+
+	// v2.3 (ADR 0037) 阈值跨越埋点：每次升级 broadcast 一次。
+// 注意：放在 funcs 长度判断之前 —— 即使没有 OnWarningFunc 注册,metrics 也应被埋,
+	// 这样 ops dashboard 仍能看到"哪个 session 跨了哪个阈值"。
+	if tb.metrics != nil && snap.WarningLevel != "" {
+		tb.metrics.IncCounter(observability.MetricBudgetWarningTotal, map[string]string{"level": snap.WarningLevel})
+	}
 
 	if len(funcs) == 0 {
 		return

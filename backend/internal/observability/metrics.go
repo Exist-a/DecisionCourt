@@ -76,6 +76,28 @@ const (
 	MetricGlobalConcurrencyRejectedTotal = "global_concurrency_rejected_total"
 	MetricGlobalConcurrencyCurrent       = "global_concurrency_current"
 	MetricGlobalConcurrencyMax           = "global_concurrency_max"
+
+	// v2.3 (ADR 0037) agent_gateway observability 埋点。
+	//   - LLM 调用计数 / token 计数 / 调用延迟（gateway.go）
+	//   - Response Cache hit/miss/put/evict/size（cache.go）
+	//   - Circuit Breaker state 切换 + fallback 触发（breaker.go）
+	//   - Prompt Compressor 压缩率 / 耗时 / 兜底摘要（prompt_compressor.go）
+	//   - Throttler / TokenBudget / Retryer 触发计数
+	MetricLLMCacheHitTotal             = "llm_cache_hit_total"
+	MetricLLMCacheMissTotal            = "llm_cache_miss_total"
+	MetricLLMCachePutTotal             = "llm_cache_put_total"
+	MetricLLMCacheEvictTotal           = "llm_cache_evict_total"
+	MetricLLMCacheSize                 = "llm_cache_size"
+	MetricLLMBreakerStateChangeTotal   = "llm_breaker_state_change_total"
+	MetricLLMBreakerState              = "llm_breaker_state"
+	MetricLLMBreakerFallbackTotal      = "llm_breaker_fallback_total"
+	MetricLLMRetryAttemptTotal         = "llm_retry_attempt_total"
+	MetricLLMThrottleAppliedTotal      = "llm_throttle_applied_total"
+	MetricLLMThrottleExemptedTotal     = "llm_throttle_exempted_total"
+	MetricPromptCompressionRatio       = "prompt_compression_ratio"
+	MetricPromptCompressionDuration    = "prompt_compression_duration_seconds"
+	MetricPromptCompressionSummaryTotal = "prompt_compression_summary_inserted_total"
+	MetricBudgetWarningTotal           = "budget_warning_total"
 )
 
 // memMetrics 是线程安全的内存实现。
