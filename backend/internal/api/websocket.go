@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -82,6 +83,14 @@ type WebSocketServer struct {
 const (
 	wsMaxConnsPerSession = 5               // 同一 session 最多 5 个 WS 连接
 	wsMinActionInterval  = 100 * time.Millisecond // 同一 conn 上次 user.action 后至少 100ms
+
+	// v2.4 (P1-3 安全审计修复) WS payload 长度上限:
+	//   - wsMaxMessageBytes: 单条 WS 消息最大字节数（gorilla ReadMessage 默认 512 字节过小），
+	//     64KB 足够覆盖最大的 submit_evidence / interrupt 请求（HTTP max=4096 对齐放大约 16x）。
+	//   - wsMaxContentChars: 单条 content 字段最大字符数（与 HTTP max=4096 一致，避免 WS 路径绕过 HTTP 校验）。
+	wsMaxMessageBytes  = 64 * 1024 // 64 KiB
+	wsMaxContentChars  = 4096      // 与 HTTP SubmitEvidence.content max=4096 对齐
+	wsMaxInterruptChars = 4096     // 与 Interrupt content 上限对齐
 )
 
 func NewWebSocketServer(hub *Hub, service *courtroom.Service) *WebSocketServer {
@@ -176,6 +185,11 @@ func (s *WebSocketServer) Handler(c *gin.Context) {
 	}
 	defer conn.Close()
 
+	// v2.4 (P1-3 安全审计修复) 设置单条消息最大字节数。
+	// gorilla/websocket 默认 ReadMessage 限制 512 字节，对 submit_evidence
+	// 的 4KB content 不够；放开到 64KB 仍远低于 socket buffer（避免 DoS）。
+	conn.SetReadLimit(wsMaxMessageBytes)
+
 	s.hub.Join(sessionUUID, conn)
 	defer s.hub.Leave(sessionUUID, conn)
 
@@ -236,27 +250,48 @@ func (s *WebSocketServer) Handler(c *gin.Context) {
 			ctx := observability.WithTrace(context.Background(), tr)
 			ctx = context.WithValue(ctx, viewerCtxKey{}, connViewer)
 
-			go func() {
-				var err error
-				switch action {
-				case "submit_evidence":
-					content := getString(event.Payload, "content")
-					evType := getString(event.Payload, "type")
-					if evType == "" {
-						evType = "fact"
-					}
-					source := getString(event.Payload, "source")
-					if source == "" {
-						source = "user"
-					}
-					// v0.8.3 安全：submittedBy = connViewer(不再是 "user")
-					_, err = s.service.SubmitEvidence(ctx, sessionUUID, content, evType, source, connViewer)
-				case "interrupt":
-					content := getString(event.Payload, "content")
-					err = s.service.Interrupt(sessionUUID, content)
-				default:
-					err = s.service.ProcessUserAction(ctx, sessionUUID, action, event.Payload)
+go func() {
+			var err error
+			switch action {
+			case "submit_evidence":
+				content := getString(event.Payload, "content")
+				// v2.4 (P1-3) WS content 长度校验：与 HTTP SubmitEvidence.content max=4096 对齐。
+				// 拒绝超长 payload（恶意 client 绕过 HTTP gin binding 校验）。
+				if len(content) > wsMaxContentChars {
+					ufe := courtroom.NewUserFacingError(
+						courtroom.ClassUserInput,
+						courtroom.CodeActionFailed,
+						fmt.Sprintf("证据内容超长（最大 %d 字符）", wsMaxContentChars),
+					)
+					s.service.BroadcastUserFacingError(sessionUUID, ufe)
+					return
 				}
+				evType := getString(event.Payload, "type")
+				if evType == "" {
+					evType = "fact"
+				}
+				source := getString(event.Payload, "source")
+				if source == "" {
+					source = "user"
+				}
+				// v0.8.3 安全：submittedBy = connViewer(不再是 "user")
+				_, err = s.service.SubmitEvidence(ctx, sessionUUID, content, evType, source, connViewer)
+			case "interrupt":
+				content := getString(event.Payload, "content")
+				// v2.4 (P1-3) interrupt content 长度校验：与 HTTP max 对齐。
+				if len(content) > wsMaxInterruptChars {
+					ufe := courtroom.NewUserFacingError(
+						courtroom.ClassUserInput,
+						courtroom.CodeActionFailed,
+						fmt.Sprintf("补充内容超长（最大 %d 字符）", wsMaxInterruptChars),
+					)
+					s.service.BroadcastUserFacingError(sessionUUID, ufe)
+					return
+				}
+				err = s.service.Interrupt(sessionUUID, content)
+			default:
+				err = s.service.ProcessUserAction(ctx, sessionUUID, action, event.Payload)
+			}
 				if err != nil {
 					// v0.10.17 (silent-error-fix): 用 ClassifyError 自动分类:
 					//   - 状态机拒绝 → ClassUserInput + CodeActionStateRejected
