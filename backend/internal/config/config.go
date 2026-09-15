@@ -1,10 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -89,6 +91,12 @@ type Config struct {
 	//   - 0 → 禁用限流（紧急回滚用）
 	UserTrialLimit int `mapstructure:"USER_TRIAL_LIMIT"`
 
+	// AppEnv 标识当前部署环境: "dev" / "staging" / "prod"
+	// 默认 "dev"（本地开发模式 fall-back）;生产部署必须显式设 "prod"，
+	// 否则 main.go 启动 fail-fast 拦截 dev-style 配置（localhost / dev cookie）。
+	// 设计动机：2026-07 安全审计 P1-7 (AGENTS.md §6.2d 已 deferred 至 v2.4)。
+	AppEnv string `mapstructure:"APP_ENV"`
+
 	AgentGateway AgentGatewayConfig `mapstructure:",squash"`
 }
 
@@ -154,6 +162,11 @@ func Load() {
 
 		// v0.9 用户限流 (ADR 0014): 0 → 禁用限流
 		UserTrialLimit: envOrDefaultInt("USER_TRIAL_LIMIT", 5),
+
+		// v2.4 (P1-7) APP_ENV: 默认 "dev"（本地开发模式），生产部署必须显式 APP_ENV=prod，
+		// 否则 main.go 启动 fail-fast（拦截 dev-style localhost / COOKIE_SECURE=false 等）。
+		// 合法值: "dev" / "staging" / "prod"，其他 → fail-fast 启动拒绝。
+		AppEnv: envOrDefaultString("APP_ENV", "dev"),
 
 		// Agent Gateway 22 个 env
 		AgentGateway: AgentGatewayConfig{
@@ -277,4 +290,40 @@ func getProjectRoot() string {
 		dir = parent
 	}
 	return filepath.Dir(dir)
+}
+
+// IsDev returns true if APP_ENV is "dev" or empty (本地开发模式默认)。
+// 用于 UserFacingError.WithDetail 等需要在 prod 隐藏细节的判断点。
+func (c Config) IsDev() bool {
+	e := strings.ToLower(strings.TrimSpace(c.AppEnv))
+	return e == "" || e == "dev"
+}
+
+// IsProd returns true if APP_ENV is "prod"。
+// 用于 main.go 启动 fail-fast 检查（拦截 dev-style localhost / COOKIE_SECURE=false）。
+func (c Config) IsProd() bool {
+	return strings.ToLower(strings.TrimSpace(c.AppEnv)) == "prod"
+}
+
+// IsStaging returns true if APP_ENV is "staging"（预留：staging 与 prod 行为一致，
+// 但 ops 可在 staging 放宽某项 fail-fast 检查）。
+func (c Config) IsStaging() bool {
+	return strings.ToLower(strings.TrimSpace(c.AppEnv)) == "staging"
+}
+
+// IsProdLike returns true if 是 prod 或 staging（fail-fast 用）。
+func (c Config) IsProdLike() bool {
+	return c.IsProd() || c.IsStaging()
+}
+
+// ValidateAppEnv 在 Load() 末尾调用一次：APP_ENV 必须是 dev/staging/prod 之一，
+// 否则启动拒绝。设计动机：避免"用户拼错 APP_ENV=Production"这种 silent miss。
+func ValidateAppEnv() error {
+	e := strings.ToLower(strings.TrimSpace(AppConfig.AppEnv))
+	switch e {
+	case "", "dev", "staging", "prod":
+		return nil
+	default:
+		return fmt.Errorf("invalid APP_ENV=%q (must be dev|staging|prod)", AppConfig.AppEnv)
+	}
 }
