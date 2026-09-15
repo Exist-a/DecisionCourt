@@ -9,7 +9,7 @@
 
 ---
 
-## D1. 安全审计 P1-P3（14 项未启动）
+## D1. 安全审计 P1-P3（14 项未启动 → v2.4 已修 3 项）
 
 ### 来源
 [`.trae/documents/security-audit-2026-07-03.md`](../../.trae/documents/security-audit-2026-07-03.md) v1.0（2026-07-03）
@@ -25,26 +25,31 @@
 - ✅ **P0-5** SubmitEvidence 任意用户可写 → v0.8.3
 - ✅ **P0-6** Export 无鉴权 + 无审计 → v0.8.3
 
-### Deferred（**本节正式登记**）
+### v2.4 (2026-09-15) 已完成 P1 ×3（A 选项，低风险批量）
 
-| 等级 | # | 项 | 复杂度 |
-|------|---|----|--------|
-| **P1** | P1-1 | WS Origin CheckOrigin 白名单（env `ALLOWED_ORIGINS`） | 1 天 |
-| **P1** | P1-2 | CSRF Token 中间件（HttpOnly cookie + double-submit） | 2 天 |
-| **P1** | P1-3 | 输入长度校验（query / evidence / verdict 长度上限） | 1 天 |
-| **P1** | P1-4 | LLM prompt 注入防护（context 隔离 + sanitize） | 2 天 |
-| **P1** | P1-5 | 日志脱敏（Detail 字段 prod 不填充 Go 内部信息） | 0.5 天 |
-| **P1** | P1-6 | 依赖固定版本 + `npm audit` / `govulncheck` CI | 1 天 |
-| **P1** | P1-7 | dev mode → prod 模式硬开关（GIN_MODE + frontend NODE_ENV） | 0.5 天 |
-| **P2** | P2-1 | HTTP 安全头（X-Frame-Options / X-Content-Type-Options / Strict-Transport-Security / Referrer-Policy） | 1 天 |
-| **P2** | P2-2 | JWT alg 锁定 + scope claim 改造 | 1 天 |
-| **P2** | P2-3 | `.git` 排除到镜像外 + `.dockerignore` 审计 | 0.5 天 |
-| **P2** | P2-4 | SSRF SeArxNG（防止 URL 注入） | 2 天 |
-| **P2** | P2-5 | CSP（Content-Security-Policy）中间件 | 1 天 |
-| **P3** | P3-1 | UUID 改 crypto/rand（防伪随机） | 0.5 天 |
-| **P3** | P3-2 | SearxNG 占位实现实装（替换 mock） | 3 天 |
+- ✅ **P1-1** WS Origin CheckOrigin 白名单 → v0.8.3 + v0.9.3 timing fix（**已实际完成，文档脱节**）
+- ✅ **P1-3** 输入长度校验 → v2.4（WS 端点补齐 SetReadLimit + 4096 chars 上限；HTTP 端点 v0.8.3 已实装）
+- ✅ **P1-5** 日志脱敏（Detail 字段 prod 不填充 Go 内部信息）→ v2.4（UserFacingError.WithDetail 加 prod 守卫；让注释承诺生效）
+- ✅ **P1-7** dev mode → prod 模式硬开关（GIN_MODE + APP_ENV）→ v2.4（Config.AppEnv + main.go enforceProdInvariants 4 条 invariant）
 
-**总工作量**：~17 天 / 1 人
+详见 [ADR 0038](../../adr/0038-security-p1-batch-a.md) + [release-notes/v2.4.md](../../release-notes/v2.4.md)。
+
+### Deferred（**本节正式登记** — 剩余 P1 ×3 + P2 ×5 + P3 ×2）
+
+| 等级 | # | 项 | 复杂度 | 备注 |
+|------|---|----|--------|------|
+| **P1** | P1-2 | CSRF Token 中间件（HttpOnly cookie + double-submit） | 2 天 | **高风险**（引入 gorilla/csrf 依赖 + 改前端 fetch wrapper）|
+| **P1** | P1-4 | LLM prompt 注入防护（context 隔离 + sanitize） | 2 天 | **高风险**（动 prompts.go 所有拼接点 + 影响输出格式）|
+| **P1** | P1-6 | 依赖固定版本 + `npm audit` / `govulncheck` CI | 1 天 | 中（依赖 pin 一次性 review + 加 CI job）|
+| **P2** | P2-1 | HTTP 安全头（X-Frame-Options / X-Content-Type-Options / Strict-Transport-Security / Referrer-Policy） | 1 天 | |
+| **P2** | P2-2 | JWT alg 锁定 + scope claim 改造 | 1 天 | |
+| **P2** | P2-3 | `.git` 排除到镜像外 + `.dockerignore` 审计 | 0.5 天 | |
+| **P2** | P2-4 | SSRF SeArxNG（防止 URL 注入） | 2 天 | |
+| **P2** | P2-5 | CSP（Content-Security-Policy）中间件 | 1 天 | |
+| **P3** | P3-1 | UUID 改 crypto/rand（防伪随机） | 0.5 天 | |
+| **P3** | P3-2 | SearxNG 占位实现实装（替换 mock） | 3 天 | |
+
+**剩余工作量**：~11.5 天 / 1 人（v2.4 修了 3.5 天等价工作量）
 
 ### 触发重新启动的条件
 1. 用户主动授权启动

@@ -54,8 +54,12 @@
 | **v2.3 observability-throttler-budget-retryer** | ✅ | throttler / token_budget / retryer 3 文件加埋点 |
 | **v2.3 observability-tests** | ✅ | metrics_test.go 9 个新 sub-test（cache / breaker / compressor / throttler / retryer / gateway E2E / nil safe / budget）|
 | **v2.3 docs** | ✅ | ADR 0037 + release-notes/v2.3 + SWITCH-SOAK.md §2 表格对齐 + 端口冲突文档清理 + AGENTS.md §11.7 curl 中文乱码排查 |
-| ADR 累计 | 37 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + **0037 agent-gateway-observability** |
-| Go 测试 | ~341 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + v2.1 F4+F5 6 + **v2.3 observability-tests 9** |
+| **v2.4 P1-7** | ✅ | config.AppEnv + IsDev/IsProd/ValidateAppEnv + main.go enforceProdInvariants (4 条 invariant) |
+| **v2.4 P1-5** | ✅ | UserFacingError.WithDetail 加 prod 守卫 (dev 保留 / prod 清空) |
+| **v2.4 P1-3** | ✅ | websocket SetReadLimit(64KB) + content length check(4096 chars 与 HTTP 对齐) |
+| **v2.4 tests+docs** | ✅ | 14 个新 sub-test (config / cmd / courtroom / api) + ADR 0038 + release-notes/v2.4 + deferred-items §D1 更新 |
+| ADR 累计 | 38 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + 0037 agent-gateway-observability + **0038 security-p1-batch-a** |
+| Go 测试 | ~355 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + v2.1 F4+F5 6 + v2.3 observability-tests 9 + **v2.4 P1-tests 14** |
 | Frontend 测试 | 103 (9 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 + **v2.1 F1+F2+F3+F4 11** + **v2.2 2** |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
