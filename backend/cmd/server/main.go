@@ -313,6 +313,10 @@ func main() {
 		},
 	})
 	authedGroup.Use(auth.Middleware(config.AppConfig.JWTSecret))
+	// v2.5 (P1-2) CSRF Token 中间件 (double-submit cookie 模式)。
+	// 必须在 auth 之后挂（需从 ctx 取 viewer_id 签 token）。
+	// Cookie 复用 JWT_SECRET 作 HMAC key（不新增 env）。
+	authedGroup.Use(middleware.CSRF(middleware.DefaultCSRFConfig([]byte(config.AppConfig.JWTSecret))))
 	handler.RegisterAPIRoutes(authedGroup)
 
 	handler.RegisterRoutes(r) // 注册 /health 到 r
