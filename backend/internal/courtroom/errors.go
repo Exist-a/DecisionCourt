@@ -7,6 +7,7 @@ import (
 
 	"github.com/decisioncourt/backend/internal/agent"
 	"github.com/decisioncourt/backend/internal/agent_gateway"
+	"github.com/decisioncourt/backend/internal/config"
 )
 
 // ErrorClass 用户可见错误分类。决定前端 Toast / Modal / Banner 展示策略。
@@ -191,8 +192,21 @@ func ClassifyError(err error) UserFacingError {
 }
 
 // WithDetail 设置 Detail 字段(链式)。
+//
+// v2.4 (P1-5 安全审计修复): dev 模式保留 detail（便于开发定位）;
+// prod 模式清空（避免把 Go 内部错误字符串 / 路径 / stack fragment
+// 暴露给前端 → 公网用户）。
+//
+// 设计动机：errors.go:84 注释承诺 "Detail 字段仅 dev 模式填充;prod 留空",
+// 但代码 (WithDetail) 一直无条件赋值。本次修复让注释与实现对齐。
+//
+// 单测：courtroom/errors_test.go:TestWithDetail_ProdStripsDetail。
 func (e UserFacingError) WithDetail(detail string) UserFacingError {
-	e.Detail = detail
+	if config.AppConfig.IsDev() {
+		e.Detail = detail
+	}
+	// prod|staging → 静默丢弃（不进 wire）。注意：nil/空 detail 也走同样分支，
+	// 无副作用。
 	return e
 }
 

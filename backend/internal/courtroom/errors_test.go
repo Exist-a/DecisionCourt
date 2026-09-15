@@ -10,6 +10,7 @@ import (
 
 	"github.com/decisioncourt/backend/internal/agent"
 	"github.com/decisioncourt/backend/internal/agent_gateway"
+	"github.com/decisioncourt/backend/internal/config"
 	"github.com/decisioncourt/backend/internal/model"
 )
 
@@ -326,5 +327,85 @@ func TestClassifyError_StateMachineReject_MessageFormat(t *testing.T) {
 	// StateMachineError 的 err.Error() 应保留在 Detail 里供开发排查
 	if !strings.Contains(ufe.Detail, "submit_evidence") {
 		t.Errorf("UFE.Detail 应包含 action 名, got %q", ufe.Detail)
+	}
+}
+
+// ============== v2.4 (P1-5) WithDetail prod 守卫 ==============
+//
+// 验证 UserFacingError.WithDetail 在 APP_ENV != dev 时清空 detail,
+// 防止 Go 内部错误字符串 / 路径 / stack fragment 漏到公网前端。
+
+// withTestAppEnv 临时设置 APP_ENV，测试结束后恢复。
+func withTestAppEnv(t *testing.T, env string) {
+	t.Helper()
+	original := config.AppConfig
+	t.Cleanup(func() {
+		config.AppConfig = original
+	})
+	config.AppConfig.AppEnv = env
+}
+
+// TestWithDetail_DevKeepsDetail 验证 dev 模式保留 detail（开发定位）。
+func TestWithDetail_DevKeepsDetail(t *testing.T) {
+	withTestAppEnv(t, "dev")
+	ufe := NewUserFacingError(ClassTransient, CodeActionFailed, "test").
+		WithDetail("internal error: stack trace here")
+	if ufe.Detail == "" {
+		t.Error("dev 模式: WithDetail 应保留 detail, got empty")
+	}
+}
+
+// TestWithDetail_ProdStripsDetail 验证 prod|staging 模式清空 detail。
+func TestWithDetail_ProdStripsDetail(t *testing.T) {
+	cases := []string{"prod", "staging", "PROD"}
+	for _, env := range cases {
+		t.Run(env, func(t *testing.T) {
+			withTestAppEnv(t, env)
+			ufe := NewUserFacingError(ClassTransient, CodeActionFailed, "test").
+				WithDetail("internal error: file=/etc/passwd leak")
+			if ufe.Detail != "" {
+				t.Errorf("%s 模式: WithDetail 应清空 detail, got %q", env, ufe.Detail)
+			}
+		})
+	}
+}
+
+// TestWithDetail_EmptySafe 验证空 detail 不会触发副作用（不应 panic）。
+func TestWithDetail_EmptySafe(t *testing.T) {
+	withTestAppEnv(t, "prod")
+	ufe := NewUserFacingError(ClassTransient, CodeActionFailed, "test").
+		WithDetail("")
+	if ufe.Detail != "" {
+		t.Errorf("空 detail 应保持空, got %q", ufe.Detail)
+	}
+}
+
+// TestClassifyError_ProdStripsAllDetails 端到端验证 prod 模式 ClassifyError 不漏 detail。
+// 之前:5 个 err 分支都调 WithDetail → detail 进 wire JSON。
+// 现在:prod 模式下 detail 一律清空，前端只能看到 message。
+func TestClassifyError_ProdStripsAllDetails(t *testing.T) {
+	withTestAppEnv(t, "prod")
+
+	// 跑全部分支，验证每个的 Detail 都是空
+	branches := []struct {
+		name string
+		err  error
+	}{
+		{"concurrency", ErrConcurrencyLimitExceeded},
+		{"react_max_iter", fmt.Errorf("wrapped: %w", agent.ErrReactMaxIterations)},
+		{"budget_exhausted", fmt.Errorf("wrapped: %w", agent_gateway.ErrBudgetExhausted)},
+		{"state_machine", &StateMachineError{CurrentPhase: "closing", Action: "x", Reason: "y"}},
+		{"unknown", errors.New("unknown")},
+	}
+	for _, b := range branches {
+		t.Run(b.name, func(t *testing.T) {
+			ufe := ClassifyError(b.err)
+			if ufe.Detail != "" {
+				t.Errorf("prod 模式 %s 分支: Detail 应清空, got %q", b.name, ufe.Detail)
+			}
+			if ufe.Message == "" {
+				t.Errorf("Message 不应被清空（用户要看）")
+			}
+		})
 	}
 }
