@@ -34,13 +34,20 @@
 
 详见 [ADR 0038](../../adr/0038-security-p1-batch-a.md) + [release-notes/v2.4.md](../../release-notes/v2.4.md)。
 
-### Deferred（**本节正式登记** — 剩余 P1 ×3 + P2 ×5 + P3 ×2）
+### v2.5 (2026-09-15) 已完成 P1 ×3（C 选项，剩余全量）
+
+- ✅ **P1-2** CSRF Token 中间件 → v2.5（手写 double-submit cookie 中间件，HMAC-SHA256 签名，不引入 gorilla/csrf）
+- ✅ **P1-4** LLM prompt 注入防护 → v2.5（sanitize 21 个中英文 injection pattern + 9 个 prompt 函数 + orchestrator 适配）
+- ✅ **P1-6** 依赖固定版本 + `npm audit` / `govulncheck` CI → v2.5（frontend 22 个依赖精确 pin + .npmrc save-exact + CI dep-audit job）
+
+详见 [ADR 0039](../../adr/0039-security-p1-batch-c.md) + [release-notes/v2.5.md](../../release-notes/v2.5.md)。
+
+**v2.5 后状态**：2026-07-03 安全审计 P0 ×6 + P1 ×7 **全部清零** ✅
+
+### Deferred（**本节正式登记** — 仅 P2 ×5 + P3 ×2 剩余）
 
 | 等级 | # | 项 | 复杂度 | 备注 |
 |------|---|----|--------|------|
-| **P1** | P1-2 | CSRF Token 中间件（HttpOnly cookie + double-submit） | 2 天 | **高风险**（引入 gorilla/csrf 依赖 + 改前端 fetch wrapper）|
-| **P1** | P1-4 | LLM prompt 注入防护（context 隔离 + sanitize） | 2 天 | **高风险**（动 prompts.go 所有拼接点 + 影响输出格式）|
-| **P1** | P1-6 | 依赖固定版本 + `npm audit` / `govulncheck` CI | 1 天 | 中（依赖 pin 一次性 review + 加 CI job）|
 | **P2** | P2-1 | HTTP 安全头（X-Frame-Options / X-Content-Type-Options / Strict-Transport-Security / Referrer-Policy） | 1 天 | |
 | **P2** | P2-2 | JWT alg 锁定 + scope claim 改造 | 1 天 | |
 | **P2** | P2-3 | `.git` 排除到镜像外 + `.dockerignore` 审计 | 0.5 天 | |
@@ -49,7 +56,7 @@
 | **P3** | P3-1 | UUID 改 crypto/rand（防伪随机） | 0.5 天 | |
 | **P3** | P3-2 | SearxNG 占位实现实装（替换 mock） | 3 天 | |
 
-**剩余工作量**：~11.5 天 / 1 人（v2.4 修了 3.5 天等价工作量）
+**剩余工作量**：~9 天 / 1 人（v2.4 + v2.5 共修了 ~7 天等价工作量）
 
 ### 触发重新启动的条件
 1. 用户主动授权启动
