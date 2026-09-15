@@ -128,7 +128,8 @@ func TestProsecutorPrompt_ShouldHaveFindingSection_WhenFindingsExist(t *testing.
 	// 后续 PR 注入一个 "## 调查发现" section 把 finding 内容显式渲染)。
 	// 我们这里简化:直接断言"有 findings section header(占位也可以),且 E00X 不能
 	// 在 findings 区域出现"。
-	prompt := ProsecutorPrompt(model.Agent{BeliefA: 0.75}, session, evidences, "")
+	prompt, err := ProsecutorPrompt(model.Agent{BeliefA: 0.75}, session, evidences, "")
+	if err != nil { t.Fatalf("ProsecutorPrompt: %v", err) }
 
 	// 当前位置:prompt 没有独立 finding section;只读得到 ## 当前证据 区块
 	hasFindingsHeader := strings.Contains(prompt, "调查发现") ||

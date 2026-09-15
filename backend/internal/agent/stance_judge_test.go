@@ -102,7 +102,7 @@ func TestApplySpeakerStanceJudge_NoJudgeAt0_5Belief(t *testing.T) {
 	fake := &fakeLLMStance{responses: []string{}}
 	r := newStanceTestRunner(t, fake, model.AgentProsecutor, 0.5)
 	out := Speaker{Content: "anything", Stance: "pro_a"}
-	got, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
+	got, _, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
 	require.False(t, got.StanceRejected)
 	require.Empty(t, got.StanceJudgeReason)
 }
@@ -112,7 +112,7 @@ func TestApplySpeakerStanceJudge_BeliefConsistent_SkipJudge(t *testing.T) {
 	fake := &fakeLLMStance{responses: []string{}}
 	r := newStanceTestRunner(t, fake, model.AgentProsecutor, 0.3)
 	out := Speaker{Content: "anything", Stance: "pro_b"}
-	got, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
+	got, _, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
 	require.False(t, got.StanceRejected)
 	// fake 没被调用 (idx=0)
 	require.Equal(t, 0, fake.idx)
@@ -125,7 +125,7 @@ func TestApplySpeakerStanceJudge_JudgePass(t *testing.T) {
 	}}
 	r := newStanceTestRunner(t, fake, model.AgentProsecutor, 0.3)
 	out := Speaker{Content: "anything", Stance: "pro_a"}
-	got, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
+	got, _, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
 	require.False(t, got.StanceRejected)
 	// judge 调了 1 次
 	require.Equal(t, 1, fake.idx)
@@ -142,7 +142,7 @@ func TestApplySpeakerStanceJudge_Retry1Success(t *testing.T) {
 	}}
 	r := newStanceTestRunner(t, fake, model.AgentProsecutor, 0.3)
 	out := Speaker{Content: "支持 A 的内容", Stance: "pro_a"}
-	got, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
+	got, _, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
 	require.False(t, got.StanceRejected, "第 2 次 judge true 应 pass")
 	require.Equal(t, 3, fake.idx, "调 3 次: judge1 + retry1 + judge2")
 }
@@ -159,7 +159,7 @@ func TestApplySpeakerStanceJudge_Retry2FailureFallback(t *testing.T) {
 	}}
 	r := newStanceTestRunner(t, fake, model.AgentProsecutor, 0.3)
 	out := Speaker{Content: "支持 A 的内容", Stance: "pro_a"}
-	got, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
+	got, _, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
 	require.True(t, got.StanceRejected)
 	require.Contains(t, got.StanceJudgeReason, "final reason", "fallback 应拿最后一次 judge reason")
 	require.Equal(t, 5, fake.idx)
@@ -172,7 +172,7 @@ func TestApplySpeakerStanceJudge_JudgeParseFailure(t *testing.T) {
 	}}
 	r := newStanceTestRunner(t, fake, model.AgentProsecutor, 0.3)
 	out := Speaker{Content: "支持 A 的内容", Stance: "pro_a"}
-	got, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
+	got, _, _ := applySpeakerStanceJudge(out, r, context.Background(), nil)
 	require.True(t, got.StanceRejected)
 	require.Contains(t, got.StanceJudgeReason, "judge 输出非 JSON")
 }
@@ -180,7 +180,8 @@ func TestApplySpeakerStanceJudge_JudgeParseFailure(t *testing.T) {
 // --- StanceJudgePrompt 模板测试 (1 个) ---
 
 func TestStanceJudgePrompt_ContainsBeliefAndContent(t *testing.T) {
-	prompt := StanceJudgePrompt(model.AgentProsecutor, 0.3, "支持选项 A 的具体内容")
+	prompt, err := StanceJudgePrompt(model.AgentProsecutor, 0.3, "支持选项 A 的具体内容")
+	if err != nil { t.Fatalf("StanceJudgePrompt: %v", err) }
 	// model.AgentProsecutor 实际值是 "prosecutor" (小写), 见 model/db.go:72
 	require.Contains(t, prompt, "prosecutor")
 	require.Contains(t, prompt, "0.30")

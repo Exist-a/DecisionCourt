@@ -100,7 +100,8 @@ func TestLawyerPrompt_InjectToolsBlock(t *testing.T) {
 	agent := model.Agent{BeliefA: 0.75, BeliefB: 0.25}
 
 	t.Run("prosecutor 注入工具说明", func(t *testing.T) {
-		p := ProsecutorPrompt(agent, session, nil, "## 工具调用协议\n[X_PRO_TOOL]\n")
+		p, err := ProsecutorPrompt(agent, session, nil, "## 工具调用协议\n[X_PRO_TOOL]\n")
+		if err != nil { t.Fatalf("ProsecutorPrompt: %v", err) }
 		require.Contains(t, p, "[X_PRO_TOOL]")
 		idx := strings.Index(p, "[X_PRO_TOOL]")
 		idxOutput := strings.Index(p, "## 输出格式")
@@ -108,7 +109,8 @@ func TestLawyerPrompt_InjectToolsBlock(t *testing.T) {
 	})
 
 	t.Run("defender 注入工具说明", func(t *testing.T) {
-		p := DefenderPrompt(agent, session, nil, "## 工具调用协议\n[X_DEF_TOOL]\n")
+		p, err := DefenderPrompt(agent, session, nil, "## 工具调用协议\n[X_DEF_TOOL]\n")
+		if err != nil { t.Fatalf("DefenderPrompt: %v", err) }
 		require.Contains(t, p, "[X_DEF_TOOL]")
 		idx := strings.Index(p, "[X_DEF_TOOL]")
 		idxOutput := strings.Index(p, "## 输出格式")
@@ -116,12 +118,14 @@ func TestLawyerPrompt_InjectToolsBlock(t *testing.T) {
 	})
 
 	t.Run("toolsBlock 空时不插入工具段落", func(t *testing.T) {
-		p := ProsecutorPrompt(agent, session, nil, "")
+		p, err := ProsecutorPrompt(agent, session, nil, "")
+		if err != nil { t.Fatalf("ProsecutorPrompt: %v", err) }
 		require.NotContains(t, p, "## 工具调用协议")
 	})
 
 	t.Run("策略段落包含主动搜证提示", func(t *testing.T) {
-		p := ProsecutorPrompt(agent, session, nil, "")
+		p, err := ProsecutorPrompt(agent, session, nil, "")
+		if err != nil { t.Fatalf("ProsecutorPrompt: %v", err) }
 		require.Contains(t, p, "investigator_search")
 		require.Contains(t, p, "reflect")
 	})
