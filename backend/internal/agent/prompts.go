@@ -186,11 +186,16 @@ func toolBlockForPrompt(toolMap map[string]Tool) string {
 	return sb.String()
 }
 
-func ProsecutorPrompt(agent model.Agent, session model.CourtSession, evidences []model.Evidence, toolsBlock string) string {
+func ProsecutorPrompt(agent model.Agent, session model.CourtSession, evidences []model.Evidence, toolsBlock string) (string, error) {
 	var b strings.Builder
 	b.WriteString(baseRules(toolsBlock))
 	b.WriteString("\n\n## 角色\n")
-	b.WriteString(fmt.Sprintf("你是\"选项A代表\"，你的使命是证明【%s】是更优选择。\n", session.OptionA))
+	// v2.5 (P1-4) sanitize OptionA / OptionB（角色描述直接拼 user input）
+	optionA, err := SanitizeShortField(session.OptionA, 255)
+	if err != nil {
+		return "", fmt.Errorf("sanitize OptionA: %w", err)
+	}
+	b.WriteString(fmt.Sprintf("你是\"选项A代表\"，你的使命是证明【%s】是更优选择。\n", optionA))
 	b.WriteString(fmt.Sprintf("## 当前信念度\n对选项 A（%s）的信念度：%.2f\n对选项 B（%s）的信念度：%.2f\n",
 		session.OptionA, agent.BeliefA, session.OptionB, agent.BeliefB))
 	b.WriteString("## 策略\n")
@@ -198,16 +203,24 @@ func ProsecutorPrompt(agent model.Agent, session model.CourtSession, evidences [
 	b.WriteString("2. 对选项B代表提出的反例进行有力反驳。如果对方已发言、且论点你没完全消化，先 action=\"reflect\" 拆解对方逻辑再定稿。\n")
 	b.WriteString("3. 强调选项 A 的收益、机会、长期价值；用具体数据或案例，避免空话。\n")
 	b.WriteString("4. 初始信念度是 0.75，你对选项 A 有较强倾向；但当对方论据确实更强时，允许通过 reflect 把信念度小幅下调。\n")
-	b.WriteString(buildContext(session, evidences))
+	ctx, err := buildContextSafe(session, evidences)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(ctx)
 	b.WriteString(buildInvestigationContext(session))
-	return b.String()
+	return b.String(), nil
 }
 
-func DefenderPrompt(agent model.Agent, session model.CourtSession, evidences []model.Evidence, toolsBlock string) string {
+func DefenderPrompt(agent model.Agent, session model.CourtSession, evidences []model.Evidence, toolsBlock string) (string, error) {
 	var b strings.Builder
 	b.WriteString(baseRules(toolsBlock))
 	b.WriteString("\n\n## 角色\n")
-	b.WriteString(fmt.Sprintf("你是\"选项B代表\"，你的使命是证明【%s】是更优选择。\n", session.OptionB))
+	optionB, err := SanitizeShortField(session.OptionB, 255)
+	if err != nil {
+		return "", fmt.Errorf("sanitize OptionB: %w", err)
+	}
+	b.WriteString(fmt.Sprintf("你是\"选项B代表\"，你的使命是证明【%s】是更优选择。\n", optionB))
 	b.WriteString(fmt.Sprintf("## 当前信念度\n对选项 A（%s）的信念度：%.2f\n对选项 B（%s）的信念度：%.2f\n",
 		session.OptionA, agent.BeliefA, session.OptionB, agent.BeliefB))
 	b.WriteString("## 策略\n")
@@ -215,12 +228,16 @@ func DefenderPrompt(agent model.Agent, session model.CourtSession, evidences []m
 	b.WriteString("2. 对选项A代表提出的证据进行质证，指出来源问题或逻辑漏洞。若对方刚抛出新论点，先 action=\"reflect\" 拆解再反击。\n")
 	b.WriteString("3. 强调选项 B 的稳定性、确定性、风险控制；用可验证的事实，避免空话。\n")
 	b.WriteString("4. 初始信念度是 0.75，你对选项 B 有较强倾向；但当对方论据确实更强时，允许通过 reflect 把信念度小幅下调。\n")
-	b.WriteString(buildContext(session, evidences))
+	ctx, err := buildContextSafe(session, evidences)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(ctx)
 	b.WriteString(buildInvestigationContext(session))
-	return b.String()
+	return b.String(), nil
 }
 
-func InvestigatorPrompt(session model.CourtSession, evidences []model.Evidence) string {
+func InvestigatorPrompt(session model.CourtSession, evidences []model.Evidence) (string, error) {
 	var b strings.Builder
 	b.WriteString(baseRules(""))
 	b.WriteString("\n\n## 角色\n")
@@ -230,11 +247,15 @@ func InvestigatorPrompt(session model.CourtSession, evidences []model.Evidence) 
 	b.WriteString("1. 基于当前争议焦点提出一个搜索方向或关键问题。\n")
 	b.WriteString("2. 如果已有证据矛盾，指出不同来源的差异。\n")
 	b.WriteString("3. 输出格式仍为 JSON，content 为你要说的话。\n")
-	b.WriteString(buildContext(session, evidences))
-	return b.String()
+	ctx, err := buildContextSafe(session, evidences)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(ctx)
+	return b.String(), nil
 }
 
-func ClerkPrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message) string {
+func ClerkPrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message) (string, error) {
 	var b strings.Builder
 	b.WriteString("你是一名中立的书记员，负责根据庭审记录生成结构化判决书。\n")
 	b.WriteString("## 原则\n")
@@ -253,16 +274,25 @@ func ClerkPrompt(session model.CourtSession, evidences []model.Evidence, message
   "content": "# 决策判决书\n\n## 一、双方主张..."
 }`)
 	b.WriteString("\n\n")
-	b.WriteString(buildContext(session, evidences))
+	ctx, err := buildContextSafe(session, evidences)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(ctx)
 	b.WriteString("\n## 庭审记录\n")
 	for _, m := range messages {
-		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(m.Content, 200)))
+		// v2.5 (P1-4) sanitize message content（防止庭审内被攻陷的内容再次注入）
+		cleanContent, err := SanitizeUserInput(m.Content)
+		if err != nil {
+			return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+		}
+		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 200)))
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 // ClerkSummaryPrompt generates a brief summary of the current round.
-func ClerkSummaryPrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message, round int) string {
+func ClerkSummaryPrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message, round int) (string, error) {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("你是一名中立的书记员，负责为第 %d 轮质证生成简短总结。\n", round))
 	b.WriteString("## 原则\n")
@@ -275,17 +305,25 @@ func ClerkSummaryPrompt(session model.CourtSession, evidences []model.Evidence, 
   "summary": "本轮总结：选项A代表主要论证了...，选项B代表则主张...，双方争议焦点在于..."
 }`)
 	b.WriteString("\n\n")
-	b.WriteString(buildContext(session, evidences))
+	ctx, err := buildContextSafe(session, evidences)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(ctx)
 	b.WriteString(fmt.Sprintf("\n## 第 %d 轮庭审记录\n", round))
 	for _, m := range messages {
 		if m.Round == round {
-			b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(m.Content, 300)))
+			cleanContent, err := SanitizeUserInput(m.Content)
+			if err != nil {
+				return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+			}
+			b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 300)))
 		}
 	}
-	return b.String()
+	return b.String(), nil
 }
 
-func JudgePrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message, currentBeliefA, currentBeliefB float64) string {
+func JudgePrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message, currentBeliefA, currentBeliefB float64) (string, error) {
 	var b strings.Builder
 	b.WriteString("你是一名公正的法官，负责评估庭审辩论并更新你的个人倾向。\n")
 	b.WriteString("## 庭审信息\n")
@@ -308,16 +346,24 @@ func JudgePrompt(session model.CourtSession, evidences []model.Evidence, message
   "leaning": "偏向%s" 或 "偏向%s" 或 "中立"
 }`, session.OptionA, session.OptionB))
 	b.WriteString("\n\n")
-	b.WriteString(buildContext(session, evidences))
+	ctx, err := buildContextSafe(session, evidences)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(ctx)
 	b.WriteString("\n## 最近庭审记录（按时间顺序）\n")
 	for _, m := range messages {
-		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(m.Content, 300)))
+		cleanContent, err := SanitizeUserInput(m.Content)
+		if err != nil {
+			return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+		}
+		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 300)))
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 // JudgeFinalPrompt用于法官做出最终裁决。
-func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message, currentBeliefA, currentBeliefB float64) string {
+func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message, currentBeliefA, currentBeliefB float64) (string, error) {
 	var b strings.Builder
 	b.WriteString("你是一名公正的法官，庭审已结束，现在需要做出最终裁决。\n")
 	b.WriteString("## 庭审信息\n")
@@ -342,12 +388,20 @@ func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, me
   "recommendation": "一句话推荐，如'建议选择%s'"
 }`, currentBeliefA, currentBeliefB, session.OptionA))
 	b.WriteString("\n\n")
-	b.WriteString(buildContext(session, evidences))
+	ctx, err := buildContextSafe(session, evidences)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(ctx)
 	b.WriteString("\n## 庭审完整记录\n")
 	for _, m := range messages {
-		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(m.Content, 300)))
+		cleanContent, err := SanitizeUserInput(m.Content)
+		if err != nil {
+			return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+		}
+		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 300)))
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 // StanceJudgePrompt v0.10.24 候选 1: LLM-as-judge stance 一致性 prompt
@@ -363,7 +417,11 @@ func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, me
 //   - 输出 schema 极简, MaxTokens=200 (低成本)
 //   - 配合老 isStanceConsistent 阈值 0.45/0.55 做 fast filter, 仅在
 //     stance 枚举不一致时才调 judge (省 90% token)
-func StanceJudgePrompt(agentType model.AgentType, beliefA float64, content string) string {
+func StanceJudgePrompt(agentType model.AgentType, beliefA float64, content string) (string, error) {
+	cleanContent, err := SanitizeUserInput(content)
+	if err != nil {
+		return "", fmt.Errorf("sanitize stance content: %w", err)
+	}
 	return fmt.Sprintf(`你是公正的 stance 裁判。
 
 ## Agent 信息
@@ -384,12 +442,12 @@ func StanceJudgePrompt(agentType model.AgentType, beliefA float64, content strin
   "is_consistent": true 或 false,
   "reason": "一句话解释判定理由 (≤50 字)"
 }`,
-		agentType, beliefA, content,
-	)
+		agentType, beliefA, cleanContent,
+	), nil
 }
 
 // ClerkPromptWithJudgeDecision用于书记员基于法官裁决撰写判决书。
-func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.Evidence, messages []model.Message, judgeDecision JudgeDecision) string {
+func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.Evidence, messages []model.Message, judgeDecision JudgeDecision) (string, error) {
 	var b strings.Builder
 	b.WriteString("你是一名中立的书记员，负责根据法官的裁决撰写结构化判决书。\n")
 	b.WriteString("## 法官裁决\n")
@@ -424,12 +482,20 @@ func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.
   "content": "# 决策判决书\n\n## 一、双方主张\n| 选项A代表（%s） | 选项B代表（%s） |\n|---|---|\n| ... | ... |\n\n## 二、证据认定\n...\n\n## 三、争议焦点\n...\n\n## 四、法官裁决\n%s\n\n## 五、可执行建议\n..."
 }`, judgeDecision.BeliefA, judgeDecision.BeliefB, judgeDecision.Recommendation, session.OptionA, session.OptionB, judgeDecision.Reasoning))
 	b.WriteString("\n\n")
-	b.WriteString(buildContext(session, evidences))
+	ctx, err := buildContextSafe(session, evidences)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(ctx)
 	b.WriteString("\n## 庭审记录\n")
 	for _, m := range messages {
-		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(m.Content, 200)))
+		cleanContent, err := SanitizeUserInput(m.Content)
+		if err != nil {
+			return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+		}
+		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 200)))
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 func buildContext(session model.CourtSession, evidences []model.Evidence) string {
@@ -453,6 +519,62 @@ func buildContext(session model.CourtSession, evidences []model.Evidence) string
 		b.WriteString("## 当前证据\n当前尚无证据。你必须基于背景信息和对方观点进行分析，evidence_refs 必须为空数组 []。\n")
 	}
 	return b.String()
+}
+
+// buildContextSafe 在 buildContext 基础上对所有用户可控字段走 SanitizeUserInput。
+//
+// v2.5 (P1-4) prompt 注入防护：sanitize 失败 → 返回 (empty, error)。
+// 调用方应该走 classifyError → ClassUserInput + CodeActionFailed → 前端 UFE
+// Toast 提示用户"提交内容包含可疑指令"。
+//
+// v0.9.4 HA-001 的"标签分层" (source= / credibility=) 保留 — sanitize 是更
+// 前一层的硬拦截，二者互补：sanitize 拦截"明确的注入尝试"，标签分层是
+// "LLM 信任边界声明"。
+//
+// 设计权衡：保留原 buildContext (无 sanitize) 给内部 / 测试用，sanitize 版
+// buildContextSafe 走 prompt 函数的入口路径。这样原 8 个 buildContext() 调用
+// 不用改签名，sanitize 集中在 buildContextSafe 一处。
+func buildContextSafe(session model.CourtSession, evidences []model.Evidence) (string, error) {
+	// 1. sanitize session 短字段
+	title, err := SanitizeShortField(session.Title, 255)
+	if err != nil {
+		return "", fmt.Errorf("sanitize session.Title: %w", err)
+	}
+	optionA, err := SanitizeShortField(session.OptionA, 255)
+	if err != nil {
+		return "", fmt.Errorf("sanitize session.OptionA: %w", err)
+	}
+	optionB, err := SanitizeShortField(session.OptionB, 255)
+	if err != nil {
+		return "", fmt.Errorf("sanitize session.OptionB: %w", err)
+	}
+	contextStr := ""
+	if session.Context != "" {
+		contextStr, err = SanitizeShortField(session.Context, 2000)
+		if err != nil {
+			return "", fmt.Errorf("sanitize session.Context: %w", err)
+		}
+	}
+
+	// 2. sanitize evidences (复制 session 后再 sanitize，避免污染 caller 持有的 session)
+	sanitizedSession := session
+	sanitizedSession.Title = title
+	sanitizedSession.OptionA = optionA
+	sanitizedSession.OptionB = optionB
+	sanitizedSession.Context = contextStr
+
+	sanitizedEvidences := make([]model.Evidence, len(evidences))
+	for i, e := range evidences {
+		contentClean, err := SanitizeEvidenceContent(e.Content)
+		if err != nil {
+			return "", fmt.Errorf("sanitize evidence %s: %w", e.EvidenceID, err)
+		}
+		e.Content = contentClean
+		sanitizedEvidences[i] = e
+	}
+
+	// 3. 复用原 buildContext（已不带 sanitize）
+	return buildContext(sanitizedSession, sanitizedEvidences), nil
 }
 
 // buildInvestigationContext 生成"## 调查活动"section (v0.9.4 HA-001 修复 spec)。
