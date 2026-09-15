@@ -46,6 +46,12 @@ var version = "dev"
 func main() {
 	config.Load()
 
+	// v2.4 (P1-7) APP_ENV fail-fast: dev/staging/prod 之外的拼写错误 → 立即退出。
+	// 防止 prod 部署误配 APP_ENV=Production / production 等 silent miss。
+	if err := config.ValidateAppEnv(); err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
 	// v0.8 白盒化：用 slog JSON handler 替换默认 logger。所有 log.Printf
 	// 在 main / api / agent_gateway 后续被替换为 observability.Logger(ctx)。
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -55,6 +61,14 @@ func main() {
 
 	// 白盒化：进程级 metrics 实例（线程安全的内存实现）。
 	metrics := observability.NewMetrics()
+
+	// v2.4 (P1-7) prod-style 启动 invariant 检查（fail-fast）。
+	// 拦截 dev-mode 配置被误部署到 prod（localhost origin / COOKIE_SECURE=false）。
+	if config.AppConfig.IsProdLike() {
+		if err := enforceProdInvariants(); err != nil {
+			log.Fatalf("prod invariant failed: %v", err)
+		}
+	}
 
 	if err := model.Connect(); err != nil {
 		log.Fatalf("database connection failed: %v", err)
@@ -538,4 +552,49 @@ func clearSessionCookie(c *gin.Context, cfg config.Config) {
 		cfg.CookieSecure,
 		true,
 	)
+}
+
+// enforceProdInvariants (v2.4 P1-7) 在 APP_ENV=prod|staging 时拦截 dev-style 误配置。
+//
+// 设计动机：2026-07 安全审计发现 dev compose 的 fallback（localhost origin /
+// COOKIE_SECURE=false）可能被误部署到公网，导致 session cookie 不加密传输 +
+// CORS 接受任意 localhost 反射 → session hijack。
+//
+// 检查项：
+//   - ALLOWED_ORIGINS 不能含 localhost / 127.0.0.1（dev fallback）
+//   - COOKIE_SECURE 必须 = true（dev 默认 false）
+//   - JWT_SECRET 长度 ≥ 32（避免 dev 默认 weak secret 被误用）
+//   - LLM_API_KEY 必须非空（避免 dev 模式空 key 漏到 prod）
+//
+// 单测：cmd/server/prod_invariants_test.go 覆盖每条规则。
+func enforceProdInvariants() error {
+	cfg := config.AppConfig
+
+	// 1. ALLOWED_ORIGINS 不含 dev-style host
+	for _, origin := range cfg.AllowedOrigins {
+		low := strings.ToLower(origin)
+		if strings.Contains(low, "localhost") || strings.Contains(low, "127.0.0.1") {
+			return fmt.Errorf("ALLOWED_ORIGINS=%q contains dev-style host; must be a real production domain (e.g. https://yourdomain.com)", origin)
+		}
+	}
+	if len(cfg.AllowedOrigins) == 0 {
+		return fmt.Errorf("ALLOWED_ORIGINS is empty in prod; must list production domains explicitly")
+	}
+
+	// 2. COOKIE_SECURE 必须 true
+	if !cfg.CookieSecure {
+		return fmt.Errorf("COOKIE_SECURE=false in prod; must be true so session cookie is sent over HTTPS only")
+	}
+
+	// 3. JWT_SECRET 长度 ≥ 32 (避免 dev 默认 weak secret 被误用)
+	if len(cfg.JWTSecret) < 32 {
+		return fmt.Errorf("JWT_SECRET length=%d < 32 in prod; generate a strong secret (>= 32 chars)", len(cfg.JWTSecret))
+	}
+
+	// 4. LLM_API_KEY 必须非空
+	if cfg.LLMAPIKey == "" {
+		return fmt.Errorf("LLM_API_KEY is empty in prod; must configure real API key")
+	}
+
+	return nil
 }
