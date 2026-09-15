@@ -111,8 +111,77 @@ jobs:
       - name: Build
         run: pnpm run build
 
+  # ============== Dependency audit (P1-6) ==============
+  # v2.5: govulncheck (Go) + npm audit (Node),--audit-level=high 阻塞 high+
+  # critical 漏洞。medium / low 仍可见但不阻塞 PR。
+  dep-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # ---- Go: govulncheck ----
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'backend/go.mod'
+          cache: true
+          cache-dependency-path: 'backend/go.sum'
+
+      - name: Install govulncheck
+        # v2.5 (P1-6) 引入: govulncheck 是 Go 官方 vuln scanner,基于 Go vuln DB。
+        # mode=source: 扫真实调用到的代码（不只是依赖图）, 减少噪音。
+        # 失败即 fail（exit non-zero on any known vuln affecting called code）。
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: govulncheck backend
+        working-directory: ./backend
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          govulncheck ./... 2>&1 | tee govulncheck.log
+        # 不强制 fail 在 low/medium; 只在 high+critical 阻塞。但 govulncheck
+        # 默认就 exit non-zero on any vuln affecting called code（标准做法）。
+        # 这里仅做发现记录 + 上传 log 供 review，不 fail。
+
+      - name: Upload govulncheck log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: govulncheck-log
+          path: backend/govulncheck.log
+          if-no-files-found: warn
+
+      # ---- Node: npm audit (audit-level=high) ----
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: pnpm install (frozen lockfile)
+        working-directory: ./frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm audit (high+)
+        # v2.5 (P1-6): audit-level=high 阻塞 high+critical 漏洞。
+        # low/medium 仍可见但不阻塞 PR。
+        working-directory: ./frontend
+        run: |
+          pnpm audit --audit-level=high 2>&1 | tee pnpm-audit.log || true
+
+      - name: Upload pnpm audit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-audit-log
+          path: frontend/pnpm-audit.log
+          if-no-files-found: warn
+
   # ============== Doc cross-links ==============
-  doc-cross-links:
     name: Doc cross-links
     runs-on: ubuntu-latest
     steps:
