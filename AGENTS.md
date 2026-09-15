@@ -391,6 +391,7 @@ docker compose -f docker-compose.dev.yml down
 | Next.js HMR 不生效 | 看 frontend 容器内 `CHOKIDAR_USEPOLLING=true` 环境变量是否生效（v0.9.2 加的跨平台修复） |
 | backend 起不来：`DATABASE_URL invalid port` | `.env` 里 `POSTGRES_PASSWORD` 含 `/` 没 URL-encoded（v1.0.3 PR-B1 修过；如复发说明 .env 被手工改坏） |
 | `Bind for 0.0.0.0:3000 failed: port already allocated` | host 上有别的进程占 3000；改 `frontend.ports` 或停占端口进程 |
+| curl 响应中文显示 `����` / `������ƽ��` | **不是 backend bug**：gin v1.12.0 的 `c.JSON` 默认带 `charset=utf-8`（见 `backend/internal/api/charset_repro_test.go`）。根因是 Windows Git Bash 用 OEM codepage（cp936/cp1252）解码 UTF-8。修法：`curl ... \| jq .`（jq 自动 UTF-8 解码，推荐）/ `chcp 65001` 切 UTF-8 codepage / `curl ... \| iconv -f utf-8 -t utf-8` 强制转码 |
 
 ### 11.8 与既有规范的关系
 
