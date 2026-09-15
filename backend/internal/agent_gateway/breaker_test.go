@@ -45,7 +45,7 @@ func TestBreaker_Closed_NormalOperation(t *testing.T) {
 	}
 
 	cfg := BreakerConfig{Enabled: true, FailureRatio: 0.5, MinRequests: 3, OpenTimeoutSec: 30}.Normalize()
-	b := NewLLMBreaker(cfg, fallback)
+	b := NewLLMBreaker(cfg, fallback, nil)
 
 	content, _, err := b.Execute(context.Background(), successOp("success"), struct {
 		SystemPrompt string
@@ -77,7 +77,7 @@ func TestBreaker_OpensAfterFailureRate(t *testing.T) {
 	}
 
 	cfg := BreakerConfig{Enabled: true, FailureRatio: 0.5, MinRequests: 3, OpenTimeoutSec: 30}.Normalize()
-	b := NewLLMBreaker(cfg, fallback)
+	b := NewLLMBreaker(cfg, fallback, nil)
 	ctx := context.Background()
 
 	// 调 5 次全部失败 → 失败率 100% → 必然熔断
@@ -137,7 +137,7 @@ func TestBreaker_FallbackReturnsDegradedContent(t *testing.T) {
 	}
 
 	cfg := BreakerConfig{Enabled: true, FailureRatio: 0.5, MinRequests: 2, OpenTimeoutSec: 30}.Normalize()
-	b := NewLLMBreaker(cfg, fallback)
+	b := NewLLMBreaker(cfg, fallback, nil)
 	ctx := context.Background()
 
 	// 触发熔断
@@ -176,7 +176,7 @@ func TestBreaker_RecoversViaHalfOpen(t *testing.T) {
 		OpenTimeoutSec:      1, // 短超时方便测试
 		HalfOpenMaxRequests: 1,
 	}.Normalize()
-	b := NewLLMBreaker(cfg, nil) // 无 fallback,熔断时直接返回 ErrBreakerOpen
+	b := NewLLMBreaker(cfg, nil, nil) // 无 fallback,熔断时直接返回 ErrBreakerOpen
 	ctx := context.Background()
 
 	// 触发熔断
@@ -215,7 +215,7 @@ func TestBreaker_NoFallback_ReturnsError(t *testing.T) {
 	t.Parallel()
 
 	cfg := BreakerConfig{Enabled: true, FailureRatio: 0.5, MinRequests: 2, OpenTimeoutSec: 30}.Normalize()
-	b := NewLLMBreaker(cfg, nil) // 无 fallback
+	b := NewLLMBreaker(cfg, nil, nil) // 无 fallback
 	ctx := context.Background()
 
 	// 触发熔断
@@ -245,7 +245,7 @@ func TestBreaker_Disabled_PassesThrough(t *testing.T) {
 	t.Parallel()
 
 	cfg := BreakerConfig{Enabled: false}.Normalize()
-	b := NewLLMBreaker(cfg, nil)
+	b := NewLLMBreaker(cfg, nil, nil)
 
 	content, _, err := b.Execute(context.Background(), successOp("direct"), struct {
 		SystemPrompt string

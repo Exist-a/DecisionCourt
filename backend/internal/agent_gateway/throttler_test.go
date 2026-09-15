@@ -7,7 +7,7 @@ import (
 )
 
 func TestThrottler_NoOpWhenNormal(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 500, Temperature: 0.7}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusNormal}, "speak")
 	if out.MaxTokens != 500 || out.Temperature != 0.7 {
@@ -19,7 +19,7 @@ func TestThrottler_NoOpWhenNormal(t *testing.T) {
 }
 
 func TestThrottler_ReducesMaxTokensAndTemperature(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 500, Temperature: 0.7}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusThrottle, Ratio: 0.85}, "speak")
 	if !info.Applied {
@@ -40,7 +40,7 @@ func TestThrottler_ReducesMaxTokensAndTemperature(t *testing.T) {
 }
 
 func TestThrottler_ExhaustedMinimum(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 500, Temperature: 0.7}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusExhausted, Ratio: 1.0}, "speak")
 	if out.MaxTokens != 100 {
@@ -52,7 +52,7 @@ func TestThrottler_ExhaustedMinimum(t *testing.T) {
 }
 
 func TestThrottler_ZeroMaxTokens(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 0, Temperature: 0.7}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusExhausted, Ratio: 1.0}, "speak")
 	if out.MaxTokens != 100 {
@@ -64,7 +64,7 @@ func TestThrottler_ZeroMaxTokens(t *testing.T) {
 }
 
 func TestThrottler_CompressStatus(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 500, Temperature: 0.7}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusCompress, Ratio: 0.75}, "speak")
 	if !info.Applied {
@@ -78,7 +78,7 @@ func TestThrottler_CompressStatus(t *testing.T) {
 // 关键任务豁免：verdict / final / summary / assess 即使在 exhausted 时
 // 也必须保留 max_tokens，截断会破坏业务输出。
 func TestThrottler_ExemptsVerdict(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 2000, Temperature: 0.3}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusExhausted, Ratio: 1.0}, "verdict")
 	if out.MaxTokens != 2000 {
@@ -96,7 +96,7 @@ func TestThrottler_ExemptsVerdict(t *testing.T) {
 }
 
 func TestThrottler_ExemptsFinal(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 800, Temperature: 0.2}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusExhausted, Ratio: 1.5}, "final")
 	if out.MaxTokens != 800 {
@@ -108,7 +108,7 @@ func TestThrottler_ExemptsFinal(t *testing.T) {
 }
 
 func TestThrottler_ExemptsSummary(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 500, Temperature: 0.3}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusThrottle, Ratio: 0.9}, "summary")
 	if out.MaxTokens != 500 {
@@ -120,7 +120,7 @@ func TestThrottler_ExemptsSummary(t *testing.T) {
 }
 
 func TestThrottler_ExemptsAssess(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 500, Temperature: 0.3}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusThrottle, Ratio: 0.85}, "assess")
 	if out.MaxTokens != 500 {
@@ -133,7 +133,7 @@ func TestThrottler_ExemptsAssess(t *testing.T) {
 
 // 豁免时仍降 temperature 以稳定格式
 func TestThrottler_ExemptReducesTemperature(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 2000, Temperature: 0.3}
 	out, _ := th.Apply(opts, BudgetSnapshot{Status: StatusExhausted, Ratio: 1.0}, "verdict")
 	if out.Temperature != 0.2 {
@@ -143,7 +143,7 @@ func TestThrottler_ExemptReducesTemperature(t *testing.T) {
 
 // 非豁免任务正常被限流
 func TestThrottler_NonExemptStillThrottled(t *testing.T) {
-	th := NewThrottler()
+	th := NewThrottler(nil)
 	opts := llm.CompletionOptions{MaxTokens: 500, Temperature: 0.7}
 	out, info := th.Apply(opts, BudgetSnapshot{Status: StatusExhausted, Ratio: 1.0}, "react_speak_stream")
 	if out.MaxTokens == 500 {

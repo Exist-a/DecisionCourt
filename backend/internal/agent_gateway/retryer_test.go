@@ -7,7 +7,7 @@ import (
 )
 
 func TestRetryer_SuccessNoRetry(t *testing.T) {
-	r := NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond})
+	r := NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond}, nil)
 	calls := 0
 	err := r.Do(func() error {
 		calls++
@@ -25,7 +25,7 @@ func TestRetryer_SuccessNoRetry(t *testing.T) {
 }
 
 func TestRetryer_RetryOnceThenSuccess(t *testing.T) {
-	r := NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond})
+	r := NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond}, nil)
 	calls := 0
 	err := r.Do(func() error {
 		calls++
@@ -46,7 +46,7 @@ func TestRetryer_RetryOnceThenSuccess(t *testing.T) {
 }
 
 func TestRetryer_FailsAfterMaxRetries(t *testing.T) {
-	r := NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond})
+	r := NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond}, nil)
 	calls := 0
 	err := r.Do(func() error {
 		calls++
@@ -64,7 +64,7 @@ func TestRetryer_FailsAfterMaxRetries(t *testing.T) {
 }
 
 func TestRetryer_NoRetryWhenDisabled(t *testing.T) {
-	r := NewRetryerWithBackoff([]time.Duration{})
+	r := NewRetryerWithBackoff([]time.Duration{}, nil)
 	calls := 0
 	err := r.Do(func() error {
 		calls++

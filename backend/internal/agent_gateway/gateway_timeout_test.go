@@ -64,7 +64,7 @@ func TestGateway_Complete_HangTriggersTimeout(t *testing.T) {
 		Enabled:       true,
 		Fallback:      false, // 禁用 retryer,纯测 timeout
 		LLMTimeoutSec: 1,
-	})
+	}, nil)
 
 	start := time.Now()
 	_, _, err := gw.Complete(context.Background(), "sys", []llm.Message{{Role: "user", Content: "hi"}}, llm.CompletionOptions{})
@@ -93,7 +93,7 @@ func TestGateway_Complete_FastCallNotAffected(t *testing.T) {
 		Enabled:       true,
 		Fallback:      false,
 		LLMTimeoutSec: 1, // 1s timeout,inner 100ms 完成
-	})
+	}, nil)
 
 	content, _, err := gw.Complete(context.Background(), "sys", []llm.Message{{Role: "user", Content: "hi"}}, llm.CompletionOptions{})
 	if err != nil {
@@ -115,7 +115,7 @@ func TestGateway_Complete_DefaultTimeout90s(t *testing.T) {
 		Enabled:       true,
 		Fallback:      false,
 		LLMTimeoutSec: 0, // 触发 Normalize 默认值
-	})
+	}, nil)
 
 	if gw.cfg.LLMTimeoutSec != 90 {
 		t.Fatalf("expected default LLMTimeoutSec=90 after Normalize, got: %d", gw.cfg.LLMTimeoutSec)
@@ -140,7 +140,7 @@ func TestGateway_StreamComplete_HangTriggersTimeout(t *testing.T) {
 	gw := NewWithConfig(inner, nil, "test-model", GatewayConfig{
 		Enabled:       true,
 		LLMTimeoutSec: 1,
-	})
+	}, nil)
 
 	start := time.Now()
 	ch := gw.StreamComplete(context.Background(), "sys", []llm.Message{{Role: "user", Content: "hi"}}, llm.CompletionOptions{})

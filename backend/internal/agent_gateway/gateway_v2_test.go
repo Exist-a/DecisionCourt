@@ -22,7 +22,7 @@ func TestGateway_RejectWhenExhausted(t *testing.T) {
 		CompressionThreshold: 0.7,
 		ThrottlingThreshold:  0.8,
 	}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "v2-s1", AgentType: "judge", TaskType: "verdict"})
 
@@ -58,7 +58,7 @@ func TestGateway_NoRejectWhenExhausted_Disabled(t *testing.T) {
 		CompressionThreshold: 0.7,
 		ThrottlingThreshold:  0.8,
 	}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "v2-s2", AgentType: "judge", TaskType: "verdict"})
 	gw.budget.AddUsage(ctx, "v2-s2", BudgetUsage{InputTokens: 500, OutputTokens: 600})
@@ -95,7 +95,7 @@ func TestGateway_RejectWhenExhausted_DefaultOpen(t *testing.T) {
 	if !cfg.IsRejectWhenExhaustedEnabled() {
 		t.Fatalf("IsRejectWhenExhaustedEnabled should be true when explicitly enabled")
 	}
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "v2-do1", AgentType: "judge", TaskType: "verdict"})
 	gw.budget.AddUsage(ctx, "v2-do1", BudgetUsage{InputTokens: 500, OutputTokens: 600})
@@ -127,7 +127,7 @@ func TestGateway_RejectWhenExhausted_UserExplicitFalse(t *testing.T) {
 	if cfg.IsRejectWhenExhaustedEnabled() {
 		t.Fatalf("user-explicit false must override child-default")
 	}
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "v2-uf", AgentType: "judge", TaskType: "verdict"})
 	gw.budget.AddUsage(ctx, "v2-uf", BudgetUsage{InputTokens: 500, OutputTokens: 600})
@@ -258,7 +258,7 @@ func TestGateway_SmartCompressionInfo_WrittenToLog(t *testing.T) {
 		ThrottlingThreshold:      0.99, // 确保 throttle
 		LogDir:                   dir,
 	}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
 	// v1.0.1 修复: Windows TempDir cleanup 必须先关 fileLogger (同 ae7a464 commit
 	// 在 BudgetCompressThrottleAndLog / FallbackRetry 加的 t.Cleanup 模式)。
 	t.Cleanup(func() { _ = gw.fileLogger.Close() })
@@ -298,7 +298,7 @@ func TestGateway_AddUsageMultiDim_WrittenToLog(t *testing.T) {
 		ThrottlingThreshold:  0.8,
 		LogDir:               dir,
 	}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
 	// v1.0.2 (PR-4 顺手): Windows TempDir cleanup 必须先关 fileLogger.
 	t.Cleanup(func() { _ = gw.fileLogger.Close() })
 

@@ -42,7 +42,7 @@ func TestGateway_Complete_CacheHitShortCircuits(t *testing.T) {
 		CacheEnabled:  true,
 		CacheTTLSec:   60,
 		CacheMaxEntries: 100,
-	})
+	}, nil)
 
 	ctx := context.Background()
 	messages := []llm.Message{{Role: "user", Content: "evidence-A"}}
@@ -97,7 +97,7 @@ func TestGateway_Complete_CacheMissOnDifferentPrompt(t *testing.T) {
 		CacheEnabled:   true,
 		CacheTTLSec:    60,
 		CacheMaxEntries: 100,
-	})
+	}, nil)
 
 	ctx := context.Background()
 
@@ -122,7 +122,7 @@ func TestGateway_Complete_CacheDisabled_NoCaching(t *testing.T) {
 		Enabled:      true,
 		Fallback:     false,
 		CacheEnabled: false, // 禁用
-	})
+	}, nil)
 
 	ctx := context.Background()
 	messages := []llm.Message{{Role: "user", Content: "evidence-A"}}
@@ -149,7 +149,7 @@ func TestGateway_Complete_CacheRespectsTemperature(t *testing.T) {
 		CacheEnabled:   true,
 		CacheTTLSec:    60,
 		CacheMaxEntries: 100,
-	})
+	}, nil)
 
 	ctx := context.Background()
 	messages := []llm.Message{{Role: "user", Content: "evidence-A"}}
@@ -173,7 +173,7 @@ func TestGateway_Complete_CacheBoundedByLRU(t *testing.T) {
 		CacheEnabled:   true,
 		CacheTTLSec:    60,
 		CacheMaxEntries: 2, // 极小 LRU 方便测淘汰
-	})
+	}, nil)
 
 	ctx := context.Background()
 
@@ -205,7 +205,7 @@ func TestGateway_Complete_CacheFailureNotCached(t *testing.T) {
 		CacheEnabled:    true,
 		CacheTTLSec:     60,
 		CacheMaxEntries: 100,
-	})
+	}, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

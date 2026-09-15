@@ -21,7 +21,7 @@ import (
 // 这是 cache 的核心契约 —— 不命中 → 命中 路径。
 func TestCache_GetPut_BasicHitMiss(t *testing.T) {
 	t.Parallel()
-	c := NewResponseCache(5*time.Minute, 100)
+	c := NewResponseCache(5*time.Minute, 100, nil)
 
 	key := MakeCacheKey("deepseek-v4-flash", "you are prosecutor", []llm.Message{{Role: "user", Content: "evidence A"}}, 0.7)
 
@@ -60,7 +60,7 @@ func TestCache_GetPut_BasicHitMiss(t *testing.T) {
 // 这是 cache 防陈旧性的核心 —— 老 result 不能无限保留。
 func TestCache_TTL_ExpiresAfterDuration(t *testing.T) {
 	t.Parallel()
-	c := NewResponseCache(50*time.Millisecond, 100) // 短 TTL 方便测试
+	c := NewResponseCache(50*time.Millisecond, 100, nil) // 短 TTL 方便测试
 
 	key := MakeCacheKey("m", "s", []llm.Message{{Role: "user", Content: "x"}}, 0.7)
 	c.Put(key, "session-1", &CachedResponse{Content: "ok"})
@@ -87,7 +87,7 @@ func TestCache_TTL_ExpiresAfterDuration(t *testing.T) {
 // 这是 cache 防内存膨胀的核心 —— 严格遵循 LRU 语义。
 func TestCache_LRUEviction_OldestRemoved(t *testing.T) {
 	t.Parallel()
-	c := NewResponseCache(5*time.Minute, 3) // max=3 容易测
+	c := NewResponseCache(5*time.Minute, 3, nil) // max=3 容易测
 
 	keyA := MakeCacheKey("m", "sA", []llm.Message{{Role: "user", Content: "A"}}, 0.7)
 	keyB := MakeCacheKey("m", "sB", []llm.Message{{Role: "user", Content: "B"}}, 0.7)
@@ -127,7 +127,7 @@ func TestCache_LRUEviction_OldestRemoved(t *testing.T) {
 // 该 session 的所有 entry。这是 trial 结束时防止内存膨胀的关键路径。
 func TestCache_EvictSession_RemovesAllOfSession(t *testing.T) {
 	t.Parallel()
-	c := NewResponseCache(5*time.Minute, 100)
+	c := NewResponseCache(5*time.Minute, 100, nil)
 
 	// session-A 3 个 entry
 	for _, sys := range []string{"prosecutor", "defender", "judge"} {
@@ -176,7 +176,7 @@ func TestCache_EvictSession_RemovesAllOfSession(t *testing.T) {
 // 用 -race 跑这个测试,任何 data race 都会被 catch。
 func TestCache_Concurrent_NoDataRace(t *testing.T) {
 	t.Parallel()
-	c := NewResponseCache(5*time.Minute, 1000)
+	c := NewResponseCache(5*time.Minute, 1000, nil)
 
 	const goroutines = 20
 	const opsPerGoroutine = 200
@@ -209,7 +209,7 @@ func TestCache_Concurrent_NoDataRace(t *testing.T) {
 // 这是 PR-A 简历叙事"命中率 38%"的可观测性基础。
 func TestCache_HitRatio(t *testing.T) {
 	t.Parallel()
-	c := NewResponseCache(5*time.Minute, 100)
+	c := NewResponseCache(5*time.Minute, 100, nil)
 
 	if ratio := c.HitRatio(); ratio != 0 {
 		t.Errorf("expected HitRatio=0 on empty cache, got %f", ratio)

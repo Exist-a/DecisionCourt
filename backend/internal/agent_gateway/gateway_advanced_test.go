@@ -51,7 +51,7 @@ func TestGateway_Advanced_BudgetCompressThrottleAndLog(t *testing.T) {
 		BudgetPerSession:  1000,
 		LogDir:            dir,
 	}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
 	// v1.0.1 修复: Windows 上 t.TempDir() cleanup 在 fileLogger.Close() 之前
 	// 触发 "file in use" 错误。t.Cleanup 保证 fileLogger 先关, 再清理目录。
 	t.Cleanup(func() { _ = gw.fileLogger.Close() })
@@ -117,11 +117,11 @@ func TestGateway_Advanced_FallbackRetry(t *testing.T) {
 		LogDir:     dir,
 	}.Normalize()
 	// 用短退避加速测试
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
 	// v1.0.1 修复: 同 TestGateway_Advanced_BudgetCompressThrottleAndLog,
 	// Windows TempDir cleanup 必须先关 fileLogger。
 	t.Cleanup(func() { _ = gw.fileLogger.Close() })
-	gw.retryer = NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond})
+	gw.retryer = NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond}, nil)
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "sess-2", AgentType: "judge", TaskType: "assess"})
 	_, _, err := gw.Complete(ctx, "sys", nil, llm.CompletionOptions{})
@@ -145,8 +145,8 @@ func TestGateway_Advanced_FallbackExhausted(t *testing.T) {
 	inner := &fakeRetryLLM{failures: 10}
 	rec := NewRecorder(RecorderConfig{Enabled: false, Provider: "deepseek"}, nil)
 	cfg := GatewayConfig{Enabled: true, Fallback: true}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
-	gw.retryer = NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond})
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
+	gw.retryer = NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond}, nil)
 
 	ctx := WithTrace(context.Background(), Trace{})
 	_, _, err := gw.Complete(ctx, "sys", nil, llm.CompletionOptions{})
@@ -163,7 +163,7 @@ func TestGateway_Advanced_DisabledNoFileLog(t *testing.T) {
 	inner := &fakeBudgetLLM{usagePerCall: llm.Usage{TotalTokens: 10}}
 	rec := NewRecorder(RecorderConfig{Enabled: false, Provider: "deepseek"}, nil)
 	cfg := GatewayConfig{Enabled: false, FileLogger: true, LogDir: dir}.Normalize()
-	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg)
+	gw := NewWithConfig(inner, rec, "deepseek-v4-flash", cfg, nil)
 
 	ctx := WithTrace(context.Background(), Trace{SessionUUID: "sess-3", AgentType: "clerk", TaskType: "summary"})
 	gw.Complete(ctx, "sys", nil, llm.CompletionOptions{})
