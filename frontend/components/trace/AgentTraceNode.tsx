@@ -117,11 +117,14 @@ export function AgentTraceNode({ node, depth = 0 }: AgentTraceNodeProps) {
             <div className="text-stone-500">
               <span className="font-mono">trace_id:</span> {run.trace_id}
             </div>
-            {/* v1.0-patch-2 (Bug-3): 显示后端 omitempty input/output/tags 字段 */}
+            {/* v1.0-patch-2 (Bug-3): 显示后端 omitempty input/output/tags 字段
+                v2.8 PR-3 (ADR 0042): 加 max-h-72 overflow-y-auto 防 32KiB
+                长 output (full mode 写盘) 撑爆 trace card 布局. 仅改
+                overflow-x → overflow: auto (both axis), 加 max-height. */}
             {run.input && Object.keys(run.input).length > 0 && (
               <div>
                 <div className="text-stone-500 font-mono mb-1">input:</div>
-                <pre className="bg-stone-900/60 p-2 rounded text-stone-300 overflow-x-auto whitespace-pre-wrap break-words">
+                <pre className="bg-stone-900/60 p-2 rounded text-stone-300 overflow-auto max-h-72 whitespace-pre-wrap break-words">
                   {JSON.stringify(run.input, null, 2)}
                 </pre>
               </div>
@@ -129,7 +132,7 @@ export function AgentTraceNode({ node, depth = 0 }: AgentTraceNodeProps) {
             {run.output && (
               <div>
                 <div className="text-stone-500 font-mono mb-1">output:</div>
-                <pre className="bg-stone-900/60 p-2 rounded text-stone-300 overflow-x-auto whitespace-pre-wrap break-words">
+                <pre className="bg-stone-900/60 p-2 rounded text-stone-300 overflow-auto max-h-72 whitespace-pre-wrap break-words">
                   {run.output}
                 </pre>
               </div>
