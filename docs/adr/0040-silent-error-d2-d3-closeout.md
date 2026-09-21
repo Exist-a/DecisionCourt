@@ -135,7 +135,9 @@ go test ./...      # 23 包 100% PASS（含新增 9 sub-test）
 ## 6. 不做的事（明确边界）
 
 - ❌ **不**重构 `streamSpeakContent` 流式解析逻辑（commit message 列为后续项；D2 修复仅是 silent error 检测 + 拦截，**不**修根因）
+- ✅ **v2.7 已落实 (ADR 0041)**: `streamSpeakContent` 流式解析逻辑已重写 (scanJSONContentField + \uXXXX 解码 + caller 三态分流);根本消除 silently empty content 在边界不可能发生
 - ❌ **不**加 `JudgeFinalDecision` / `GenerateVerdict` retry-on-canceled（cancelCall 触发的 ctx cancel 链跨 finishTrial 仍可能让 fallback 路径比正常路径更常见；D3 修复的是 fallback 文案准确度，**不**修 fallback 频率）
+- ✅ **v2.7 已落实 (ADR 0041)**: JudgeFinalDecision + GenerateVerdict 加了 one-shot retry on `context.Canceled` via `completeWithCancelRetry` helper (function-scope IIFE);finishTrial 加 detached verdictCtx (120s) 让 verdict 阶段不收 cancelCall 上游牵连
 - ❌ **不**改 `transitionPhase` 签名（D3 在调用点传 `session.CurrentRound`，blast radius 最小）
 - ❌ **不**碰 `RunOpeningSpeeches` / `runCrossExamRound` 的 hard-fail 行为（D2 修复只针对恢复路径，正常路径硬 fail 是合理的）
 - ❌ **不**重新命名 `current_round` 字段（向后兼容）

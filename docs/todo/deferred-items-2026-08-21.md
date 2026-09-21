@@ -3,10 +3,10 @@
 | | |
 |---|---|
 | **生成日期** | 2026-08-21 |
-| **状态** | ✅ **Done (v2.6, ADR 0040)** — D2 + D3 已于 2026-09-21 收尾 |
+| **状态** | ✅ **Done (v2.7, ADR 0041) — v2.6 黑洞可见化 + v2.7 根因消除** |
 | **触发** | 用户在 v1.0.3 PR-B1 (Prompt Lab) 启动验证时复现 |
 | **关联 PR** | v1.0.3 PR-B1 = commit `f1720f7` + 三个 dev compose 修复 (`eef932e`/`bea7289`/`1eb037f`) |
-| **关闭 PR** | v2.6 = silent error D2 收尾 + direct_verdict fallback round D3 修复（详见 `docs/adr/0040-silent-error-d2-d3-closeout.md` + `docs/release-notes/v2.6.md`） |
+| **关闭 PR** | v2.6 = silent error D2 收尾（黑洞可见化） + direct_verdict fallback round D3 修复（详见 [ADR 0040](../adr/0040-silent-error-d2-d3-closeout.md) + [release notes v2.6](../release-notes/v2.6.md)），**v2.7 = silent error 根因消除**（stream parser 重写 + judge verdict retry-on-canceled）详见 [ADR 0041](../adr/0041-stream-rewrite-and-verdict-retry.md) + [release notes v2.7](../release-notes/v2.7.md) |
 
 ---
 
@@ -106,6 +106,18 @@ D2 修复方案（详见 ADR 0040 §3）：
 - `streamSpeakContent` 流式解析逻辑本身仍可能产生空 content（需重新设计 extract 逻辑，中度修复）
 - `JudgeFinalDecision` / `GenerateVerdict` 未加 retry-on-canceled（D3 第 3 项建议）
 
+### ✅ v2.7 根因消除 (2026-09-21, ADR 0041)
+
+D2 根因修复方案（详见 [ADR 0041](../adr/0041-stream-rewrite-and-verdict-retry.md)）：
+
+- `backend/internal/agent/react_runner.go::streamSpeakContent` **重写**：用 `scanJSONContentField` helper 替换 ad-hoc JSON 解析，brace depth tracking + 跨 chunk reassemble + `\uXXXX` 解码 + markdown wrap / 嵌套 / preamble 兼容
+- `unquoteJSONString` 加 `\uXXXX` → rune 解码（4 hex digit，非法 verbatim 保留）
+- ActionSpeak caller 三态分流：complete && value!="" 真成功，complete && value=="" 视为 LLM 显式空走 retry，!complete 视为失败/timeout 走 retry
+- 删除 `indexOfJSONField` 死代码（避免 stale code）
+- 新增 22 个边界 case sub-test（`react_runner_stream_boundary_test.go`：12 parser unit + 3 unquote unit + 4 e2e + 3 回归）
+
+**v2.7 验证效果**：silent error 黑洞根因消除 — parser 重写后，\uXXXX / 嵌套 / 跨 chunk / preamble 等边界 case 不再可能 silently 产生空 content（v2.6 的黑盒 WARN 已变 0 频）。
+
 ---
 
 ## D3. direct_verdict 判决书 fallback 显示 "本场庭审共 0 轮"
@@ -203,5 +215,18 @@ D3 修复方案（详见 ADR 0040 §4）：
 **未修的根因**（下次 PR 候选）：
 - `JudgeFinalDecision` / `GenerateVerdict` 未加 retry-on-canceled —— 让 cancelCall 触发的 ctx cancel 链仍会让 fallback 路径比正常路径更常见
 - D3 的"双重根因 B（cancelCall 跨 finishTrial）"未修根因，下次 PR 可考虑
+
+### ✅ v2.7 根因消除 (2026-09-21, ADR 0041)
+
+D3 根因修复方案（详见 [ADR 0041](../adr/0041-stream-rewrite-and-verdict-retry.md)）：
+
+- `backend/internal/courtroom/service.go::finishTrial` 入口加 `verdictCtx = context.WithTimeout(Background, 120s)` detached verdict 上下文（不受 cancelCall / HTTP ctx 牵连）
+- `JudgeFinalDecision` + `GenerateVerdict` 改用 `verdictCtx`
+- `backend/internal/agent/orchestrator.go` 新增 `completeWithCancelRetry` helper：errors.Is(err, context.Canceled) 时 one-shot retry with `context.Background() + 90s` detached timeout；函数 scope IIFE 保证 defer rc() 立即 cleanup
+- 行为契约：仅 Canceled 触发 retry；network / DeadlineExceeded / parse error 都不 retry（timeout 是真慢，retry 也无效）
+- `runCrossExamRound` L1225 后补 `defer s.clearCancel(session.SessionUUID)` 对称 finishTrial 的 activeCalls 清理
+- 新增 7 个 retry hook sub-test（`orchestrator_verdict_retry_test.go`）
+
+**v2.7 验证效果**：verdict 阶段不再被上游 cancelCall 牵连；detached + retry 双层防御让 fallback 路径频率降低到接近正常 trial 路径水平。
 
 ---

@@ -12,7 +12,7 @@
 
 ---
 
-## 0. 当前进度快照（2026-09-14）
+## 0. 当前进度快照（2026-09-21 v2.7 收尾）
 
 | 维度 | 状态 | 说明 |
 |---|---|---|
@@ -63,8 +63,11 @@
 | **v2.5 P1-4** | ✅ | sanitize.go (21 中英文 injection pattern) + 9 个 prompt 函数适配 + orchestrator 6 处 + react_runner 2 处 |
 | **v2.5 tests+docs** | ✅ | 22 个新 sub-test (csrf 10 + sanitize 12) + ADR 0039 + release-notes/v2.5 + deferred §D1 全部 P1 done |
 | **v2.6 D2+D3** | ✅ | silent error 黑洞 D2 收尾（streamSpeakContent 三处 WARN + saveAgentMessage 拦截 + 6 处 caller skip broadcast）+ direct_verdict fallback round D3（transitionPhase 保留 round + maxRound helper）+ 9 个新 sub-test + ADR 0040 + release-notes/v2.6 + deferred-items-2026-08-21 §D2+§D3 ✅ + 删孤儿分支 `fix/cross-exam-content-empty` |
-| ADR 累计 | 40 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + 0037 agent-gateway-observability + 0038 security-p1-batch-a + 0039 security-p1-batch-c + **0040 silent-error-d2-d3-closeout** |
-| Go 测试 | ~386 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + v2.1 F4+F5 6 + v2.3 observability-tests 9 + v2.4 P1-tests 14 + v2.5 P1-tests 22 + **v2.6 D2+D3 9** |
+| **v2.7 PR-1** | ✅ | streamSpeakContent 流式解析**根因**重写（scanJSONContentField helper: brace depth + 跨 chunk 边界 reassemble + markdown wrap / 嵌套 / preamble 兼容）+ unquoteJSONString 加 \uXXXX 中文解码 + ActionSpeak caller 三态分流（complete && value!="" 视为成功；complete && value=="" 视为 LLM 显式空走 retry；!complete 视为失败/timeout 走 retry）+ 删除 indexOfJSONField 死代码 + 22 个新 sub-test（12 parser unit + 3 unquote unit + 4 e2e + 3 回归）|
+| **v2.7 PR-2** | ✅ | finishTrial 加 detached verdictCtx（`context.WithTimeout(Background, 120s)`，让 JudgeFinalDecision + GenerateVerdict 不受 cancelCall / HTTP ctx 牵连）+ orchestrator.go 抽 `completeWithCancelRetry` helper（function-scope IIFE 让 defer rc() 在 retry 完成时立刻 cleanup，避免 caller-scope leak）+ JudgeFinalDecision + GenerateVerdict 走该 helper 实现 one-shot retry on `context.Canceled` 仅（network / DeadlineExceeded / parse error 都不 retry）+ runCrossExamRound 补 `defer s.clearCancel(session.SessionUUID)` 对称 finishTrial 的 activeCalls 清理 + 7 个新 sub-test |
+| **v2.7 docs** | ✅ | [ADR 0041](../adr/0041-stream-rewrite-and-verdict-retry.md)（NEW，覆盖 PR-1 + PR-2 完整设计 + 5 处关键决策 + 调试历程）+ ADR 0040 §6 第一条 + 第二条 ❌ → ✅ "v2.7 落地" + release-notes/v2.7（14 章节模板）+ [deferred-items-2026-08-21.md](./todo/deferred-items-2026-08-21.md) §D2 + §D3 翻 ✅ Done (v2.7) |
+| ADR 累计 | 41 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + 0037 agent-gateway-observability + 0038 security-p1-batch-a + 0039 security-p1-batch-c + 0040 silent-error-d2-d3-closeout + **0041 stream-rewrite-and-verdict-retry (v2.7)** |
+| Go 测试 | ~415 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + v2.1 F4+F5 6 + v2.3 observability-tests 9 + v2.4 P1-tests 14 + v2.5 P1-tests 22 + v2.6 D2+D3 9 + **v2.7 PR-1 22 (stream parser) + PR-2 7 (retry hook) = 29** |
 | Frontend 测试 | 103 (9 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 + **v2.1 F1+F2+F3+F4 11** + **v2.2 2** |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
@@ -292,23 +295,31 @@ M6 v1.2 ⏸ (安全 P1, 触发后启动)
 
 ---
 
-## 6. 下一步（2026-08-21 重规划 v2/v3）
+## 6. 下一步（2026-09-21 v2.7 收尾后）
 
 ### 立即可做（等用户授权）
 
-1. **v2.0 tag + push** — 用户授权后（[release notes](./release-notes/v2.0.md) 已完成）
-2. **v3.0 启动**（端侧 TTS：调研 Piper / Kokoro / Coqui → 引擎选型 → 实现 + 多角色音色）— 用户授权后，按 [V3.0-PLAN.md](./V3.0-PLAN.md) 推进
+1. **v2.7 dev compose 业务验证 (AGENTS.md §11)** — `docker compose -f docker-compose.dev.yml up -d --build` + `/health` + `/api/v1/health/llm` + `/api/v1/metrics` + 浏览器手测 cross-exam 无空气泡 + direct_verdict verdict 准确
+2. **v2.7 commits + tag** — 用户审 diff / 跑 dev compose 后授权 `git tag v2.7 && git push origin main v2.7`（按 v2.4/v2.5/v2.6 模式）
+3. **v2.8 PR-3**（LLM Trace 全量 prompt 持久化开关）— ADR 0033 §3.2 deferred 项，等用户决定 `AGENT_GATEWAY_FILE_LOGGER_PROMPTS` 默认值（`metadata` 推荐保 backward compat / `off` 更严 PII 防御）
+4. **v2.9 PR-4**（判决书考虑 rebuttal 状态）— §2.1 范畴，需用户授权。用户决策已对齐：全链路 (prose + evidence_adoption 结构化字段 + belief 回填) + standing 硬忽略 + overturned 带 caveat + auto-overturn 暂不实装
+
+### 显式不启动（用户已明示 2026-09-21）
+
+- ❌ **v3.0 端侧 TTS**（Piper / Kokoro / Coqui）— 用户"目前不打算进行 3.0"，`docs/V3.0-PLAN.md` 维持 ⏸
+- ❌ **v2.0 REDESIGN r3f**（3D 剪影方案）— 已三次归档（ADR 0034-archive），永不实施
 
 ### 长期（按需触发）
 
-3. **v1.2 安全 P1** — 触发条件：公网部署 / 安全事件 / 用户决定继续安全加固
+5. **v1.2 安全 P1 (剩 P2-1 ~ P2-5 + P3-1 ~ P3-2)** — 触发条件：公网部署 / 安全事件 / 企业客户 / 用户决定继续安全加固 (deferred-items-2026-08-05.md §D1)
 
 ### 持续维护
 
-- **静默错误黑洞回归测试护栏**（v1.0.0 PR-3 框架 + D2/D3 9 sub-test 在 v2.6 ADR 0040）
+- **静默错误黑洞回归测试护栏**（v1.0.0 PR-3 框架 + D2/D3 在 v2.6 ADR 0040 + v2.7 PR-1 根因消除在 ADR 0041）
 - **DeepSeek API 文档变更跟进**（ADR 0029 教训）
 - **Dev compose 回归测试**（host 端口冲突 + env 优先级 + Windows npipe）
 - **AGENTS.md §8 敏感文件红线**（项目长期规范）
+- **v2.7 三态分流 + detached verdictCtx** — silent error 黑洞根因 100% 收尾，测试护栏覆盖 22 + 7 sub-test
 
 ---
 
