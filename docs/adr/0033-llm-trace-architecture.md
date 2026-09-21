@@ -88,6 +88,11 @@ LogEntry 字段名是 `request_id`（v0.10.22 PR-A 沿用 HTTP middleware `X-Req
 | `agent_type / task_type / model / status / error_msg` | 同名 | 一一映射 |
 | ❌ | `Run.Input / Output / Tags` | LogEntry 不含，留空（后续 PR 可补"全量 prompt 落盘"开关） |
 
+**✅ v2.8 落地 (2026-09-21, ADR 0042)**: "全量 prompt 落盘"开关已实装。
+`AGENT_GATEWAY_FILE_LOGGER_PROMPTS` tri-state (`off|metadata|full`, 默认
+`metadata` 保 backward compat)。详见 [ADR 0042](../adr/0042-llm-trace-prompt-persistence.md)
++ [release notes v2.8](../release-notes/v2.8.md)。
+
 ### 2.3 文件级 LRU 缓存
 
 `FileTraceStore` 缓存 key = `"file:" + date`（**文件级**），不是 `"sessionID:" + date`：
