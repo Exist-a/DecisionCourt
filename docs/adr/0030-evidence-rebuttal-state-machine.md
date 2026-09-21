@@ -102,12 +102,13 @@ PRD §4.3.2 L155-157 + §4.3.3 L162-164 已经实装"强制立场一致性检查
 
 ## 4. 后续工作
 
-- [ ] PR-2: AgentOutput.Rebut + Speaker.RebuttalRejected (输入协议)
-- [ ] PR-3: applySpeakerRebuttalCheck (与 stance/novelty 同等级 guard)
-- [ ] PR-4: Service.defaultRebuttalHook + GORM RebuttalRepository + REST 端点
-- [ ] PR-5: baseRules rebut schema + Frontend chip
-- [ ] PR-6: ecs_regression_v102_test + v1.0.2 release notes + tag
-- [ ] v1.0.3 候选: 法官判决书是否考虑 rebuttal 状态 (后续讨论, 不在本 ADR 范围)
+- [x] PR-2: AgentOutput.Rebut + Speaker.RebuttalRejected (输入协议)
+- [x] PR-3: applySpeakerRebuttalCheck (与 stance/novelty 同等级 guard)
+- [x] PR-4: Service.defaultRebuttalHook + GORM RebuttalRepository + REST 端点
+- [x] PR-5: baseRules rebut schema + Frontend chip
+- [x] PR-6: ecs_regression_v102_test + v1.0.2 release notes + tag
+- ✅ **v2.9 PR-4 (ADR 0043) 落地**: 法官判决书考虑 rebuttal 状态 (全链路 prose + evidence_adoption jsonb + belief_diffs Source=rebuttal trail). 见 [ADR 0043](../adr/0043-rebuttal-aware-verdict.md) + [release notes v2.9](../release-notes/v2.9.md)
+- ⏸ **auto-overturn wiring (deferred)**: 律师 B "I rebut the rebuttal of E001" → UpdateStatus(standing→overturned) 自动写路径，用户 §2.1 决策暂不实装，登记于 [deferred-items-2026-09-21 §D5](../todo/deferred-items-2026-09-21.md)
 
 ## 5. 关联文档
 

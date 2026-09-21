@@ -12,7 +12,7 @@
 
 ---
 
-## 0. 当前进度快照（2026-09-21 v2.8 落地）
+## 0. 当前进度快照（2026-09-21 v2.9 §2.1 落地）
 
 | 维度 | 状态 | 说明 |
 |---|---|---|
@@ -68,8 +68,10 @@
 | **v2.7 docs** | ✅ | [ADR 0041](../adr/0041-stream-rewrite-and-verdict-retry.md)（NEW，覆盖 PR-1 + PR-2 完整设计 + 5 处关键决策 + 调试历程）+ ADR 0040 §6 第一条 + 第二条 ❌ → ✅ "v2.7 落地" + release-notes/v2.7（14 章节模板）+ [deferred-items-2026-08-21.md](./todo/deferred-items-2026-08-21.md) §D2 + §D3 翻 ✅ Done (v2.7) |
 | **v2.8 PR-3** | ✅ | LogEntry 加 4 optional 字段（system_prompt / input_messages / output_content / output_truncated，omitempty 后向兼容）+ AgentGatewayConfig 加 FileLoggerPrompts (off/metadata/full) + FileLoggerPromptsMaxBytes (默认 32 KiB) tri-state 开关 + Normalize 默认 metadata 保 v2.7 baseline + writeFileLog 签名 + 三态分流 + 新增 truncateForLogBytes helper + ValidateFileLoggerPrompts fail-fast（与 ValidateAppEnv 同级，cmd/server/main.go 启动校验）+ Config Load 加 2 个 envOrDefault + entryToRun 字段映射 (SystemPrompt+InputMessages → Run.Input map;OutputContent → Run.Output) + frontend AgentTraceNode `<pre>` 加 overflow-auto max-h-72 防 32 KiB 长 output 撑布局 + 18 个新 sub-test (file_logger 6 + parser 4 + Validate 8) |
 | **v2.8 docs** | ✅ | [ADR 0042](../adr/0042-llm-trace-prompt-persistence.md)（NEW，覆盖 PR-3 完整设计 + 5 处关键决策 + PII / 磁盘风险分析 + 借鉴 APP_ENV tri-state precedent）+ ADR 0033 §3.2 第一条 ⚠️ → ✅ "v2.8 落地" + release-notes/v2.8（14 章节模板）+ [deferred-items-2026-09-21.md](./todo/deferred-items-2026-09-21.md) (NEW) §D4 logs retention 登记 |
-| ADR 累计 | 42 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + 0037 agent-gateway-observability + 0038 security-p1-batch-a + 0039 security-p1-batch-c + 0040 silent-error-d2-d3-closeout + 0041 stream-rewrite-and-verdict-retry (v2.7) + **0042 llm-trace-prompt-persistence (v2.8)** |
-| Go 测试 | ~433 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + v2.1 F4+F5 6 + v2.3 observability-tests 9 + v2.4 P1-tests 14 + v2.5 P1-tests 22 + v2.6 D2+D3 9 + v2.7 PR-1 22 (stream parser) + PR-2 7 (retry hook) + **v2.8 PR-3 18 (file_logger 6 + parser 4 + Validate 8)** |
+| **v2.9 PR-4** | ✅ | Verdict schema 加 EvidenceAdoption jsonb + EvidenceAdoptionJSONB type (driver.Valuer + sql.Scanner) + EvidenceAdoptionEntry + belief_diff 加 BeliefSrcRebuttal 常量 + BuildAdoptionSummary 纯函数 (latest-wins semantics + adoptionTableMaxRows=200 + renderAdoptionPromptSection markdown) + JudgeFinalPrompt + ClerkPromptWithJudgeDecision 加 adoptionSummary 参数 + output schema evidence_adoption 字段 + JudgeFinalDecision + GenerateVerdict 透传 + Service.finishTrial 集成 (LLM 输出优先 + BuildAdoptionSummary 兜底) + belief_diffs Source=rebuttal rows 落库 (非 fatal) + convertToEvidenceAdoptionEntries helper + frontend Verdict.evidence_adoption?: EvidenceAdoptionEntry[] + 新 "证据采纳" 卡 (4 列 + 状态 chip 颜色 rose/stone/emerald) + 9 个 unit test (Empty / NoLinks / Standing / Overturned / Withdrawn / LatestWins / MixedStates / PromptRender / TableMaxRows) |
+| **v2.9 docs** | ✅ | [ADR 0043](../adr/0043-rebuttal-aware-verdict.md)（NEW，**§2.1 范畴** — 显式标注，覆盖 PR-4 完整设计 + 8 处关键决策 + 用户 ExitPlanMode 后 §2.1 决策对齐）+ ADR 0030 §4 line 110 deferred 项 → ✅ "v2.9 落地" + release-notes/v2.9（14 章节模板，含用户决策表 + ⚠️ Breaking Changes 细列 GORM AutoMigrate 影响）+ [deferred-items-2026-09-21.md §D5](./todo/deferred-items-2026-09-21.md) 范围明确 (auto-overturn wiring 维持 deferred) |
+| ADR 累计 | 43 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + 0037 agent-gateway-observability + 0038 security-p1-batch-a + 0039 security-p1-batch-c + 0040 silent-error-d2-d3-closeout + 0041 stream-rewrite-and-verdict-retry (v2.7) + 0042 llm-trace-prompt-persistence (v2.8) + **0043 rebuttal-aware-verdict (v2.9)** |
+| Go 测试 | ~442 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 + v2.1 F4+F5 6 + v2.3 observability-tests 9 + v2.4 P1-tests 14 + v2.5 P1-tests 22 + v2.6 D2+D3 9 + v2.7 PR-1 22 (stream parser) + PR-2 7 (retry hook) + v2.8 PR-3 18 + **v2.9 PR-4 9 (BuildAdoptionSummary)** |
 | Frontend 测试 | 103 (9 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 + **v2.1 F1+F2+F3+F4 11** + **v2.2 2** |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
