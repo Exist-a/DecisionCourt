@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -602,7 +603,7 @@ func (o *Orchestrator) GenerateVerdict(
 	log.Printf("[GenerateVerdict] prompt length=%d", len(prompt))
 
 	ctx = traceFor(ctx, session, model.AgentClerk, "verdict")
-	content, _, err := o.llmClient.Complete(ctx, prompt, []llm.Message{}, llm.CompletionOptions{
+	content, _, err := o.completeWithCancelRetry(ctx, "GenerateVerdict", prompt, []llm.Message{}, llm.CompletionOptions{
 		Model:       "",
 		Temperature: 0.3,
 		MaxTokens:   2000,
@@ -632,6 +633,48 @@ func resultKeys(m map[string]interface{}) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// completeWithCancelRetry 在 v2.7 PR-2 (ADR 0041) 引入, 实现 detached-ctx
+// one-shot retry 当父 ctx 已被取消时. 这个 helper 是 function scope 的(不是
+// if-block scope) — retry ctx 的 cancel 通过 defer rc() 在本 helper 返回时
+// 立刻清理, 不会泄漏到 caller scope. 这是 v2.7 PR-2 retry hook 必须走
+// helper 的根本原因: Go defer 按 function scope, block 内的 defer 会延长到
+// caller function 退出, 期间 retry ctx 会被 cancel, 让 caller 拿到已 cancelled
+// 的 ctx (defeats the whole point of detached retry).
+//
+// 行为契约:
+//   - 第一次 LLM call 用 caller 传的 ctx, 保留上游 trace / metrics 关联
+//   - 仅当 err 是 context.Canceled (不是 DeadlineExceeded) 时 one-shot retry
+//     with detached context.Background() + 90s timeout
+//   - non-cancel error / parse error / etc. 都直接 propagate, 不 retry
+func (o *Orchestrator) completeWithCancelRetry(
+	ctx context.Context,
+	callerLabel string,
+	prompt string,
+	messages []llm.Message,
+	opts llm.CompletionOptions,
+) (string, llm.Usage, error) {
+	content, usage, err := o.llmClient.Complete(ctx, prompt, messages, opts)
+	if errors.Is(err, context.Canceled) {
+		log.Printf("[%s] retried with detached ctx after context.Canceled", callerLabel)
+		// IIFE 让 defer rc() 在 retry-ctx 生命周期结束时立刻清理, 不污染 caller.
+		var (
+			rContent string
+			rUsage   llm.Usage
+			rErr     error
+		)
+		func() {
+			retryCtx, rc := context.WithTimeout(context.Background(), 90*time.Second)
+			defer rc()
+			rContent, rUsage, rErr = o.llmClient.Complete(retryCtx, prompt, messages, opts)
+		}()
+		if rErr != nil {
+			return "", llm.Usage{}, rErr
+		}
+		return rContent, rUsage, nil
+	}
+	return content, usage, err
 }
 
 // ClerkSummary generates a brief summary of the current round.
@@ -747,7 +790,7 @@ func (o *Orchestrator) JudgeFinalDecision(
 	}
 
 	ctx = traceFor(ctx, session, model.AgentJudge, "final")
-	content, _, err := o.llmClient.Complete(ctx, prompt, []llm.Message{}, llm.CompletionOptions{
+	content, _, err := o.completeWithCancelRetry(ctx, "JudgeFinalDecision", prompt, []llm.Message{}, llm.CompletionOptions{
 		Model:       "",
 		Temperature: 0.2,
 		MaxTokens:   800,

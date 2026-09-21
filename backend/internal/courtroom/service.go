@@ -1223,6 +1223,12 @@ func (s *Service) runCrossExamRound(ctx context.Context, session model.CourtSess
 		return err
 	}
 	defer cancel()
+	// v2.7 PR-2 (ADR 0041): activeCalls cleanup symmetry. finishTrial (L1523)
+	// 与 ProcessUserAction → cancelCall 路径已有 `defer s.clearCancel`,
+	// runCrossExamRound 之前缺失, 导致 cancel 后 activeCalls[sessionUUID]
+	// 残留 stale cancel func 直到下次 withCancel 覆盖. 本来不是 bug,
+	// 但保留 stale 状态让调试 / 测试 fixture 难对齐 — 加上清理语义.
+	defer s.clearCancel(session.SessionUUID)
 
 	agents, evidences, messages, err := s.loadSessionData(session.ID)
 	if err != nil {
@@ -1522,6 +1528,16 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 	defer cancel()
 	defer s.clearCancel(session.SessionUUID)
 
+	// v2.7 PR-2 (ADR 0041): detached verdict ctx. 法官 verdict 不可被上游
+	// cancelCall (direct_verdict 触发) / HTTP ctx 取消 牵连, 否则 fallback
+	// 路径被触发频率高于正常路径. 借鉴 agent/orchestrator.go recordSideEffects
+	// (L451) 的 context.WithTimeout(context.Background(), 3s) 模式.
+	// DB writes / closing statements 仍用 trialCtx (受 cancelCall 影响),
+	// verdict LLM calls (JudgeFinalDecision + GenerateVerdict) 用 verdictCtx —
+	// verdict 是 fire-and-forget, 用户已选 direct_verdict.
+	verdictCtx, vcancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer vcancel()
+
 	// Idempotency: reload session and bail out if already finishing/finished.
 	var fresh model.CourtSession
 	if err := s.db.Where("id = ?", session.ID).First(&fresh).Error; err != nil {
@@ -1582,7 +1598,7 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 	judge := findAgent(agents, model.AgentJudge)
 	var judgeDecision agent.JudgeDecision
 	if judge != nil {
-		judgeDecision, err = s.orchestrator.JudgeFinalDecision(ctx, *judge, session, evidences, messages)
+		judgeDecision, err = s.orchestrator.JudgeFinalDecision(verdictCtx, *judge, session, evidences, messages)
 		if err != nil {
 			log.Printf("JudgeFinalDecision failed: %v, using belief values directly", err)
 			// Fallback: use judge's belief values directly
@@ -1639,7 +1655,8 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 	}
 
 	// Generate verdict based on judge's decision
-	result, err := s.orchestrator.GenerateVerdict(ctx, session, evidences, messages, judgeDecision)
+	// v2.7 PR-2 (ADR 0041): 用 verdictCtx (detached), 不被上游 cancel 牵连
+	result, err := s.orchestrator.GenerateVerdict(verdictCtx, session, evidences, messages, judgeDecision)
 	if err != nil {
 		// Fallback: use judge's belief values directly when LLM fails.
 		log.Printf("GenerateVerdict failed, using fallback: %v", err)
