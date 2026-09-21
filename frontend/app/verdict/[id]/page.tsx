@@ -560,6 +560,79 @@ export default function VerdictPage() {
         </section>
       )}
 
+      {/* ============= v2.9 PR-4 (ADR 0043) §2.1 — 证据采纳表 =============
+          * 法官判决书"考虑 rebuttal 状态" — 按 status 颜色 chip + weight_applied
+            显示每条 evidence 的采纳情况:
+            - adopted: 默认 (灰)
+            - overturned: 可引用但带 caveat (绿)
+            - standing / withdrawn: hard-ignored (红)
+          * 仅 verdict.evidence_adoption 非空时展示. 老 verdict (v2.9 之前) 跳过.
+      */}
+      {verdict.evidence_adoption && verdict.evidence_adoption.length > 0 && (
+        <section className="container mx-auto max-w-4xl px-6 pb-6">
+          <div className="bg-paperDeep border-l-2 border-clerk px-6 py-5 relative">
+            <div className="flex items-baseline justify-between mb-3">
+              <h3 className="text-display text-base font-semibold text-ink flex items-center gap-2">
+                <Scale className="w-4 h-4 text-clerk" />
+                证 据 采 纳
+              </h3>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-inkFaint font-data">
+                Evidence Adoption
+              </span>
+            </div>
+            <table className="w-full text-display text-[13px]">
+              <thead>
+                <tr className="text-inkFaint border-b border-paperBase">
+                  <th className="text-left py-2 font-medium">证据</th>
+                  <th className="text-left py-2 font-medium">状态</th>
+                  <th className="text-left py-2 font-medium">权重</th>
+                  <th className="text-left py-2 font-medium">备注</th>
+                </tr>
+              </thead>
+              <tbody>
+                {verdict.evidence_adoption.map((e) => (
+                  <tr key={e.evidence_id} className="border-b border-paperBase/40">
+                    <td className="py-2 font-mono text-ink">{e.display_id}</td>
+                    <td className="py-2">
+                      <span
+                        className={
+                          "inline-block px-2 py-0.5 rounded text-[11px] font-mono " +
+                          (e.status === "standing"
+                            ? "bg-rose-900 text-rose-100"
+                            : e.status === "withdrawn"
+                              ? "bg-stone-700 text-stone-100"
+                              : e.status === "overturned"
+                                ? "bg-emerald-900 text-emerald-100"
+                                : "bg-stone-500 text-stone-100")
+                        }
+                      >
+                        {e.status === "standing"
+                          ? "反驳有效"
+                          : e.status === "overturned"
+                            ? "已翻盘"
+                            : e.status === "withdrawn"
+                              ? "撤回"
+                              : "采纳"}
+                      </span>
+                    </td>
+                    <td className="py-2 font-mono text-ink/80">
+                      {e.weight_applied === 0 ? "0.0" : e.weight_applied.toFixed(1)}
+                    </td>
+                    <td className="py-2 text-ink/80 text-[12px] leading-snug">
+                      {e.reason || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-3 text-[11px] text-inkFaint leading-snug">
+              注：状态「反驳有效」/「撤回」的证据，法官判决书不下文引用 (LLM 已按
+              hard-instructed rule 忽略)；「已翻盘」可引用但带 caveat。
+            </p>
+          </div>
+        </section>
+      )}
+
       {/* ============= 判决书正文（Markdown 渲染） ============= */}
       <section className="container mx-auto max-w-4xl px-6 pb-12">
         <div className="bg-white border border-rule shadow-paper p-8 md:p-12 relative">

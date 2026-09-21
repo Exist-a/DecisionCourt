@@ -155,8 +155,37 @@ export interface Verdict {
   consensus_points: string[] | string;
   divergence_points: string[] | string;
   recommendation: string;
+  /**
+   * v2.9 PR-4 (ADR 0043) §2.1: 法官判决书"考虑 rebuttal 状态"。
+   * Backend courtroom.BuildAdoptionSummary 算出 per-evidence 采纳状态:
+   *   - standing / withdrawn → weight_applied=0.0 (hard-instructed 忽略)
+   *   - overturned → weight_applied=1.0 (LLM 可引用但带 caveat)
+   *   - adopted (无 link) → weight_applied=1.0 (正常采纳)
+   * 老 verdict (v2.9 之前) 没有此字段，可能 undefined.
+   */
+  evidence_adoption?: EvidenceAdoptionEntry[];
   user_feedback?: "helpful" | "not_helpful" | "none";
   created_at: string;
+}
+
+/**
+ * v2.9 PR-4 (ADR 0043) §2.1: per-evidence 采纳状态。
+ * 写盘在 verdict.evidence_adoption jsonb 列, 服务端 BuildAdoptionSummary 生成.
+ */
+export interface EvidenceAdoptionEntry {
+  evidence_id: string;
+  display_id: string;
+  /**
+   * standing | overturned | withdrawn | adopted
+   * - standing: 已被反驳, 未翻盘 → LLM hard-instructed 不许引用
+   * - overturned: 已被反驳但已翻盘 → LLM 可引用但带 caveat
+   * - withdrawn: 证据已撤回 → LLM hard-instructed 不许引用
+   * - adopted: 无 rebuttal link → 正常采纳
+   */
+  status: "standing" | "overturned" | "withdrawn" | "adopted";
+  /** 0.0 = hard-ignored, 1.0 = full weight */
+  weight_applied: number;
+  reason: string;
 }
 
 export interface CreateSessionRequest {
