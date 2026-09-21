@@ -266,9 +266,13 @@ func TestCompressionEval_StrategyComparison(t *testing.T) {
 	if allStats[2].tokensSaved == 0 {
 		t.Errorf("smart 应该至少节省一些 tokens，got 0")
 	}
-	// 保留的 tool_call 原子组数（smart 应至少 10 个）
-	if allStats[2].atomicKept != 10 {
-		t.Errorf("smart atomic kept: want 10 got %d", allStats[2].atomicKept)
+	// 保留的原子组数。v2.10 ADR 0044 #5 把预算单位从"字符数"换成
+	// 内容感知 token 估算（CJK 1.5 tok/char vs ASCII 0.25）后，同等 budget
+	// 下 Smart 少装 1 组（10 → 9）：被丢的是 clerk 阶段总结这个低价值
+	// singleton，judge 推理组与 tool_call 原子组全部保留（见下方 kept 明细）。
+	// 因此这里守卫"仍大量保留"的语义（floor），不再钉死旧计量下的精确值。
+	if allStats[2].atomicKept < 9 {
+		t.Errorf("smart 应至少保留 9 个原子组，got %d", allStats[2].atomicKept)
 	}
 	// 关键：smart 信息密度 / 上下文保留度 不低于 legacy
 	if allStats[2].msgsAfter <= allStats[1].msgsAfter {

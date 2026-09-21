@@ -485,3 +485,32 @@ func TestApplySpeakerLengthLimit_IdempotentOnAlreadyTruncated(t *testing.T) {
 	require.True(t, got.ContentTruncated)
 	require.Equal(t, 301, got.OriginalRunes) // 重新测量, 覆盖旧值
 }
+// v2.10: truncateForPrompt 用于把庭审历史逐行压进 system prompt（buildInitialMessages）。
+// 旧实现裸 s[:max] 会把中文行切成半个汉字，产出的非法 UTF-8 被塞进 LLM 请求。
+func TestTruncateForPrompt_RuneSafe(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		max  int
+	}{
+		{"中文切在 rune 中间", strings.Repeat("证据", 10), 7},
+		{"中文正好落边界", strings.Repeat("证据", 10), 6},
+		{"中英混合", "abc证据def证据", 5},
+		{"超长纯中文", strings.Repeat("法庭规则", 60), 240},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncateForPrompt(tc.in, tc.max)
+			require.True(t, utf8.ValidString(got), "截断结果必须是合法 UTF-8: %q", got)
+			require.True(t, strings.HasSuffix(got, "..."))
+			body := strings.TrimSuffix(got, "...")
+			require.LessOrEqual(t, len(body), tc.max)
+		})
+	}
+}
+
+// 未超长时原样返回，不加标记。
+func TestTruncateForPrompt_NoOpWhenShort(t *testing.T) {
+	s := "简短发言"
+	require.Equal(t, s, truncateForPrompt(s, 240))
+}

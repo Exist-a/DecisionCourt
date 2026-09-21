@@ -73,7 +73,7 @@ func TestOrchestrator_ProsecutorSpeak_PublishesA2AMessage(t *testing.T) {
 		CurrentRound: 2,
 	}
 
-	speaker, err := orch.ProsecutorSpeak(ctx, ag, session, nil, nil)
+	speaker, err := orch.ProsecutorSpeak(ctx, ag, session, nil, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "选项 A 在长期收益上明显占优", speaker.Content)
 
@@ -149,7 +149,7 @@ func TestOrchestrator_ProsecutorSpeak_WritesPrivateStrategyNote(t *testing.T) {
 	}
 	session := model.CourtSession{ID: sessionID, OptionA: "A", OptionB: "B"}
 
-	speaker, err := orch.ProsecutorSpeak(ctx, ag, session, nil, nil)
+	speaker, err := orch.ProsecutorSpeak(ctx, ag, session, nil, nil, nil)
 	require.NoError(t, err)
 
 	// Orchestrator 应只让本人可见自己的私有记忆
@@ -175,7 +175,7 @@ func TestOrchestrator_DefenderSpeak_OtherAgentCannotReadStrategyNote(t *testing.
 	}
 	session := model.CourtSession{ID: sessionID, OptionA: "A", OptionB: "B"}
 
-	_, err := orch.DefenderSpeak(ctx, def, session, nil, nil)
+	_, err := orch.DefenderSpeak(ctx, def, session, nil, nil, nil)
 	require.NoError(t, err)
 
 	// 辩方的私有 memory，控方 (otherAgentID) 不能读
@@ -237,7 +237,7 @@ func TestOrchestrator_ProsecutorSpeak_NormalizesUUIDRefs(t *testing.T) {
 		{ID: evidenceUUID, EvidenceID: "E001"},
 	}
 
-	_, err := orch.ProsecutorSpeak(context.Background(), ag, session, evidences, nil)
+	_, err := orch.ProsecutorSpeak(context.Background(), ag, session, evidences, nil, nil)
 	require.NoError(t, err)
 
 	// 1) A2A 仓库：两条消息（public + private），evidence_refs /
