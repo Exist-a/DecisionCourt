@@ -52,6 +52,13 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
+	// v2.8 PR-3 (ADR 0042) AGENT_GATEWAY_FILE_LOGGER_PROMPTS tri-state fail-fast:
+	// off/metadata/full 之外的拼写错误 → 立即退出. 跟 ValidateAppEnv 同级,
+	// 防止 prod 部署误配 "FULL" / "Metadata" 等大小写错误 silent miss.
+	if err := config.ValidateFileLoggerPrompts(config.AppConfig.AgentGateway.FileLoggerPrompts); err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
 	// v0.8 白盒化：用 slog JSON handler 替换默认 logger。所有 log.Printf
 	// 在 main / api / agent_gateway 后续被替换为 observability.Logger(ctx)。
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{

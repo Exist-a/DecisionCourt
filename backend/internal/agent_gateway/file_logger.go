@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/decisioncourt/backend/internal/llm"
 )
 
 // LogEntry 是 Agent Gateway 文件日志的单行 JSON 记录。字段设计尽量详细，
@@ -49,6 +51,26 @@ type LogEntry struct {
 	BudgetCostUSD         float64   `json:"budget_cost_usd,omitempty"`
 	BudgetSlidingTokens   int       `json:"budget_sliding_tokens,omitempty"`
 	BudgetWarningLevel    string    `json:"budget_warning_level,omitempty"`
+
+	// === v2.8 PR-3 (ADR 0042) full prompt persistence ===
+	//
+	// 历史 (ADR 0033 §3.2): LogEntry 不含, Run.Input / Output / Tags 永远
+	// 留空。本 PR 引入三态开关 AGENT_GATEWAY_FILE_LOGGER_PROMPTS={off,metadata,full}
+	// 让用户 opt-in 开启 full prompt 落盘。Privacy 风险见 ADR 0042 §3 — 默认
+	// metadata (off-by-default risk opt-in) 保留 backward compat.
+	//
+	// 字段语义:
+	//   - SystemPrompt: "system" role 完整文本 (filled only in "full" mode)
+	//   - InputMessages: user/assistant 历史消息 (filled only in "full" mode)
+	//   - OutputContent: LLM 返回 content 全文 (filled only in "full" mode)
+	//   - OutputTruncated: 系统截断 OutputContent 时为 true (cap = FileLoggerPromptsMaxBytes)
+	//
+	// 旧 logger (v2.7 之前) 文件没有这些字段 — parser 用 stdlib json.Unmarshal
+	// 自动容错未知字段缺失, 后向兼容零成本 (parser_test 验证).
+	SystemPrompt    string         `json:"system_prompt,omitempty"`
+	InputMessages   []llm.Message  `json:"input_messages,omitempty"`
+	OutputContent   string         `json:"output_content,omitempty"`
+	OutputTruncated bool           `json:"output_truncated,omitempty"`
 }
 
 // FileLogger 把 Agent Gateway 运行日志以 JSON 每行追加到文件，按日期切分。

@@ -306,8 +306,8 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 		Err:     err,
 	})
 
-	// 7. 文件日志
-	g.writeFileLog(ctx, tr, model, usage, latency, err, compInfo, throttleInfo, retryCount, bs)
+	// 7. 文件日志 (v2.8 PR-3: 传 systemPrompt + messages + content 用于 full mode)
+	g.writeFileLog(ctx, tr, model, usage, latency, err, compInfo, throttleInfo, retryCount, bs, systemPrompt, messages, content)
 
 	// 8. Response Cache 写入（v0.9 ADR 0013 §决策 2）。仅在调用成功时写入,
 	// 失败不入缓存（避免缓存错误结果,LLM 下次恢复时仍能正确返回）。
@@ -448,7 +448,7 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 			Status:  toStatus(firstErr),
 			Err:     firstErr,
 		})
-		g.writeFileLog(ctx, tr, model, usage, latency, firstErr, compInfo, throttleInfo, 0, bs)
+		g.writeFileLog(ctx, tr, model, usage, latency, firstErr, compInfo, throttleInfo, 0, bs, systemPrompt, messages, totalContent)
 	}()
 	return out
 }
@@ -462,8 +462,28 @@ func (g *Gateway) budgetSnapshot(ctx context.Context, sessionUUID string) Budget
 }
 
 // writeFileLog 写入文件日志。失败不阻塞主流程。
-func (g *Gateway) writeFileLog(ctx context.Context, tr Trace, model string, usage llm.Usage, latency time.Duration, err error, compInfo CompressionInfo, throttleInfo ThrottleInfo, retryCount int, bs BudgetSnapshot) {
-	if g.fileLogger == nil {
+//
+// v2.8 PR-3 (ADR 0042): systemPrompt/messages/content 三参数仅在
+// cfg.IsFileLoggerPromptsFull() (即 AGENT_GATEWAY_FILE_LOGGER_PROMPTS=full)
+// 时落地到 LogEntry. 默认 "metadata" 模式这三个字段空字符串 / nil —
+// Run.Input / Output 仍是空 (parser 后向兼容 v2.7 baseline).
+func (g *Gateway) writeFileLog(
+	ctx context.Context,
+	tr Trace,
+	model string,
+	usage llm.Usage,
+	latency time.Duration,
+	err error,
+	compInfo CompressionInfo,
+	throttleInfo ThrottleInfo,
+	retryCount int,
+	bs BudgetSnapshot,
+	systemPrompt string,
+	messages []llm.Message,
+	content string,
+) {
+	// "off" 模式: 与 AGENT_GATEWAY_FILE_LOGGER=false 等价, 整个 no-op
+	if g.cfg.IsFileLoggerPromptsOff() {
 		return
 	}
 	status := StatusSuccess
@@ -514,11 +534,42 @@ func (g *Gateway) writeFileLog(ctx context.Context, tr Trace, model string, usag
 		BudgetSlidingTokens:    bs.SlidingTokens,
 		BudgetWarningLevel:     bs.WarningLevel,
 	}
+
+	// v2.8 PR-3: full mode 写 system prompt + messages + output content
+	// (按 FileLoggerPromptsMaxBytes 截断, 防单 entry 膨胀撑爆日志文件).
+	if g.cfg.IsFileLoggerPromptsFull() {
+		var sysTrunc, contentTrunc bool
+		entry.SystemPrompt, sysTrunc = truncateForLogBytes(systemPrompt, g.cfg.FileLoggerPromptsMaxBytes)
+		entry.InputMessages = messages // messages 不截断数组 (LLM 已受 token budget 控制, 整体仍 < MaxBytes * 3)
+		entry.OutputContent, contentTrunc = truncateForLogBytes(content, g.cfg.FileLoggerPromptsMaxBytes)
+		entry.OutputTruncated = sysTrunc || contentTrunc
+	}
+
+	if g.fileLogger == nil {
+		return
+	}
 	if err := g.fileLogger.Write(entry); err != nil {
 		// 仅吞掉错误；避免日志失败拖死主流程
 		// v0.10.21 PR-A: 至少 slog.Warn，让 ops 知道 file logger 写失败（之前完全静默 24 天）
 		slog.Warn("agent_gateway: fileLogger.Write failed", "err", err)
 	}
+}
+
+// truncateForLogBytes 字节截断字符串, 用于 v2.8 PR-3 full prompt persistence.
+// 返回 (truncated, wasTruncated). Go stdlib 没有 byte-truncate helper, 自己写.
+//
+// 注: 不能用 rune truncate — LLM 输出可能含 UTF-8 多字节字符, 切半会 corrupt
+// 输出导致 frontend 显示乱码. 这里选用 byte limit + 字节级 truncate, 接
+// 受 UTF-8 末尾切半风险 vs 字节级一致性. Caller 翻 OutputTruncated=true
+// 让运维定位 "这个 entry 是被截断的".
+func truncateForLogBytes(s string, maxBytes int) (string, bool) {
+	if maxBytes <= 0 {
+		return "", false
+	}
+	if len(s) <= maxBytes {
+		return s, false
+	}
+	return s[:maxBytes], true
 }
 
 func toStatus(err error) string {

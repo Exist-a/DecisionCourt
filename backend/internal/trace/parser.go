@@ -187,6 +187,24 @@ func entryToRun(entry *agent_gateway.LogEntry) Run {
 	}
 	startedAt := endedAt.Add(-time.Duration(entry.LatencyMs) * time.Millisecond)
 
+	// v2.8 PR-3 (ADR 0042): 把 LogEntry 的 prompt 字段映射到 Run.Input / Output.
+	// 仅在 full mode 写入; metadata / off 模式 entry.SystemPrompt 等字段空,
+	// Run.Input / Output 仍是 nil / "" — 与 v2.7 baseline 一致.
+	//
+	// Run.Input 历史 type 是 map[string]any, 这里把 system_prompt + messages
+	// 装进 map 让 AgentTraceNode (frontend) 一个 JSON.stringify 就拿到完整
+	// prompt. 这是后向兼容最小的字符串化方案 (Run.Input type 不变).
+	var input map[string]any
+	if entry.SystemPrompt != "" || len(entry.InputMessages) > 0 {
+		input = map[string]any{
+			"system_prompt": entry.SystemPrompt,
+			"messages":      entry.InputMessages,
+		}
+	}
+	// entry.OutputTruncated 是 boolean flag 让 frontend 知道 content 是否被
+	// gateway truncate 过 (cap = AGENT_GATEWAY_FILE_LOGGER_PROMPTS_MAX_BYTES).
+	// 这里不加到 Run.Output 字符串里 — 后续给 Run 加 OutputTruncated bool 字段.
+
 	return Run{
 		RunID:      fmt.Sprintf("%s-%d", entry.RequestID, entry.RetryCount),
 		TraceID:    entry.RequestID,
@@ -201,6 +219,8 @@ func entryToRun(entry *agent_gateway.LogEntry) Run {
 		Status:     entry.Status,
 		ErrorMsg:   entry.ErrorMsg,
 		RetryCount: entry.RetryCount,
+		Input:      input,
+		Output:     entry.OutputContent,
 	}
 }
 

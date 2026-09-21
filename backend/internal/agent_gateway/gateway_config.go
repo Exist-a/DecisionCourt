@@ -63,6 +63,24 @@ type GatewayConfig struct {
 	//   - OpenTimeoutSec 熔断持续时长(秒),默认 30
 	//   - HalfOpenMaxRequests half-open 探测请求数,默认 1
 	Breaker BreakerConfig
+
+	// === v2.8 PR-3 (ADR 0042) full prompt persistence ===
+	//
+	// FileLoggerPrompts 三态 (跟现有 bool 开关不同, 参考 APP_ENV tri-state):
+	//   - "off"     → LogEntry 不写 system_prompt/input_messages/output_content
+	//   - "metadata" → LogEntry 只写 metadata (当前默认行为, v2.7 baseline)
+	//   - "full"    → LogEntry 写 system prompt + input messages + output content
+	//                 (按 FileLoggerPromptsMaxBytes truncate)
+	//
+	// 合法值在 ValidateFileLoggerPrompts() fail-fast 校验 (cmd/server/main.go
+	// 启动时调用). 默认 "metadata" 保 backward compat — 用户需显式设
+	// "full" 才落地 prompt 内容. 设 "off" 跟 AGENT_GATEWAY_FILE_LOGGER=false
+	// 等价 (跳过整个 writeFileLog).
+	//
+	// Privacy: "full" 模式会暴露 evidence.content + message.content 等用户
+	// 提交的自由文本到本地日志文件. ADR 0042 §3 详细分析 PII 风险 + 缓解.
+	FileLoggerPrompts         string `mapstructure:"AGENT_GATEWAY_FILE_LOGGER_PROMPTS"`
+	FileLoggerPromptsMaxBytes int    `mapstructure:"AGENT_GATEWAY_FILE_LOGGER_PROMPTS_MAX_BYTES"`
 }
 
 // IsPromptCompressionEnabled 返回压缩是否生效。
@@ -103,6 +121,24 @@ func (c GatewayConfig) IsFileLoggerEnabled() bool {
 		return false
 	}
 	return c.FileLogger || c.isChildDefault()
+}
+
+// IsFileLoggerPromptsFull 返回 v2.8 PR-3 是否在 LogEntry 中写完整 prompt + output.
+// 默认 false (metadata 模式仅写 metadata). Plan 推荐默认 "metadata" 保 backward compat.
+func (c GatewayConfig) IsFileLoggerPromptsFull() bool {
+	return c.IsFileLoggerEnabled() && c.FileLoggerPrompts == "full"
+}
+
+// IsFileLoggerPromptsOff 返回 v2.8 PR-3 是否完全跳过 LogEntry 写入.
+// "off" 模式等价于 AGENT_GATEWAY_FILE_LOGGER=false — writeFileLog 整个
+// no-op (与正常 "metadata" / "full" 模式都写 metadata 的行为不同).
+func (c GatewayConfig) IsFileLoggerPromptsOff() bool {
+	// "off" 行为即使 FileLogger=true 也不写. 给 ops 一个明确的 "我不要任何 LLM
+	// trail" 选项 (合规 / GDPR 审计场景).
+	if !c.FileLogger {
+		return true
+	}
+	return c.FileLoggerPrompts == "off"
 }
 
 // IsRejectWhenExhaustedEnabled 返回 budget 耗尽时是否拒绝新请求。
@@ -163,6 +199,17 @@ func (c GatewayConfig) Normalize() GatewayConfig {
 	}
 	if out.LLMTimeoutSec <= 0 {
 		out.LLMTimeoutSec = 90
+	}
+	// v2.8 PR-3 (ADR 0042): 默认 "metadata" 保留 v2.7 baseline 行为 —
+	// LogEntry 不含 prompt / output 字段 (Run.Input / Output 留空).
+	// 用户需显式 AGENT_GATEWAY_FILE_LOGGER_PROMPTS=full 才开启 opt-in 持久化.
+	if out.FileLoggerPrompts == "" {
+		out.FileLoggerPrompts = "metadata"
+	}
+	// 32 KiB 默认上限: 经验值 50KB × 50 calls/trial = 2.5MB/trial,
+	// 单 entry 截断到 32KB 是 1.25 倍典型值的安全余量, 避免单 entry 撑爆文件.
+	if out.FileLoggerPromptsMaxBytes <= 0 {
+		out.FileLoggerPromptsMaxBytes = 32 * 1024
 	}
 	return out
 }

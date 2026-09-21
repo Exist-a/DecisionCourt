@@ -53,6 +53,18 @@ type AgentGatewayConfig struct {
 	BreakerMinRequests         int     `mapstructure:"AGENT_GATEWAY_BREAKER_MIN_REQUESTS"`
 	BreakerOpenTimeoutSec      int     `mapstructure:"AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC"`
 	BreakerHalfOpenMaxRequests int     `mapstructure:"AGENT_GATEWAY_BREAKER_HALF_OPEN_MAX_REQUESTS"`
+
+	// === v2.8 PR-3 (ADR 0042) full prompt persistence ===
+	//
+	// FileLoggerPrompts 三态 (跟 APP_ENV 类似, 借鉴 env 三态 enum 模式):
+	//   "off"     → 完全不写 LogEntry (合规 / GDPR 审计场景)
+	//   "metadata" → 只写 metadata (默认, v2.7 baseline 行为)
+	//   "full"    → 写 system prompt + input messages + output content
+	//
+	// FileLoggerPromptsMaxBytes full 模式单 entry 最大字节数, 防 LLM 长输出
+	// 撑爆日志文件. 默认 32768 (32KiB).
+	FileLoggerPrompts         string `mapstructure:"AGENT_GATEWAY_FILE_LOGGER_PROMPTS"`
+	FileLoggerPromptsMaxBytes int    `mapstructure:"AGENT_GATEWAY_FILE_LOGGER_PROMPTS_MAX_BYTES"`
 }
 
 type Config struct {
@@ -207,6 +219,11 @@ SmartCompression:       envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION", true
 			BreakerMinRequests:         envOrDefaultInt("AGENT_GATEWAY_BREAKER_MIN_REQUESTS", 10),
 			BreakerOpenTimeoutSec:      envOrDefaultInt("AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC", 30),
 			BreakerHalfOpenMaxRequests: envOrDefaultInt("AGENT_GATEWAY_BREAKER_HALF_OPEN_MAX_REQUESTS", 1),
+
+			// v2.8 PR-3 (ADR 0042): 默认 "metadata" 保留 v2.7 baseline.
+			// 设 "full" 是 opt-in, 隐私风险由用户承担 (详见 ADR 0042 §3).
+			FileLoggerPrompts:         envOrDefaultString("AGENT_GATEWAY_FILE_LOGGER_PROMPTS", "metadata"),
+			FileLoggerPromptsMaxBytes: envOrDefaultInt("AGENT_GATEWAY_FILE_LOGGER_PROMPTS_MAX_BYTES", 32*1024),
 		},
 	}
 
