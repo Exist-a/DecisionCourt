@@ -54,6 +54,14 @@ const (
 	// this row the audit trail has a gap between consecutive evidence diffs,
 	// making it look like belief_a "jumped" with no recorded cause.
 	BeliefSrcStance = "stance"
+
+	// BeliefSrcRebuttal (v2.9 PR-4 / ADR 0043): 法官 verdict 时, 每个 standing
+	// 状态的证据被"显式忽略"写入一条 belief_diffs row (weight=0.0, direction=neutral)。
+	// 让 audit trail 在 verdict 阶段也能溯源"这条 evidence 之前有 standing 反
+	// 驳,法官判决时为何采用/未采用"。
+	// 注意: 这只是 trail, 不影响 BelieA/B 数值 — verdict 阶段的 BeliefA/B
+	// 是 judge LLM 直接输出 (Service.go L1613-1617 写), 不重算。
+	BeliefSrcRebuttal = "rebuttal"
 )
 
 // BeliefDirection enumerates the possible Direction field values.

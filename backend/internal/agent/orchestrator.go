@@ -592,11 +592,12 @@ func (o *Orchestrator) GenerateVerdict(
 	evidences []model.Evidence,
 	messages []model.Message,
 	judgeDecision JudgeDecision,
+	adoptionSummary string,
 ) (map[string]interface{}, error) {
 	log.Printf("[GenerateVerdict] start session=%s preferred=%s beliefA=%.2f beliefB=%.2f",
 		session.SessionUUID, judgeDecision.Preferred, judgeDecision.BeliefA, judgeDecision.BeliefB)
 
-	prompt, err := ClerkPromptWithJudgeDecision(session, evidences, messages, judgeDecision)
+	prompt, err := ClerkPromptWithJudgeDecision(session, evidences, messages, judgeDecision, adoptionSummary)
 	if err != nil {
 		return nil, err
 	}
@@ -777,14 +778,18 @@ type JudgeDecision struct {
 }
 
 // JudgeFinalDecision allows the judge to make a final ruling based on beliefs.
+//
+// v2.9 PR-4 (ADR 0043) §2.1: 新增 adoptionSummary 参数, 透传给 JudgeFinalPrompt.
+// 后向兼容: 传 "" 等于无 rebuttal section (v2.8 行为不变).
 func (o *Orchestrator) JudgeFinalDecision(
 	ctx context.Context,
 	judge model.Agent,
 	session model.CourtSession,
 	evidences []model.Evidence,
 	messages []model.Message,
+	adoptionSummary string,
 ) (JudgeDecision, error) {
-	prompt, err := JudgeFinalPrompt(session, evidences, messages, judge.BeliefA, judge.BeliefB)
+	prompt, err := JudgeFinalPrompt(session, evidences, messages, judge.BeliefA, judge.BeliefB, adoptionSummary)
 	if err != nil {
 		return JudgeDecision{}, err
 	}

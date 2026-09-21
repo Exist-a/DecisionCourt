@@ -156,7 +156,7 @@ func TestJFV2Retry_FirstCanceled_RetrySucceeds(t *testing.T) {
 	orch := newTestOrchestratorWithLLM(t, llmClient)
 	session, judge := makeSessionForVerdict()
 
-	decision, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil)
+	decision, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil, "")
 	require.NoError(t, err, "retry 后应返回 success, 不应 propagate context.Canceled")
 	require.Equal(t, "option_a", decision.Preferred)
 	require.InDelta(t, 0.6, decision.BeliefA, 0.01)
@@ -189,7 +189,7 @@ func TestGenerateVerdictRetry_FirstCanceled_RetrySucceeds(t *testing.T) {
 		Recommendation: "选 A",
 	}
 
-	result, err := orch.GenerateVerdict(context.Background(), session, nil, nil, judgeDecision)
+	result, err := orch.GenerateVerdict(context.Background(), session, nil, nil, judgeDecision, "")
 	require.NoError(t, err, "retry 后必须 success, 不能 propagate context.Canceled")
 	require.NotNil(t, result)
 	require.Contains(t, result, "summary")
@@ -206,7 +206,7 @@ func TestJFV2Retry_NonCanceledError_DoesNotRetry(t *testing.T) {
 	orch := newTestOrchestratorWithLLM(t, llmClient)
 	session, judge := makeSessionForVerdict()
 
-	_, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil)
+	_, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil, "")
 	require.ErrorIs(t, err, realErr, "non-cancel error must propagate as-is, no retry")
 
 	llmClient.mu.Lock()
@@ -224,7 +224,7 @@ func TestJFV2Retry_DeadlineExceeded_DoesNotRetry(t *testing.T) {
 	orch := newTestOrchestratorWithLLM(t, llmClient)
 	session, judge := makeSessionForVerdict()
 
-	_, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil)
+	_, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil, "")
 	require.ErrorIs(t, err, context.DeadlineExceeded, "deadline-exceeded propagates as-is, no retry")
 
 	llmClient.mu.Lock()
@@ -251,7 +251,7 @@ func TestJFV2Retry_ParentCtxCanceled_RetryRecoversCtx(t *testing.T) {
 	orch := newTestOrchestratorWithLLM(t, llmClient)
 	session, judge := makeSessionForVerdict()
 
-	decision, err := orch.JudgeFinalDecision(parentCtx, judge, session, nil, nil)
+	decision, err := orch.JudgeFinalDecision(parentCtx, judge, session, nil, nil, "")
 	require.NoError(t, err, "retry with detached ctx must succeed even if parent ctx is cancelled")
 	require.Equal(t, "option_a", decision.Preferred)
 
@@ -280,7 +280,7 @@ func TestJFV2Retry_RetryHappensQuickly(t *testing.T) {
 	session, judge := makeSessionForVerdict()
 
 	start := time.Now()
-	_, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil)
+	_, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil, "")
 	elapsed := time.Since(start)
 	require.NoError(t, err)
 	require.Less(t, elapsed, 1*time.Second,
@@ -299,7 +299,7 @@ func TestJFV2Retry_OneShotLimit(t *testing.T) {
 	orch := newTestOrchestratorWithLLM(t, llmClient)
 	session, judge := makeSessionForVerdict()
 
-	_, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil)
+	_, err := orch.JudgeFinalDecision(context.Background(), judge, session, nil, nil, "")
 	require.ErrorIs(t, err, context.Canceled, "if retry also fails with Canceled, propagate (no infinite retry)")
 
 	// call count 检查: 必须只 call 2 次 (first + retry, 不是 first + retry + retry + ...)

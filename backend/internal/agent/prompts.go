@@ -363,7 +363,16 @@ func JudgePrompt(session model.CourtSession, evidences []model.Evidence, message
 }
 
 // JudgeFinalPrompt用于法官做出最终裁决。
-func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message, currentBeliefA, currentBeliefB float64) (string, error) {
+//
+// v2.9 PR-4 (ADR 0043) §2.1: 新增 adoptionSummary 参数, 在 prompt 中插入
+// "证据反驳状态" 强制规则 + 表格. standing / withdrawn 状态的证据 LLM
+// 必须忽略 (treat as not submitted), overturned 可引用但带 caveat.
+//
+// adoptionSummary 为空字符串时跳过该 section (后向兼容 v2.8 + 未触发
+// rebuttal flow 的 session). 这是 §2.1 范畴的强制作用域 — adoptionSummary
+// 始终从 courtroom.BuildAdoptionSummary 构造, caller (Service.finishTrial)
+// 决定什么时候传 / 传什么。
+func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, messages []model.Message, currentBeliefA, currentBeliefB float64, adoptionSummary string) (string, error) {
 	var b strings.Builder
 	b.WriteString("你是一名公正的法官，庭审已结束，现在需要做出最终裁决。\n")
 	b.WriteString("## 庭审信息\n")
@@ -378,6 +387,13 @@ func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, me
 	b.WriteString("2. 你的信念度反映了你对两个选项的倾向，裁决应与信念度一致。\n")
 	b.WriteString("3. 如果 belief_a > 0.5，应选择 option_a；如果 belief_b > 0.5，应选择 option_b。\n")
 	b.WriteString("4. 给出明确的推荐和可执行建议。\n")
+	if adoptionSummary != "" {
+		// v2.9 PR-4 (ADR 0043): 把 courtroom.BuildAdoptionSummary 渲染的 markdown section
+		// 放在裁决原则后、output format 前 — 让 LLM 先明确"如何用 standing/overturned"
+		// 再看自己的输出 schema.
+		b.WriteString("\n")
+		b.WriteString(adoptionSummary)
+	}
 	b.WriteString("## 输出格式\n")
 	b.WriteString("请严格按以下 JSON 格式输出：\n")
 	b.WriteString(fmt.Sprintf(`{
@@ -447,7 +463,11 @@ func StanceJudgePrompt(agentType model.AgentType, beliefA float64, content strin
 }
 
 // ClerkPromptWithJudgeDecision用于书记员基于法官裁决撰写判决书。
-func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.Evidence, messages []model.Message, judgeDecision JudgeDecision) (string, error) {
+//
+// v2.9 PR-4 (ADR 0043) §2.1: 新增 adoptionSummary 参数, 同样注入 markdown section.
+// 这里不再重复"裁决原则"(已经被 judge 接收过), 但需要在"原则 5"重申 evidence_adoption
+// 必须出现 + adopted/overturned/standing 三种态度, 让 LLM "## 二、证据认定" 章节里明确写出。
+func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.Evidence, messages []model.Message, judgeDecision JudgeDecision, adoptionSummary string) (string, error) {
 	var b strings.Builder
 	b.WriteString("你是一名中立的书记员，负责根据法官的裁决撰写结构化判决书。\n")
 	b.WriteString("## 法官裁决\n")
@@ -469,6 +489,13 @@ func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.
 	b.WriteString("2. 判决书中的 option_a_score 和 option_b_score 必须与法官的信念度一致。\n")
 	b.WriteString("3. 判决书必须基于庭审中实际出现的证据和论点。\n")
 	b.WriteString("4. 如果证据不足，必须明确标注。\n")
+	if adoptionSummary != "" {
+		// v2.9 PR-4 (ADR 0043): 让 LLM 在 "二、证据认定" 章节写明
+		// 哪些 evidence 被采纳 / 哪些被反驳忽略 / 哪些带 caveat.
+		b.WriteString("5. evidence_adoption 字段必须填: 每条 evidence 一个对象, 含 evidence_id / display_id / status / weight_applied / reason. standing / withdrawn 写 weight_applied=0.0, overturned 写 weight_applied=1.0 + caveat. 表格下方的「证据反驳状态」强制规则. \n")
+		b.WriteString("\n")
+		b.WriteString(adoptionSummary)
+	}
 	b.WriteString("## 输出格式\n")
 	b.WriteString("请严格按以下 JSON 格式输出：\n")
 	b.WriteString(fmt.Sprintf(`{
@@ -478,8 +505,9 @@ func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.
   "option_b_score": %.2f,
   "consensus_points": ["共识点1", "共识点2"],
   "divergence_points": ["争议焦点1", "争议焦点2"],
+  "evidence_adoption": [{"evidence_id":"<uuid>","display_id":"E001","status":"<standing|overturned|withdrawn|adopted>","weight_applied":<0.0|1.0>,"reason":"<中文>"}],
   "recommendation": "%s",
-  "content": "# 决策判决书\n\n## 一、双方主张\n| 选项A代表（%s） | 选项B代表（%s） |\n|---|---|\n| ... | ... |\n\n## 二、证据认定\n...\n\n## 三、争议焦点\n...\n\n## 四、法官裁决\n%s\n\n## 五、可执行建议\n..."
+  "content": "# 决策判决书\n\n## 一、双方主张\n| 选项A代表（%s） | 选项B代表（%s） |\n|---|---|\n| ... | ... |\n\n## 二、证据认定\n（按 evidence_adoption 字段描述每条 evidence 的采纳情况; standing/withdrawn 写「不采纳」并解释原因, overturned 写采纳 + caveat, adopted 写正常采纳）\n\n## 三、争议焦点\n...\n\n## 四、法官裁决\n%s\n\n## 五、可执行建议\n..."
 }`, judgeDecision.BeliefA, judgeDecision.BeliefB, judgeDecision.Recommendation, session.OptionA, session.OptionB, judgeDecision.Reasoning))
 	b.WriteString("\n\n")
 	ctx, err := buildContextSafe(session, evidences)

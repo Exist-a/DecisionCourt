@@ -1595,10 +1595,31 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		return err
 	}
 
+	// v2.9 PR-4 (ADR 0043) §2.1: 法官判决"考虑 rebuttal 状态" — 加载 evidence_rebuttal_links
+	// 并构造 AdoptionSummary 三件套 (VerdictAdoption + BeliefDiffsRows + PromptRender).
+	// 纯函数 BuildAdoptionSummary 把"对每条 evidence 的采纳状态" 一次性算出, 三组数据
+	// 各取所需: verdict 写入 EvidenceAdoption jsonb, belief_diffs 表写入 Source=rebuttal
+	// 行 (每个 standing/withdrawn 一条 trail row), prompts 注入 markdown section.
+	//
+	// 默认 adoptionSummary.PromptRender 是空字符串, 旧 verdict flow 不变. 当 rebuttalRepo
+	// 是 nil (测试 fixture 等) 时, 也跳 BuildAdoptionSummary.
+	var adoptionSummary AdoptionSummary
+	if s.rebuttalRepo != nil {
+		rebuttalLinks, _ := s.rebuttalRepo.ListBySession(ctx, session.ID)
+		adoptionSummary = BuildAdoptionSummary(session.ID, rebuttalLinks, evidences)
+		log.Printf("[finishTrial] v2.9 PR-4 adoption summary: total=%d standing=%d overturned=%d withdrawn=%d adopted=%d",
+			adoptionSummary.Counts.Total,
+			adoptionSummary.Counts.Standing,
+			adoptionSummary.Counts.Overturned,
+			adoptionSummary.Counts.Withdrawn,
+			adoptionSummary.Counts.Adopted,
+		)
+	}
+
 	judge := findAgent(agents, model.AgentJudge)
 	var judgeDecision agent.JudgeDecision
 	if judge != nil {
-		judgeDecision, err = s.orchestrator.JudgeFinalDecision(verdictCtx, *judge, session, evidences, messages)
+		judgeDecision, err = s.orchestrator.JudgeFinalDecision(verdictCtx, *judge, session, evidences, messages, adoptionSummary.PromptRender)
 		if err != nil {
 			log.Printf("JudgeFinalDecision failed: %v, using belief values directly", err)
 			// Fallback: use judge's belief values directly
@@ -1656,7 +1677,9 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 
 	// Generate verdict based on judge's decision
 	// v2.7 PR-2 (ADR 0041): 用 verdictCtx (detached), 不被上游 cancel 牵连
-	result, err := s.orchestrator.GenerateVerdict(verdictCtx, session, evidences, messages, judgeDecision)
+	// v2.9 PR-4 (ADR 0043): adoptionSummary.PromptRender 注入 clerk prompt,
+	//   让 LLM "二、证据认定" 章节写明 standing/overturned/adopted 状态.
+	result, err := s.orchestrator.GenerateVerdict(verdictCtx, session, evidences, messages, judgeDecision, adoptionSummary.PromptRender)
 	if err != nil {
 		// Fallback: use judge's belief values directly when LLM fails.
 		log.Printf("GenerateVerdict failed, using fallback: %v", err)
@@ -1709,6 +1732,41 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 	}
 	if dp, ok := result["divergence_points"].([]interface{}); ok {
 		verdict.DivergencePoints = marshalJSON(dp)
+	}
+
+	// v2.9 PR-4 (ADR 0043) §2.1: 把 courtroom.BuildAdoptionSummary 算出的
+	// per-evidence 采纳列表写入 verdict jsonb 列. 仅在 BuildAdoptionSummary 跑过
+	// (rebuttalRepo != nil) 时填, 旧 verdict 行 EvidenceAdoption = NULL 仍兼容.
+	if len(adoptionSummary.VerdictAdoption) > 0 {
+		adop := model.EvidenceAdoptionJSONB(adoptionSummary.VerdictAdoption)
+		verdict.EvidenceAdoption = &adop
+		// v2.9 P2: LLM ClerkAgent 在 "evidence_adoption" 字段里也许输出过同
+		// 一份,优先采用 LLM 输出. 如果 LLM 输出缺失/坏 (例如 fallback 路径),
+		// 这里 hard-fill 一份保底. 不覆盖 LLM 输出, 避免双重权威.
+		if rawAdop, ok := result["evidence_adoption"]; ok {
+			if arr, ok := rawAdop.([]interface{}); ok && len(arr) > 0 {
+				if llAdop, convErr := convertToEvidenceAdoptionEntries(arr); convErr == nil {
+					llJSON := model.EvidenceAdoptionJSONB(llAdop)
+					verdict.EvidenceAdoption = &llJSON
+					log.Printf("[finishTrial] v2.9 PR-4 evidence_adoption: LLM-filed (%d entries)", len(llAdop))
+				}
+			}
+		}
+	}
+
+	// v2.9 PR-4 (ADR 0043): 写 belief_diffs rows (每个 standing/withdrawn 证据一条).
+	// AdoptionSummary 已经在 §判决前 计算出, 这里直接落库. 这些 rows 不影响 verdict 的
+	// BeliefA/B 数值 (那是 judge LLM 直接给的), 它们唯一作用是 audit trail — 用户后续
+	// "为什么法官判决时忽略 E001" 能溯源。
+	if len(adoptionSummary.BeliefDiffsRows) > 0 {
+		for i := range adoptionSummary.BeliefDiffsRows {
+			if adoptionSummary.BeliefDiffsRows[i].ID == uuid.Nil {
+				adoptionSummary.BeliefDiffsRows[i].ID = uuid.New()
+			}
+		}
+		if err := s.db.Create(&adoptionSummary.BeliefDiffsRows).Error; err != nil {
+			log.Printf("[finishTrial] v2.9 PR-4 belief_diffs Source=rebuttal insert failed (non-fatal): %v", err)
+		}
 	}
 
 	if err := s.db.Create(&verdict).Error; err != nil {

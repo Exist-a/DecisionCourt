@@ -189,7 +189,67 @@ type Verdict struct {
 	DivergencePoints string    `gorm:"type:jsonb;default:'[]'"`
 	Recommendation   string    `gorm:"type:text"`
 	UserFeedback     string    `gorm:"type:varchar(20);default:'none'"`
+	// EvidenceAdoption (v2.9 PR-4 / ADR 0043): 法官判决阶段对每条 evidence 的
+	// "采纳状态" (standing / overturned / withdrawn / adopted)。jsonb 列存储,
+	// 由 courtroom.BuildAdoptionSummary 在 finishTrial 末尾构造, 与 verdict
+	// content 同事务写入。前端 /api/v1/courtrooms/:uuid/verdict 渲染 + 庭审页面
+	// 新的"## 证据采纳"卡片用此字段。
+	//
+	// 字段类型是 *EvidenceAdoptionJSONB (GORM jsonb) 因为 slice 直接 GORM
+	// 序列化不稳定; 用指针让 nil → NULL (旧 verdict 行没有采纳信息仍能存活).
+	EvidenceAdoption *EvidenceAdoptionJSONB `gorm:"type:jsonb" json:"evidence_adoption,omitempty"`
 	CreatedAt        time.Time
+}
+
+// EvidenceAdoptionEntry 是 v2.9 (ADR 0043) 引入的 per-evidence 采纳状态.
+// JSON shape (API + frontend):
+//
+//	{
+//	  "evidence_id":    "uuid",       // 证据 UUID
+//	  "display_id":     "E001",       // 人类可读 ID
+//	  "status":          "standing",  // standing | overturned | withdrawn | adopted
+//	  "weight_applied": 0.0,         // 0.0 = hard-ignored, 1.0 = full weight
+//	  "reason":          "..."        // 中文说明 (e.g. "已被辩方反驳 round 2, 翻盘 round 3")
+//	}
+type EvidenceAdoptionEntry struct {
+	EvidenceID    string  `json:"evidence_id"`
+	DisplayID     string  `json:"display_id"`
+	Status        string  `json:"status"`
+	WeightApplied float64 `json:"weight_applied"`
+	Reason        string  `json:"reason"`
+}
+
+// EvidenceAdoptionJSONB wraps []EvidenceAdoptionEntry for GORM jsonb column.
+//
+// GORM 默认会序列化 slice, 但用 wrapper type 让:
+//   - 显式 nil vs 空 slice 区分 (回滚时 nil = "没采纳记录" 不写盘)
+//   - 未来加 helper 方法 (如 ToMap) 不破坏现有 JSON shape
+type EvidenceAdoptionJSONB []EvidenceAdoptionEntry
+
+// Value implements driver.Valuer for GORM jsonb persistence.
+func (e EvidenceAdoptionJSONB) Value() (driver.Value, error) {
+	if e == nil {
+		return nil, nil
+	}
+	return json.Marshal(e)
+}
+
+// Scan implements sql.Scanner for GORM jsonb hydration.
+func (e *EvidenceAdoptionJSONB) Scan(value interface{}) error {
+	if value == nil {
+		*e = nil
+		return nil
+	}
+	var data []byte
+	switch v := value.(type) {
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	default:
+		return fmt.Errorf("EvidenceAdoptionJSONB.Scan: unsupported type %T", value)
+	}
+	return json.Unmarshal(data, e)
 }
 
 // LLMCall logs every LLM invocation for cost and observability.
