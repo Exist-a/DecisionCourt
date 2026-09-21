@@ -43,6 +43,71 @@ import (
 // 修复 v0.9.2 硬编码撒谎 24 天的 bug（详见 production-retrospective-2026-08-05.md §4 P1-2）。
 var version = "dev"
 
+// buildGatewayConfig 把 config.AgentGatewayConfig 映射成 agent_gateway 自己的
+// GatewayConfig。
+//
+// 为什么抽成函数：这是一个字段对字段的手工拷贝，漏掉一个字段不会编译报错，
+// 只会让对应功能**静默失效**（v2.10 就踩过：AGENT_GATEWAY_SMART_COMPRESSION_
+// ABSTRACTIVE_SUMMARY 在 config 里读到了，但 main.go 没搬过去，压缩照跑、
+// 只是永远走 extractive，没有任何日志）。抽出来后 gateway_config_mapping_test.go
+// 用反射断言"GatewayConfig 的每个字段都被赋值"，杜绝再犯。
+//
+// 新增 GatewayConfig 字段时必须同步：
+//  1. config.AgentGatewayConfig 加字段（mapstructure tag + envOrDefault）
+//  2. 本函数加一行映射
+//  3. 跑 TestBuildGatewayConfig_MapsEveryField（会在漏搬时失败）
+func buildGatewayConfig(a config.AgentGatewayConfig) agent_gateway.GatewayConfig {
+	return agent_gateway.GatewayConfig{
+		Enabled:              a.Enabled,
+		PromptCompression:    a.PromptCompression,
+		TokenBudget:          a.TokenBudget,
+		Throttling:           a.Throttling,
+		Fallback:             a.Fallback,
+		FileLogger:           a.FileLogger,
+		BudgetPerSession:     a.BudgetPerSession,
+		CompressionThreshold: a.CompressionThreshold,
+		ThrottlingThreshold:  a.ThrottlingThreshold,
+		LogDir:               a.LogDir,
+
+		// v2 Token Budget
+		RejectWhenExhausted:    a.RejectWhenExhausted,
+		BudgetSlidingWindowSec: a.BudgetSlidingWindowSec,
+
+		// v2 Prompt Compression
+		SmartCompression:       a.SmartCompression,
+		KeepRecentForcedN:      a.KeepRecentForcedN,
+		SummaryInsertThreshold: a.SummaryInsertThreshold,
+		ScoreThreshold:         a.ScoreThreshold,
+		// v2.10 (ADR 0044 #6) abstractive 摘要开关。
+		SmartCompressionAbstractiveSummary: a.SmartCompressionAbstractiveSummary,
+
+		// v0.9 LLM Gateway 工程化 (ADR 0013)
+		//
+		// ⚠️ v2.10 修复的历史缺口：下面这 9 个字段此前从未被搬进来。
+		// 后果是 Response Cache / Circuit Breaker / LLM 超时覆盖
+		// 一直处于"配置读到了、但运行时拿不到"的状态 ——
+		// 即 ADR 0013 的缓存与熔断实际上从未生效，ADR 0037 为它们加的
+		// metric 也永远是 0。此前不可见是因为 .env 恰好把
+		// CACHE_ENABLED / BREAKER_ENABLED 都设成 false，与"永远 false"
+		// 撞了个巧合；一旦有人改成 true 就会被静默忽略。
+		LLMTimeoutSec:   a.LLMTimeoutSec,
+		CacheEnabled:    a.CacheEnabled,
+		CacheTTLSec:     a.CacheTTLSec,
+		CacheMaxEntries: a.CacheMaxEntries,
+		Breaker: agent_gateway.BreakerConfig{
+			Enabled:             a.BreakerEnabled,
+			FailureRatio:        a.BreakerFailureRatio,
+			MinRequests:         uint32(a.BreakerMinRequests),
+			OpenTimeoutSec:      a.BreakerOpenTimeoutSec,
+			HalfOpenMaxRequests: uint32(a.BreakerHalfOpenMaxRequests),
+		},
+
+		// v2.8 PR-3 (ADR 0042) full prompt persistence
+		FileLoggerPrompts:         a.FileLoggerPrompts,
+		FileLoggerPromptsMaxBytes: a.FileLoggerPromptsMaxBytes,
+	}
+}
+
 func main() {
 	config.Load()
 
@@ -106,28 +171,7 @@ func main() {
 	if defaultModel == "" {
 		defaultModel = "deepseek-v4-flash"
 	}
-	gatewayCfg := agent_gateway.GatewayConfig{
-		Enabled:              config.AppConfig.AgentGateway.Enabled,
-		PromptCompression:    config.AppConfig.AgentGateway.PromptCompression,
-		TokenBudget:          config.AppConfig.AgentGateway.TokenBudget,
-		Throttling:           config.AppConfig.AgentGateway.Throttling,
-		Fallback:             config.AppConfig.AgentGateway.Fallback,
-		FileLogger:           config.AppConfig.AgentGateway.FileLogger,
-		BudgetPerSession:     config.AppConfig.AgentGateway.BudgetPerSession,
-		CompressionThreshold: config.AppConfig.AgentGateway.CompressionThreshold,
-		ThrottlingThreshold:  config.AppConfig.AgentGateway.ThrottlingThreshold,
-		LogDir:               config.AppConfig.AgentGateway.LogDir,
-
-		// v2 Token Budget
-		RejectWhenExhausted:    config.AppConfig.AgentGateway.RejectWhenExhausted,
-		BudgetSlidingWindowSec: config.AppConfig.AgentGateway.BudgetSlidingWindowSec,
-
-		// v2 Prompt Compression
-		SmartCompression:       config.AppConfig.AgentGateway.SmartCompression,
-		KeepRecentForcedN:      config.AppConfig.AgentGateway.KeepRecentForcedN,
-		SummaryInsertThreshold: config.AppConfig.AgentGateway.SummaryInsertThreshold,
-		ScoreThreshold:         config.AppConfig.AgentGateway.ScoreThreshold,
-	}
+	gatewayCfg := buildGatewayConfig(config.AppConfig.AgentGateway)
 	gatewayClient := agent_gateway.NewWithConfig(llmClient, recorder, defaultModel, gatewayCfg, metrics)
 
 	// v0.8 白盒化：把 metrics + GormEventRecorder 注入到 gatewayClient 装饰器层，
