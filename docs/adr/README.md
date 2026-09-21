@@ -47,6 +47,14 @@
 | [0034-supersede](./0034-supersede-2-5d-r3f.md) | **v2.0 剪影小人 supersede by 2.5D r3f 重构（用户反馈"简陋，要重做"，2026-08-22）** | ⚠️ **Archived** by [0034-archive](./0034-archive-3d-pivot.md) | r3f + drei + three-pathfinding 选型；4 stage 串行推进；删除 silhouettes/ 整个目录 — **PR-D2.9 二次归档，最终未采用 3D 路线** |
 | [0034-archive](./0034-archive-3d-pivot.md) | **v2.0 REDESIGN 3D 路线二次归档（PR-D2.9 放弃，2026-08-23）** | ✅ **Archived** | 用户决定"放弃 3D，保留圆点"——git reset --hard 5fd803b 完全回退 11 个 commit。详见 [Postmortem](../postmortem/v2.0-redesign-3d-pivot.md) |
 | [0035](./0035-judge-does-not-speak.md) | **法官不发言：v2.1 isJudging 死代码清理 + 保留未来启用能力** | ✅ | `frontend/components/courtroom/AgentAvatar.tsx` + `RoleSilhouette.tsx` + `DotAvatar.tsx` + `Silhouette.tsx` + `AvatarAnimations.tsx`（删 isJudging prop + 保留 judgeVariant / silhouette-gavel / dot-judge-shock CSS 资产） |
+| [0037](./0037-agent-gateway-observability.md) | **agent_gateway 全量 observability 埋点（v2.3）** | ✅ | `internal/agent_gateway/` 7 文件 + 14 metric key + 25+ 埋点 |
+| [0038](./0038-security-p1-batch-a.md) | **安全 P1 批次 A（v2.4：APP_ENV + UserFacingError + WebSocket）** | ✅ | `internal/config/config.go` + `internal/courtroom/errors.go` + `internal/api/websocket.go` |
+| [0039](./0039-security-p1-batch-c.md) | **安全 P1 批次 C（v2.5：依赖审计 + CSRF + sanitize）** | ✅ | `frontend/.npmrc` + `internal/middleware/csrf.go` + `internal/agent/sanitize.go` |
+| [0040](./0040-silent-error-d2-d3-closeout.md) | **silent error D2+D3 收尾（v2.6：streamSpeakContent + direct_verdict round）** | ✅ | `internal/agent/react_runner.go` + `internal/courtroom/service.go` |
+| [0041](./0041-stream-rewrite-and-verdict-retry.md) | **流式解析根因重写 + verdict retry（v2.7：PR-1 + PR-2）** | ✅ | `internal/agent/react_runner.go` + `internal/courtroom/service.go` |
+| [0042](./0042-llm-trace-prompt-persistence.md) | **LLM Trace prompt 持久化（v2.8：PR-3 full mode）** | ✅ | `internal/agent_gateway/file_logger.go` + `gateway.go` |
+| [0043](./0043-rebuttal-aware-verdict.md) | **判决书考虑 rebuttal 状态（v2.9：§2.1 范畴）** | ✅ | `internal/courtroom/service.go` + `internal/agent/rebuttal_emitter.go` |
+| [0044](./0044-token-compression-strategy-review.md) | **Token 压缩策略审查与改进计划（v2.10：7 项全量落地）** | ✅ | `internal/agent_gateway/prompt_*` + `gateway_config.go` + `orchestrator.go` + `courtroom/verdict_quality.go` |
 
 ---
 

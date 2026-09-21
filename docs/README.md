@@ -44,7 +44,7 @@
 
 ## 3. 架构决策记录（ADR）
 
-[`adr/`](./adr/) 收录 27 份关键架构决策（编号 0001-0027），每份 1 个文件。每份 ADR 包含：**背景 / 选项对比 / 决策 / 后果**。
+[`adr/`](./adr/) 收录 44 份关键架构决策（编号 0001-0044，含 2 份 ⚠️ Archived），每份 1 个文件。每份 ADR 包含：**背景 / 选项对比 / 决策 / 后果**。
 
 | # | 决策 | 关联代码 |
 |---|---|---|
@@ -77,6 +77,21 @@
 | [0027](./adr/0027-rate-limit-defense-in-depth.md) | v0.10.20 4 层限流防御深度（L3 Per-IP + L2 Per-User + L1 Per-Session + L0 全局并发信号量） | ✅ | `internal/middleware/session_ratelimit.go` + `internal/courtroom/concurrency.go` |
 | [0028](./adr/0028-env-or-default-helper.md) | envOrDefault helper 全面修复 viper 25+ env lowercase bug（v0.10.21 PR-C） | ✅ | `internal/config/env.go` + `config.go` + 26 sub-test |
 | [0029](./adr/0029-deepseek-v4-migration.md) | **DeepSeek v3→v4 模型硬迁移（v1.0.0 P0-前置）** | ✅ | `internal/config/config.go` + `.env.example` + 8 个 mock test |
+| [0030](./adr/0030-evidence-rebuttal-state-machine.md) | **候选 4: 已反驳证据集合跟踪状态机（v1.0.2 PRD §4.3.3）** | ✅ | `internal/model/evidence_rebuttal_link.go` + AutoMigrate |
+| [0031](./adr/0031-prompt-lab-architecture.md) | **Prompt Lab 架构：baseRules YAML 化 + 热加载 + Eval + A/B（v1.0.3）** | ✅ | `backend/prompts/base.yaml` + `internal/promptlab/` |
+| [0032](./adr/0032-remove-argument-map.md) | **移除 ArgumentMap 观点地图（v1.0.3）** | ✅ | 删除 `ArgumentMap.tsx` + 移除 `reactflow` 依赖 |
+| [0033](./adr/0033-llm-trace-architecture.md) | **LLM Trace 架构：FileLogger JSON Lines 读端聚合 + REST + 前端时间轴（v1.0.4）** | ✅ | `internal/trace/` + `internal/api/handler_trace.go` + `frontend/components/trace/` |
+| [0034](./adr/0034-silhouette-architecture.md) | **厕所标识剪影小人架构（v2.0）** | ⚠️ Superseded | `frontend/components/courtroom/silhouettes/` |
+| [0034-archive](./adr/0034-archive-3d-pivot.md) | **v2.0 REDESIGN 3D 路线二次归档（2026-08-23）** | ✅ **Archived** | git reset --hard 5fd803b 回退 11 commit |
+| [0035](./adr/0035-judge-does-not-speak.md) | **法官不发言：v2.1 isJudging 死代码清理** | ✅ | `AgentAvatar.tsx` + `RoleSilhouette.tsx` + `DotAvatar.tsx` |
+| [0037](./adr/0037-agent-gateway-observability.md) | **agent_gateway 全量 observability 埋点（v2.3）** | ✅ | `internal/agent_gateway/` 7 文件 + 14 metric key |
+| [0038](./adr/0038-security-p1-batch-a.md) | **安全 P1 批次 A（v2.4）** | ✅ | `internal/config/config.go` + `errors.go` + `websocket.go` |
+| [0039](./adr/0039-security-p1-batch-c.md) | **安全 P1 批次 C（v2.5）** | ✅ | `frontend/.npmrc` + `csrf.go` + `sanitize.go` |
+| [0040](./adr/0040-silent-error-d2-d3-closeout.md) | **silent error D2+D3 收尾（v2.6）** | ✅ | `react_runner.go` + `service.go` |
+| [0041](./adr/0041-stream-rewrite-and-verdict-retry.md) | **流式解析根因重写 + verdict retry（v2.7）** | ✅ | `react_runner.go` + `service.go` |
+| [0042](./adr/0042-llm-trace-prompt-persistence.md) | **LLM Trace prompt 持久化（v2.8）** | ✅ | `file_logger.go` + `gateway.go` |
+| [0043](./adr/0043-rebuttal-aware-verdict.md) | **判决书考虑 rebuttal 状态（v2.9，§2.1 范畴）** | ✅ | `service.go` + `rebuttal_emitter.go` |
+| [0044](./adr/0044-token-compression-strategy-review.md) | **Token 压缩策略审查与改进计划（v2.10：7 项全量落地）** | ✅ | `prompt_*` + `gateway_config.go` + `orchestrator.go` + `courtroom/verdict_quality.go` |
 
 ### 5.5 v0.8+ 持续可观测性完善计划
 

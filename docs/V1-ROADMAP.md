@@ -12,7 +12,7 @@
 
 ---
 
-## 0. 当前进度快照（2026-09-21 v2.9 §2.1 落地）
+## 0. 当前进度快照（2026-09-21 v2.10 Token 压缩策略收尾）
 
 | 维度 | 状态 | 说明 |
 |---|---|---|
@@ -70,8 +70,9 @@
 | **v2.8 docs** | ✅ | [ADR 0042](../adr/0042-llm-trace-prompt-persistence.md)（NEW，覆盖 PR-3 完整设计 + 5 处关键决策 + PII / 磁盘风险分析 + 借鉴 APP_ENV tri-state precedent）+ ADR 0033 §3.2 第一条 ⚠️ → ✅ "v2.8 落地" + release-notes/v2.8（14 章节模板）+ [deferred-items-2026-09-21.md](./todo/deferred-items-2026-09-21.md) (NEW) §D4 logs retention 登记 |
 | **v2.9 PR-4** | ✅ | Verdict schema 加 EvidenceAdoption jsonb + EvidenceAdoptionJSONB type (driver.Valuer + sql.Scanner) + EvidenceAdoptionEntry + belief_diff 加 BeliefSrcRebuttal 常量 + BuildAdoptionSummary 纯函数 (latest-wins semantics + adoptionTableMaxRows=200 + renderAdoptionPromptSection markdown) + JudgeFinalPrompt + ClerkPromptWithJudgeDecision 加 adoptionSummary 参数 + output schema evidence_adoption 字段 + JudgeFinalDecision + GenerateVerdict 透传 + Service.finishTrial 集成 (LLM 输出优先 + BuildAdoptionSummary 兜底) + belief_diffs Source=rebuttal rows 落库 (非 fatal) + convertToEvidenceAdoptionEntries helper + frontend Verdict.evidence_adoption?: EvidenceAdoptionEntry[] + 新 "证据采纳" 卡 (4 列 + 状态 chip 颜色 rose/stone/emerald) + 9 个 unit test (Empty / NoLinks / Standing / Overturned / Withdrawn / LatestWins / MixedStates / PromptRender / TableMaxRows) |
 | **v2.9 docs** | ✅ | [ADR 0043](../adr/0043-rebuttal-aware-verdict.md)（NEW，**§2.1 范畴** — 显式标注，覆盖 PR-4 完整设计 + 8 处关键决策 + 用户 ExitPlanMode 后 §2.1 决策对齐）+ ADR 0030 §4 line 110 deferred 项 → ✅ "v2.9 落地" + release-notes/v2.9（14 章节模板，含用户决策表 + ⚠️ Breaking Changes 细列 GORM AutoMigrate 影响）+ [deferred-items-2026-09-21.md §D5](./todo/deferred-items-2026-09-21.md) 范围明确 (auto-overturn wiring 维持 deferred) |
-| ADR 累计 | 43 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + 0037 agent-gateway-observability + 0038 security-p1-batch-a + 0039 security-p1-batch-c + 0040 silent-error-d2-d3-closeout + 0041 stream-rewrite-and-verdict-retry (v2.7) + 0042 llm-trace-prompt-persistence (v2.8) + **0043 rebuttal-aware-verdict (v2.9)** |
-| Go 测试 | ~442 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 + v2.1 F4+F5 6 + v2.3 observability-tests 9 + v2.4 P1-tests 14 + v2.5 P1-tests 22 + v2.6 D2+D3 9 + v2.7 PR-1 22 (stream parser) + PR-2 7 (retry hook) + v2.8 PR-3 18 + **v2.9 PR-4 9 (BuildAdoptionSummary)** |
+| **v2.10** | ✅ | [ADR 0044](../adr/0044-token-compression-strategy-review.md)（Token 压缩策略审查 — 7 个问题全部落地）：#1 配置 footgun、#2 ScoreThreshold 激活、#3 evidence_id 链（Metadata 注入 + 原子组）、#4 recency decay、#5 内容感知 token 预算、#6 abstractive summary（opt-in）、#7 verdict_evidence_accuracy 质量回环。新增 43 个测试；dev compose 真实 LLM 实跑验证全 7 项。**另修复 3 个额外问题**：①abstractive 开关漏搬（本次引入）②cache/breaker/LLMTimeout/FileLoggerPrompts 共 9 字段从未搬运（存量，ADR 0013 缓存与熔断此前从未生效）→ 抽 `buildGatewayConfig()` + 反射护栏；③**压缩器把 system prompt 截断到 1500 字节**（存量，实测 16/34 调用、87~89% 指令销毁，是证据引用幻觉的直接推手）→ system 独立上限 + rune 安全截断。问题③的 in-situ 复验因宿主 D: 盘写满导致 Docker 只读而中断 |
+| ADR 累计 | 44 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + 0037 agent-gateway-observability + 0038 security-p1-batch-a + 0039 security-p1-batch-c + 0040 silent-error-d2-d3-closeout + 0041 stream-rewrite-and-verdict-retry (v2.7) + 0042 llm-trace-prompt-persistence (v2.8) + 0043 rebuttal-aware-verdict (v2.9) + **0044 token-compression-strategy-review (v2.10)** |
+| Go 测试 | ~485 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 + v2.1 F4+F5 6 + v2.3 observability-tests 9 + v2.4 P1-tests 14 + v2.5 P1-tests 22 + v2.6 D2+D3 9 + v2.7 PR-1 22 (stream parser) + PR-2 7 (retry hook) + v2.8 PR-3 18 + v2.9 PR-4 9 (BuildAdoptionSummary) + **v2.10 43 (ADR 0044 全 7 项 + 映射护栏 + system 截断回归)** |
 | Frontend 测试 | 103 (9 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 + **v2.1 F1+F2+F3+F4 11** + **v2.2 2** |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
@@ -299,13 +300,18 @@ M6 v1.2 ⏸ (安全 P1, 触发后启动)
 
 ---
 
-## 6. 下一步（2026-09-21 v2.8 落地后）
+## 6. 下一步（2026-09-21 v2.10 落地后）
 
 ### 立即可做（等用户授权）
 
-1. **v2.8 dev compose 业务验证 (AGENTS.md §11)** — `docker compose -f docker-compose.dev.yml up -d --build` + `/health` + `/api/v1/health/llm` + `/api/v1/metrics` + 浏览器手测 prompt tab 出现 (full mode `AGENT_GATEWAY_FILE_LOGGER_PROMPTS=full`)
-2. **v2.7 + v2.8 tags** — 用户审 diff / 跑 dev compose 后授权 `git tag v2.7 v2.8 && git push origin main v2.7 v2.8`（按 v2.4/v2.5/v2.6 模式）
-3. **v2.9 PR-4**（判决书考虑 rebuttal 状态）— §2.1 范畴。用户决策已对齐：全链路 (prose + evidence_adoption 结构化字段 + belief 回填) + standing 硬忽略 + overturned 带 caveat + auto-overturn 暂不实装。Plan v2.9 已准备好，等启动
+1. **⚠️ 先解决宿主 D: 盘写满**（652G/652G，仅剩 7.8M）—— 已导致 Docker Desktop containerd 存储转只读（`meta.db: read-only file system`），**无法创建或启动任何容器**，dev 栈目前处于半损坏状态（frontend 仍可达，backend 已失去端口映射且无法重建）。腾出空间后 `docker compose -f docker-compose.dev.yml up -d --force-recreate` 即可恢复
+2. **问题 C 的 in-situ 复验**（腾出磁盘后）：开 gateway + 小 budget 跑一场，确认 FileLogger 里 `compression_before_count=1` 的 `react_think` 调用 `after_length` 不再为 1500、而是接近 `before_length`
+3. **确认两个字段搬运修复是否保留**（v2.10 §⚠️）：
+   - abstractive 开关漏搬 → 必须保留（否则 #6 失效）
+   - cache/breaker/LLMTimeout/FileLoggerPrompts 共 9 字段 → 修复后开始按 `.env` 生效。当前 `.env` 里 `CACHE_ENABLED` / `BREAKER_ENABLED` 都是 `false`，**本机行为不变**；如希望永久关闭，保持 `.env` 为 `false` 即可
+4. **是否在 `docker-compose.dev.yml` 补 `AGENT_GATEWAY_ENABLED=true`** — 否则 dev 栈默认不跑 gateway（`SMART_COMPRESSION=true` 等不起作用，压缩/预算/缓存/熔断全不跑）。本次验证是用临时容器注入 env 绕过的，未改 `.env`
+5. **提交工作区** — v2.10 代码 + ADR 0044 + release-notes + 文档同步（当前工作区未提交）
+6. **tags** — 用户审 diff 后授权 `git tag v2.7 v2.8 v2.9 v2.10 && git push origin main --tags`（按 v2.4/v2.5/v2.6 模式）
 
 ### 显式不启动（用户已明示 2026-09-21）
 
@@ -314,13 +320,16 @@ M6 v1.2 ⏸ (安全 P1, 触发后启动)
 
 ### 长期（按需触发）
 
-4. **v1.2 安全 P1 (剩 P2-1 ~ P2-5 + P3-1 ~ P3-2)** — 触发条件：公网部署 / 安全事件 / 企业客户 / 用户决定继续安全加固 (deferred-items-2026-08-05.md §D1)
-5. **logs/ retention helper (D4)** — full mode 磁盘膨胀风险。v2.8 PR-3 call out，详见 deferred-items-2026-09-21.md §D4 — 后续 PR 提供 logrotate / cleanup helper
+7. **v1.2 安全 P1 (剩 P2-1 ~ P2-5 + P3-1 ~ P3-2)** — 触发条件：公网部署 / 安全事件 / 企业客户 / 用户决定继续安全加固 (deferred-items-2026-08-05.md §D1)
+8. **logs/ retention helper (D4)** — full mode 磁盘膨胀风险。v2.8 PR-3 call out，详见 deferred-items-2026-09-21.md §D4 — 后续 PR 提供 logrotate / cleanup helper。**注意**：本次 D: 盘写满事件说明磁盘治理不是纯理论风险，D4 优先级应上调
+9. **verdict_evidence_accuracy 观察**（v2.10 ADR 0044 #7）— 积累几场真实庭审后回看该 gauge；持续 <1.0 说明压缩仍丢证据链或 LLM 幻觉，需回看压缩策略
 
 ### 持续维护
 
 - **静默错误黑洞回归测试护栏**（v1.0.0 PR-3 框架 + D2/D3 在 v2.6 ADR 0040 + v2.7 PR-1 根因消除在 ADR 0041）
 - **LLM Trace prompt 持久化三态开关**（v2.8 PR-3 + ADR 0042，三态 enum + 18 sub-test）
+- **Token 压缩策略护栏**（v2.10 ADR 0044，43 sub-test 覆盖配置/评分/原子组/预算单位/摘要/质量指标/system 截断回归）
+- **GatewayConfig 映射护栏**（v2.10，反射测试防"配置读到了但没搬进运行时"类静默失效）
 - **DeepSeek API 文档变更跟进**（ADR 0029 教训）
 - **Dev compose 回归测试**（host 端口冲突 + env 优先级 + Windows npipe）
 - **AGENTS.md §8 敏感文件红线**（项目长期规范）
