@@ -2,10 +2,60 @@ package agent_gateway
 
 import (
 	"time"
+	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/observability"
 )
+
+// cutBytesRuneSafe 取 s 的前 n 字节，保证结果是合法 UTF-8。
+//
+// 若 n 恰好落在某个多字节 rune 中间，则回退到该 rune 的起始边界。字节预算
+// 语义保持不变（与 compressMaxMsgLen / compressTargetLen 一致），只是不再
+// 切出半个汉字 —— 旧实现用裸 `s[:n]`，而 system prompt 几乎全中文，切口
+// 大概率落在字符中间，产出的非法 UTF-8 片段会被塞进 LLM 请求。
+func cutBytesRuneSafe(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if n >= len(s) {
+		return s
+	}
+	// 回退到最近的 rune 起始字节。
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// msgTruncateLimits 返回该消息适用的（触发上限, 截断目标）字节数。
+//
+// system 消息单独一套宽松上限：它承载 agent 指令 + 工具说明 + 庭审历史，
+// 用普通对话内容的 3000/1500 会把模型变成失忆状态（见文件顶部常量注释）。
+func msgTruncateLimits(m llm.Message) (limit, target int) {
+	if m.Role == "system" {
+		return compressMaxSystemMsgLen, compressSystemTargetLen
+	}
+	return compressMaxMsgLen, compressTargetLen
+}
+
+// truncateOversizedMessages 就地截断超长消息，返回截断后的总字节数。
+//
+// 这是压缩管道的最后一步（原实现在 legacy / scored 早返回 / scored 主路径
+// 各抄了一份）。抽出来一是消重，二是保证三条路径对 system 的处理一致 ——
+// v2.10 之前的 bug 正是三处都无条件截断 system。
+func truncateOversizedMessages(msgs []llm.Message) int {
+	total := 0
+	for i := range msgs {
+		limit, target := msgTruncateLimits(msgs[i])
+		if len(msgs[i].Content) > limit {
+			keep := target - len(compressTruncateMark)
+			msgs[i].Content = cutBytesRuneSafe(msgs[i].Content, keep) + compressTruncateMark
+		}
+		total += len(msgs[i].Content)
+	}
+	return total
+}
 
 // PromptCompressor 在 token 预算紧张时压缩历史上下文。MVP 策略简单：
 //   - system 消息永远保留在最前；
@@ -17,6 +67,18 @@ const (
 	compressMaxMsgLen   = 3000
 	compressTargetLen   = 1500
 	compressTruncateMark = "...（已压缩）"
+
+	// v2.10 修复：system 消息装的是 agent 指令（baseRules）+ 工具说明 + 庭审历史，
+	// 不是普通对话内容 —— 见 react_runner.go buildInitialMessages，整个 messages
+	// 数组往往就只有这一条 system。此前它和普通消息共用 compressMaxMsgLen(3000)，
+	// 被砍到 1500 字节：实测 12304→1500 / 13883→1500（87~89% 指令被销毁），
+	// 前 1482 字节只剩 baseRules 开头，工具说明与全部庭审历史丢失 —— 模型因此
+	// 不知道庭上有哪些证据，转而编造「证据7/证据12」并被反幻觉校验打回
+	// （ADR 0015/0021）。故 system 单独用一条宽松上限：
+	// 24000 字节 ≈ 12k token，为实测最大值(13883)的 1.7 倍，正常庭审不受影响，
+	// 仅对长期庭审的历史膨胀兜底。
+	compressMaxSystemMsgLen = 24000
+	compressSystemTargetLen = 20000
 )
 
 // CompressionInfo 记录压缩前后统计，供文件日志分析。
@@ -52,6 +114,13 @@ type SmartCompressionConfig struct {
 	KeepRecentForcedN      int
 	SummaryInsertThreshold int
 	ScoreThreshold         float64
+	// v2.10 ADR 0044 #6: abstractive 摘要（opt-in）。
+	// AbstractiveSummary 为 false 或 SummaryGen 为 nil 时保持 extractive 行为。
+	// 这里把 generator 放在 config 上（而非 CompressScored 的额外入参），是为了
+	// 不改动压缩管道的函数签名 —— 既有 5 个单测与 eval 基线都直接调
+	// CompressScored，签名一变全要跟着改，而这不是本条问题要解决的问题。
+	AbstractiveSummary bool
+	SummaryGen         SummaryGenerator
 }
 
 // NewPromptCompressor 构造压缩器。
@@ -140,16 +209,7 @@ func CompressLegacy(messages []llm.Message, info CompressionInfo) ([]llm.Message
 	}
 	out = append(out, nonSystem...)
 	info.AfterCount = len(out)
-	for i := range out {
-		if len(out[i].Content) > compressMaxMsgLen {
-			keep := compressTargetLen - len(compressTruncateMark)
-			if keep < 0 {
-				keep = 0
-			}
-			out[i].Content = out[i].Content[:keep] + compressTruncateMark
-		}
-		info.AfterLength += len(out[i].Content)
-	}
+	info.AfterLength = truncateOversizedMessages(out)
 	return out, info
 }
 
@@ -176,16 +236,7 @@ func CompressScored(messages []llm.Message, bs BudgetSnapshot, cfg SmartCompress
 
 	if len(nonSystem) == 0 {
 		out := append([]llm.Message{}, system...)
-		for i := range out {
-			if len(out[i].Content) > compressMaxMsgLen {
-				keep := compressTargetLen - len(compressTruncateMark)
-				if keep < 0 {
-					keep = 0
-				}
-				out[i].Content = out[i].Content[:keep] + compressTruncateMark
-			}
-			info.AfterLength += len(out[i].Content)
-		}
+		info.AfterLength = truncateOversizedMessages(out)
 		info.AfterCount = len(out)
 		return out, info
 	}
@@ -197,7 +248,8 @@ func CompressScored(messages []llm.Message, bs BudgetSnapshot, cfg SmartCompress
 	groups := BuildAtomicGroups(nonSystem, scored)
 
 	// Stage 3: 贪心打包（recentForced 由 CompressScored 自己计算，避免双重计数）
-	keepSet, keptGroupCount, _ := GreedyPack(groups, bs)
+	// v2.10 ADR 0044 #2: 传入 ScoreThreshold 激活死配置
+	keepSet, keptGroupCount, _ := GreedyPack(groups, bs, cfg.ScoreThreshold)
 
 	// 强制保留最近 N 条（不论分数）
 	keepMap := map[int]bool{}
@@ -233,6 +285,12 @@ func CompressScored(messages []llm.Message, bs BudgetSnapshot, cfg SmartCompress
 	// 兜底摘要
 	if droppedCount > cfg.SummaryInsertThreshold {
 		summary := BuildEarlierSummary(groups, keepMap, nonSystem)
+		// v2.10 ADR 0044 #6: opt-in abstractive 摘要 —— 在 extractive 锚点基础上
+		// 再补一段保留推理链的自然语言摘要；失败自动回退到 extractive 结果。
+		if cfg.AbstractiveSummary && cfg.SummaryGen != nil {
+			dropped := CollectDroppedMessages(groups, keepMap, nonSystem)
+			summary = BuildAbstractiveSummary(cfg.SummaryGen, dropped, summary)
+		}
 		if summary != "" {
 			// 插到非 system 区段的最前面（保留 system 在最前）
 			summaryMsg := llm.Message{
@@ -244,20 +302,11 @@ func CompressScored(messages []llm.Message, bs BudgetSnapshot, cfg SmartCompress
 		}
 	}
 
-	// 单条超长截断（保留 legacy 的最后一步）
+	// 单条超长截断（保留 legacy 的最后一步；system 走单独上限）
 	out := make([]llm.Message, 0, len(kept)+len(system))
 	out = append(out, system...)
 	out = append(out, kept...)
-	for i := range out {
-		if len(out[i].Content) > compressMaxMsgLen {
-			keep := compressTargetLen - len(compressTruncateMark)
-			if keep < 0 {
-				keep = 0
-			}
-			out[i].Content = out[i].Content[:keep] + compressTruncateMark
-		}
-		info.AfterLength += len(out[i].Content)
-	}
+	info.AfterLength = truncateOversizedMessages(out)
 	info.AfterCount = len(out)
 
 	// 评分均值

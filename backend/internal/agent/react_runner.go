@@ -1348,7 +1348,13 @@ func truncateForPrompt(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "..."
+	// v2.10: 回退到 rune 起始边界再切 —— 旧实现裸 s[:max] 会把中文行切成
+	// 半个汉字，产出的非法 UTF-8 片段被拼进 system prompt 送给 LLM。
+	n := max
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "..."
 }
 
 // truncateForLog 截断字符串到 n 字节, 末尾追加 "...(truncated, total=NB)".

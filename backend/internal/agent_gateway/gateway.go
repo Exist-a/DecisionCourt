@@ -63,11 +63,20 @@ func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg Gat
 		budget = NewTokenBudgetWithStore(store, metrics)
 	}
 	if cfg.IsPromptCompressionEnabled() {
+		// v2.10 ADR 0044 #6: abstractive 摘要用"裸客户端"（inner）而非 Gateway 自身，
+		// 避免 Gateway → compressor → Gateway 递归。未开启时为 nil，压缩器走
+		// extractive 路径。
+		var summaryGen SummaryGenerator
+		if cfg.IsSmartCompressionAbstractiveSummaryEnabled() {
+			summaryGen = NewSummaryGenerator(inner, defaultModel)
+		}
 		compressor = NewPromptCompressor(SmartCompressionConfig{
 			Enabled:                cfg.IsSmartCompressionEnabled(),
 			KeepRecentForcedN:      cfg.KeepRecentForcedN,
 			SummaryInsertThreshold: cfg.SummaryInsertThreshold,
 			ScoreThreshold:         cfg.ScoreThreshold,
+			AbstractiveSummary:     cfg.IsSmartCompressionAbstractiveSummaryEnabled(),
+			SummaryGen:             summaryGen,
 		}, metrics)
 	}
 	if cfg.IsThrottlingEnabled() {

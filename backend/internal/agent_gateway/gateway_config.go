@@ -39,6 +39,10 @@ type GatewayConfig struct {
 	SummaryInsertThreshold int
 	// ScoreThreshold 低于该分不进入保留集。
 	ScoreThreshold float64
+	// SmartCompressionAbstractiveSummary (v2.10 ADR 0044 #6) 启用 abstractive 摘要：
+	// 丢弃消息成段时不再只做 extractive anchor 拼接，而是额外调一次轻量 LLM
+	// 生成保留推理链的摘要。默认 false（每次 trial 多一次 LLM 调用，需用户 opt-in）。
+	SmartCompressionAbstractiveSummary bool
 
 	// === v0.9 LLM Gateway 工程化 (ADR 0013 §决策 1) ===
 	// LLMTimeoutSec 每次 LLM 调用的硬超时（秒）。
@@ -215,8 +219,17 @@ func (c GatewayConfig) Normalize() GatewayConfig {
 }
 
 // IsSmartCompressionEnabled 决定是否启用"评分压缩"v2。
-// SmartCompression 必须显式 true；不回退到 Enable / childDefault（破坏性升级，
-// 需用户在 .env 显式开启）。
+// v2.10 ADR 0044 #1: 与其他子开关一致走 isChildDefault()，避免配置 footgun。
 func (c GatewayConfig) IsSmartCompressionEnabled() bool {
-	return c.Enabled && c.SmartCompression
+	if !c.Enabled {
+		return false
+	}
+	return c.SmartCompression || c.isChildDefault()
+}
+
+// IsSmartCompressionAbstractiveSummaryEnabled 决定是否用 LLM 生成 abstractive 摘要。
+// v2.10 ADR 0044 #6: 必须显式开启（每次 trial 多一次 LLM 调用，走成本 opt-in），
+// 且只在 Smart Compression 本身生效时才有意义。
+func (c GatewayConfig) IsSmartCompressionAbstractiveSummaryEnabled() bool {
+	return c.IsSmartCompressionEnabled() && c.SmartCompressionAbstractiveSummary
 }

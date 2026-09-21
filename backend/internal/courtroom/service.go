@@ -861,8 +861,14 @@ func (s *Service) resumeOpening(session model.CourtSession) error {
 	prosecutor := findAgent(agents, model.AgentProsecutor)
 	defender := findAgent(agents, model.AgentDefender)
 
+	// v2.10 ADR 0044 #3: 构建 agentMap 供 speak() Metadata 注入
+	agentMap := make(map[uuid.UUID]model.AgentType, len(agents))
+	for _, a := range agents {
+		agentMap[a.ID] = a.AgentType
+	}
+
 	if prosecutor != nil && !hasProsecutor {
-		speaker, err := s.orchestrator.ProsecutorSpeak(ctx, *prosecutor, session, evidences, messages)
+		speaker, err := s.orchestrator.ProsecutorSpeak(ctx, *prosecutor, session, evidences, messages, agentMap)
 		if err != nil {
 			return err
 		}
@@ -875,7 +881,7 @@ func (s *Service) resumeOpening(session model.CourtSession) error {
 			s.broadcastAgentSpeak(session.SessionUUID, *prosecutor, model.PhaseOpening, 0, speaker)
 		}
 	} else if defender != nil && !hasDefender {
-		speaker, err := s.orchestrator.DefenderSpeak(ctx, *defender, session, evidences, messages)
+		speaker, err := s.orchestrator.DefenderSpeak(ctx, *defender, session, evidences, messages, agentMap)
 		if err != nil {
 			return err
 		}
@@ -927,6 +933,12 @@ func (s *Service) resumeClosing(session model.CourtSession) error {
 	prosecutor := findAgent(agents, model.AgentProsecutor)
 	defender := findAgent(agents, model.AgentDefender)
 
+	// v2.10 ADR 0044 #3: 构建 agentMap 供 speak() Metadata 注入
+	agentMap := make(map[uuid.UUID]model.AgentType, len(agents))
+	for _, a := range agents {
+		agentMap[a.ID] = a.AgentType
+	}
+
 	if prosecutor != nil && !hasProsecutor {
 		speaker, _ := s.speakWithReAct(ctx, *prosecutor, session, evidences, messages)
 		// v2.6 D2 fix (2026-09-21): 空 content 拒绝,这里只 log + 跳过 broadcast
@@ -937,7 +949,7 @@ func (s *Service) resumeClosing(session model.CourtSession) error {
 		}
 	} else if defender != nil && !hasDefender {
 		_, _, messages, _ = s.loadSessionData(session.ID)
-		speaker, _ := s.orchestrator.DefenderSpeak(ctx, *defender, session, evidences, messages)
+		speaker, _ := s.orchestrator.DefenderSpeak(ctx, *defender, session, evidences, messages, agentMap)
 		if err := s.saveAgentMessage(session.ID, *defender, model.PhaseClosing, session.CurrentRound, speaker); err != nil {
 			log.Printf("[v0.6][resumeClosing] skip defender broadcast due to empty content: %v", err)
 		} else {
@@ -1775,6 +1787,20 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 			return nil
 		}
 		return err
+	}
+
+	// v2.10 ADR 0044 #7: 判决质量回环度量 —— 压缩是否伤到判决质量。
+	// 只能回答"省了多少 token"是不够的：这里检查判决书引用的证据 display id
+	// 是否都真实存在于本次庭审。低于 1.0 说明压缩丢了证据链或 LLM 幻觉。
+	// best-effort，绝不影响 verdict 落库结果。
+	if ratio, ok := ComputeVerdictEvidenceAccuracy(verdict.Content, evidences); ok {
+		if s.metrics != nil {
+			s.metrics.SetGauge(observability.MetricVerdictEvidenceAccuracy, nil, ratio)
+		}
+		if ratio < 1.0 {
+			log.Printf("[finishTrial] v2.10 ADR 0044 #7: verdict evidence accuracy=%.2f (session=%s) — 判决书引用了庭审中不存在的证据",
+				ratio, session.SessionUUID)
+		}
 	}
 
 	// Stay in deliberation phase; the user clicks a button to view the verdict.

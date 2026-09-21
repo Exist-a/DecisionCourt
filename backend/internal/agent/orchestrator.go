@@ -103,13 +103,14 @@ func (o *Orchestrator) ProsecutorSpeak(
 	session model.CourtSession,
 	evidences []model.Evidence,
 	messages []model.Message,
+	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3
 ) (Speaker, error) {
 	prompt, err := ProsecutorPrompt(agent, session, evidences, "")
 	if err != nil {
 		return Speaker{}, err
 	}
 	enhanced := withArgumentSummary(messages, model.AgentProsecutor, model.AgentDefender)
-	speaker, err := o.speak(ctx, agent, prompt, enhanced, len(evidences) > 0)
+	speaker, err := o.speak(ctx, agent, prompt, enhanced, len(evidences) > 0, agentMap)
 	if err != nil {
 		return speaker, err
 	}
@@ -123,13 +124,14 @@ func (o *Orchestrator) DefenderSpeak(
 	session model.CourtSession,
 	evidences []model.Evidence,
 	messages []model.Message,
+	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3
 ) (Speaker, error) {
 	prompt, err := DefenderPrompt(agent, session, evidences, "")
 	if err != nil {
 		return Speaker{}, err
 	}
 	enhanced := withArgumentSummary(messages, model.AgentDefender, model.AgentProsecutor)
-	speaker, err := o.speak(ctx, agent, prompt, enhanced, len(evidences) > 0)
+	speaker, err := o.speak(ctx, agent, prompt, enhanced, len(evidences) > 0, agentMap)
 	if err != nil {
 		return speaker, err
 	}
@@ -553,6 +555,7 @@ func (o *Orchestrator) InvestigatorSpeak(
 	session model.CourtSession,
 	evidences []model.Evidence,
 	messages []model.Message,
+	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3
 ) (Speaker, error) {
 	prompt, err := InvestigatorPrompt(session, evidences)
 	if err != nil {
@@ -565,7 +568,7 @@ func (o *Orchestrator) InvestigatorSpeak(
 		BeliefA:   0.5,
 		BeliefB:   0.5,
 	}
-	return o.speak(ctx, agent, prompt, messages, len(evidences) > 0)
+	return o.speak(ctx, agent, prompt, messages, len(evidences) > 0, agentMap)
 }
 
 // traceFor 是 v0.5+ 的 Agent Gateway trace 注入点。orchestrator 的每次
@@ -828,6 +831,7 @@ func (o *Orchestrator) speak(
 	systemPrompt string,
 	messages []model.Message,
 	hasEvidence bool,
+	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3: Metadata 注入
 ) (Speaker, error) {
 	var llmMessages []llm.Message
 	for _, m := range messages {
@@ -835,9 +839,24 @@ func (o *Orchestrator) speak(
 		if m.ActionType == "system" {
 			role = "system"
 		}
+		// v2.10 ADR 0044 #3: 注入 agent_type + evidence_id 到 Metadata，
+		// 供 Agent Gateway 评分器 (roleWeightFor) 和原子组 (BuildAtomicGroups) 使用。
+		md := map[string]string{}
+		if m.AgentID != nil {
+			if at, ok := agentMap[*m.AgentID]; ok {
+				md["agent_type"] = string(at)
+			}
+		}
+		for _, ref := range m.EvidenceRefs {
+			if ref != "" {
+				md["evidence_id"] = ref
+				break // 取首个 ref 即可（原子组只需一个锚点）
+			}
+		}
 		llmMessages = append(llmMessages, llm.Message{
-			Role:    role,
-			Content: m.Content,
+			Role:     role,
+			Content:  m.Content,
+			Metadata: md,
 		})
 	}
 

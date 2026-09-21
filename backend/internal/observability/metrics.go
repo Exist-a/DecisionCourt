@@ -98,6 +98,11 @@ const (
 	MetricPromptCompressionDuration    = "prompt_compression_duration_seconds"
 	MetricPromptCompressionSummaryTotal = "prompt_compression_summary_inserted_total"
 	MetricBudgetWarningTotal           = "budget_warning_total"
+
+	// v2.10 ADR 0044 #7: 压缩后判决质量回环度量。
+	// 判决书正文引用的 evidence_id 中，能在本次庭审记录里找到源头的比例
+	// （0.0 ~ 1.0）。1.0 = 无凭空引用；偏低说明压缩丢了证据链或 LLM 幻觉。
+	MetricVerdictEvidenceAccuracy = "verdict_evidence_accuracy"
 )
 
 // memMetrics 是线程安全的内存实现。

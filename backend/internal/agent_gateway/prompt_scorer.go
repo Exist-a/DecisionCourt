@@ -17,8 +17,9 @@ import (
 //	reference_boost 含 "evidence_" / "@prosecutor" / "@defender" / "@judge" 等 +0.3
 //	type_boost    含 tool_call_id 的 assistant +0.5（标记原子组起点）
 //
-// 注意：分数不乘以 recency decay（与 legacy 的"靠位置淘汰"区分）；
-// 我们用"强制保留最近 N 条"来实现"防丢光"。
+// v2.10 ADR 0044 #4 起，最终分数再叠加一层 recency decay（见 ScoreMessages 末尾）：
+// 除"强制保留最近 N 条"的硬兜底外，近期消息在极端 budget 下也不再被早期高分
+// 消息无差别挤掉。
 type MessageScore struct {
 	Message        llm.Message
 	Index          int
@@ -80,6 +81,21 @@ func ScoreMessages(messages []llm.Message, bs BudgetSnapshot) []MessageScore {
 
 		s.Score = s.RoleWeight + s.PositionBoost + s.ReferenceBoost + s.TypeBoost
 		out[i] = s
+	}
+
+	// v2.10 ADR 0044 #4: soft recency decay。
+	// 旧公式只看 role/reference/type，位置仅在首末各 +0.3，中间完全无位置信息。
+	// 极端 budget 下"开场陈词"这类早期高分消息会挤掉近期关键推理。
+	// 这里把归一化位置作为独立信号混入：
+	//     final = (1-α) × score + α × recencyWeight
+	// 其中 recencyWeight ∈ [0,1]（0=最早，1=最新），α=0.3 保证"内容质量仍主导，
+	// 位置只做 30% 的倾斜"。RoleWeight 等分项保留在 MessageScore 上供测试断言。
+	const recencyAlpha = 0.3
+	if n := len(out); n > 1 {
+		for i := range out {
+			recencyWeight := float64(i) / float64(n-1)
+			out[i].Score = (1-recencyAlpha)*out[i].Score + recencyAlpha*recencyWeight
+		}
 	}
 	return out
 }
