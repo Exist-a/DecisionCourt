@@ -405,16 +405,31 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 			// check(evidence_refs 空但内容含证据/案号/百分比)是新加的,
 			// LLM 在 stress 下违反频率 60%。失败时强制走非流式 retry,
 			// 让 LLM 看到错误信息重新生成。
-			streamSucceeded := false
-			// v1.0-patch (2026-08-22): hallucination 硬拒时保留 stream 内容作 fallback,
-			// retry 后仍空时恢复, 避免整轮 cross_exam 因空 content 中断。
-			var streamedFallback string
-			if r.cfg.OnSpeakChunk != nil {
-				if streamed, ok := r.streamSpeakContent(ctx, out, messages); ok {
-					out.Content = streamed
-					streamSucceeded = true
-				}
+streamSucceeded := false
+		// v1.0-patch (2026-08-22): hallucination 硬拒时保留 stream 内容作 fallback,
+		// retry 后仍空时恢复, 避免整轮 cross_exam 因空 content 中断。
+		var streamedFallback string
+		if r.cfg.OnSpeakChunk != nil {
+			// v2.7 PR-1 (ADR 0041): 三态分流.
+			// - complete && value!="" → 真成功, streamSucceeded=true
+			// - complete && value=="" → LLM 显式 emit `{"content":""}` —
+			//   视为 LLM 明确放弃, 走 validateSpeak retry, 不设 streamSucceeded=true
+			//   (避免 caller 用空 content 漏过; 此前 v2.6 silent error 黑洞根因之一)
+			// - !complete (timeout / ctx-cancel / chunk Err) →
+			//   streamSucceeded 保持 false, 走 retry; streamSpeakContent 内部已 WARN
+			streamed, complete := r.streamSpeakContent(ctx, out, messages)
+			if complete && streamed != "" {
+				out.Content = streamed
+				streamSucceeded = true
+			} else if complete && streamed == "" {
+				slog.Warn("streamSpeakContent: LLM emitted empty content field; will retry via validateSpeak",
+					"decision_action", out.Action,
+					"reasoning_preview", truncateForLog(out.Reasoning, 80),
+				)
+				// streamSucceeded 保持 false, 由下方 validateSpeak retry 接管.
 			}
+			// !complete 路径: streamSpeakContent 已内部 WARN, 此处不再重复.
+		}
 			if streamSucceeded {
 				// 流式成功也跑 hallucination check,失败时回退到 retry 路径
 				// v1.0-patch (2026-08-22): 修复第一次质证 empty content 中断整轮 bug。
@@ -905,17 +920,31 @@ func beliefDirectionStr(beliefA float64) string {
 	}
 }
 
-// streamSpeakContent 用 LLM 流式生成最终发言 content，返回拼接结果
-// 与是否成功。失败/为空时返回 (empty, false)，由调用方决定是否 fallback
-// 到 out.Content。
+// streamSpeakContent 通过 LLM 流式生成 AgentOutput.Content。
 //
-// 关键设计：
-//  1. **完全独立 context**：不带 priorMessages，让 LLM 看不到 ReAct 协议历史，
-//     避免把"必须输出完整 AgentOutput JSON"的训练惯性带过来。这是这一
-//     轮的根因 —— 即便 prompt 显式要求"输出最小 JSON"，LLM 看到对话
-//     历史里有类似 JSON 输出，会复制整个格式。
-//  2. **JSON-mode + 最小 JSON 协议**：要求输出 `{"content":"..."}`。
-//  3. **首字延迟优化**：第一个 token 到达时（~200-500ms）就推到前端。
+// 协议: LLM 看到最小 prompt, 被要求输出 `{"content":"..."}`, 不要
+// markdown wrap。流式 chunks 累积后用 scanJSONContentField 扫描顶层
+// "content" 字段值, 通过 OnSpeakChunk 推送给 caller 做前端 typewriter
+// 动画。
+//
+// 返回 (value, complete):
+//   - value: 已 unquote 的 content (partial 或 final)
+//   - complete: true 仅当 parser 看到 closing quote 后是 ',' / '}' / EOF
+//
+// v2.7 PR-1 (ADR 0041) 三态分流:
+//   - !complete (timeout / ctx-cancel / chunk Err / LLM 完全非 JSON):
+//     WARN 记录根因 + raw prefix; caller 走 validateSpeak retry
+//   - complete && value=="" (LLM 显式 emit `{"content":""}`):
+//     caller WARN + 走 validateSpeak retry, 不让空 content 漏过
+//     streamSucceeded=true 路径
+//   - complete && value!="" (LLM emit 非空 content): streamSucceeded=true
+//
+// v2.6 D2 (ADR 0040) 修复已被 v2.7 PR-1 取代: 之前是 "WARN 日志 +
+// silent 返 false", 现在是 "重写 parser 让 silently empty content
+// 在边界不可能发生"。
+//
+// v0.10.1 (ADR 0021): 原版引入 (callback 协议)。首字延迟从完整 LLM
+// response 延迟降到 first-token latency (~200-500ms)。
 func (r *ReActRunner) streamSpeakContent(
 	ctx context.Context,
 	out AgentOutput,
@@ -959,33 +988,16 @@ func (r *ReActRunner) streamSpeakContent(
 	var (
 		collected     strings.Builder
 		chunks        int
-		lastExtracted string
+		lastEmitted   string // 已推送前端 typewriter 的最新累积 (用于去重)
+		finalValue    string // parser 给出 complete=true 时的 final value
+		finalComplete bool   // 是否曾拿到过 complete=true 的 scan
 	)
-	// 渐进提取：每个 chunk 累积后扫描字符串：
-	//   1. 找到 `"content":"` 的起始位置
-	//   2. 从该位置之后查找未转义的 closing `"`：
-	//      - 找到 → 完整提取（最终版）
-	//      - 没找到 → partial 提取（用于前端实时显示）
-	//
-	// 这个方案比"正则+完整匹配"更适合流式 partial JSON：第一个 token
-	// 到达后就能立即给出当前内容，前端看到首字出现的延迟 = LLM first-token
-	// latency（~200-500ms），而不是等完整 closing quote。
-	// 渐进提取 content 字段值。LLM 流式输出可能是：
-	//   - 单行：`{"content":"..."}` → prefix `"content":"` 命中
-	//   - 多行：`{\n  "content": "..."\n}` → 需要容忍 `: ` 之间的空格/换行
-	//
-	// 我们用更宽松的扫描：先找到 `"content"` 关键词，再向后跳过任意
-	// whitespace + 一个冒号 + 任意 whitespace，然后期待 `"` 起始。
 	streamDone := false
 	for !streamDone {
 		select {
 		case <-streamCtx.Done():
-			// ctx 取消（外部 cancel / 30s 超时）—— 立刻返回 false
-			// 让调用方走 retry 兜底，不能让 for-range 卡住整个 trial。
-			//
-			// v2.6 D2 fix (2026-09-21): WARN 日志记录 context canceled 原因 +
-			// 已收集 chunk 数 + raw 前缀, 避免 silent error 黑洞 (cross-exam
-			// content 全空但不报错). 详见 docs/todo/deferred-items-2026-08-21.md D2.
+			// v2.7 PR-1: ctx 取消 / 30s 超时. WARN 记录根因 + raw prefix.
+			// 行为契约: 返回 complete=false, caller 走 validateSpeak retry.
 			slog.Warn("react_runner streamSpeakContent ctx canceled",
 				"chunks", chunks,
 				"raw_prefix", truncateForLog(collected.String(), 200),
@@ -993,12 +1005,12 @@ func (r *ReActRunner) streamSpeakContent(
 			return "", false
 		case c, ok := <-ch:
 			if !ok {
-				// channel 正常关闭 → 跳出 select
+				// channel 正常关闭 (无 Done chunk 时).
 				streamDone = true
 				break
 			}
 			if c.Err != nil {
-				// v2.6 D2 fix (2026-09-21): chunk 错误 silent 返 false, 现加 WARN.
+				// v2.7 PR-1: chunk error. WARN + 返回 complete=false.
 				slog.Warn("react_runner streamSpeakContent chunk err",
 					"err", c.Err,
 					"chunks", chunks,
@@ -1007,98 +1019,219 @@ func (r *ReActRunner) streamSpeakContent(
 				return "", false
 			}
 			if c.Done {
+				// 显式 Done chunk → 正常 EOF.
 				streamDone = true
 				break
 			}
 			collected.WriteString(c.Content)
 			chunks++
-			_ = chunks
 
-			// 渐进提取 content 字段值（每个 chunk 后扫一次）
+			// 渐进扫描: 每次 chunk 后从头扫 raw. 性能 O(N²) 但 raw < 50KB 可接受.
+			// 每 chunk 重扫让 "content" 跨 chunk 边界切分也能命中.
 			raw := collected.String()
-			fieldIdx := indexOfJSONField(raw, "content")
-			if fieldIdx < 0 {
-				continue // content 字段还没出现
+			value, complete := scanJSONContentField(raw)
+			if value == "" && !complete {
+				continue // content field 还没出现, 或 LLM 完全非 JSON
 			}
-			// 跳过字段名后到 ":" 之间的任意 whitespace
-			i := fieldIdx + len(`"content"`)
-			for i < len(raw) && (raw[i] == ' ' || raw[i] == '\t' || raw[i] == '\n' || raw[i] == '\r') {
-				i++
-			}
-			if i >= len(raw) || raw[i] != ':' {
-				continue
-			}
-			i++
-			for i < len(raw) && (raw[i] == ' ' || raw[i] == '\t' || raw[i] == '\n' || raw[i] == '\r') {
-				i++
-			}
-			if i >= len(raw) || raw[i] != '"' {
-				continue
-			}
-			i++ // skip opening "
-			// 扫描未转义的 closing "
-			end := -1
-			for j := i; j < len(raw); j++ {
-				if raw[j] == '\\' && j+1 < len(raw) {
-					j++ // 跳过下一个字符（转义）
-					continue
+			if complete {
+				finalValue = value
+				finalComplete = true
+				if value != lastEmitted && r.cfg.OnSpeakChunk != nil {
+					lastEmitted = value
+					r.cfg.OnSpeakChunk(c.Content, value)
 				}
-				if raw[j] == '"' {
-					end = j
-					break
-				}
+				streamDone = true
+				break
 			}
-			var rawValue string
-			if end < 0 {
-				rawValue = raw[i:] // partial
-			} else {
-				rawValue = raw[i:end]
-			}
-			extracted := unquoteJSONString(rawValue)
-			if extracted != lastExtracted {
-				lastExtracted = extracted
-				if r.cfg.OnSpeakChunk != nil {
-					r.cfg.OnSpeakChunk(c.Content, extracted)
-				}
+			// !complete (partial) → 推 partial 给 frontend typewriter.
+			if value != lastEmitted && r.cfg.OnSpeakChunk != nil {
+				lastEmitted = value
+				r.cfg.OnSpeakChunk(c.Content, value)
 			}
 		}
 	}
 
-	if lastExtracted == "" {
-		// 2026-08-22 用户反馈 bug 修复: silent error 黑洞 — 流式解析可能收集了
-		// raw 但 lastExtracted 仍空(LLM 输出了畸形 JSON: `{"content":""}` 闭合 quote 后
-		// partial 提取到了空字符串;或 LLM 输出非 JSON markdown 代码块)。
-		// 打印 raw 帮助诊断。
-		//
-		// v2.6 D2 fix (2026-09-21): 用 truncateForLog helper 统一 truncation 风格
-		// (避免 LLM 末尾 UTF-8 切半 + 注明总长便于诊断).
-		slog.Warn("streamSpeakContent: empty lastExtracted",
+	if !finalComplete {
+		// 流正常关闭 (Done chunk 或 channel close) 但从未看到完整
+		// "content":"<value>" 结构. 可能是 LLM 流式 emit 非 JSON markdown
+		// 或纯 prose, 或 content field 跨 chunk 边界切碎导致 scanner 永远 partial.
+		slog.Warn("streamSpeakContent: stream closed without complete content field",
 			"chunks", chunks,
 			"raw_len", collected.Len(),
 			"raw_preview", truncateForLog(collected.String(), 500),
 		)
 		return "", false
 	}
-	return lastExtracted, true
+	// finalComplete=true: 把 finalValue 返回 (可能是空 string, 由 caller 三态分流处理).
+	return finalValue, true
 }
 
-// indexOfJSONField 在 raw 字符串中找到 JSON 字段名的位置，例如
-// `"content"`。它容忍字段名前后的任意字符（包括空白 / 其他字段 / 数组
-// 元素），但要求该字段名是完整的 `"<field>"` 形式。返回 field 起始处
-// 的 index，未找到返回 -1。
-func indexOfJSONField(raw, field string) int {
-	target := `"` + field + `"`
-	idx := strings.Index(raw, target)
-	if idx < 0 {
-		return -1
+// scanJSONContentField 增量扫描 partial JSON, 寻找顶层 "content" 字段值。
+//
+// 返回 (value, complete):
+//   - value: 已 unquote 的 content 字符串; 可能是 partial (中间状态) 或 final
+//   - complete: true 仅当 parser 看到 closing " 后是 ',' / '}' / EOF
+//
+// 容错:
+//   - markdown wrap: 跳 `{` 之前的 prose/whitespace
+//   - 嵌套 JSON: brace+bracket depth tracking, 仅匹配顶层 (depth==1) "content" key
+//   - 多行 / 多空格: 跳过 `"content"` 与 `:` 之间的任意 whitespace
+//   - 跨 chunk 边界: chunks 累积后下次重扫自动命中 (无状态机维护)
+//   - LLM 显式空 `{...,"content":""}`: parser 解析成功, value="", complete=true
+//
+// 不容错 (返回 ("", false)):
+//   - LLM emit 完全非 JSON (没有 '{' / 顶层没有 "content" key)
+//   - 永远 partial (closing " 不来, 通常是 stream truncate)
+//
+// 设计取舍:
+//   - "每 chunk 重扫 raw" 替代 "跨 chunk 维护状态机": 复杂度更低, debug 容易;
+//     性能 O(N²) 但 raw < 50KB 时实际只有 ~50ms 内 (<10^6 byte ops)
+//   - 不匹配 nested "content" key: 律师 agent 仅 emit `{"content":"..."}` 单层结构;
+//     如未来 LLM 输出嵌套 JSON, parser 会返 ("", false), caller 走 retry
+func scanJSONContentField(raw string) (string, bool) {
+	const field = `"content"` // 顶层 key literal (含引号)
+
+	// 1. 找到第一个 '{' — 允许 markdown wrap / 前导 prose
+	objStart := -1
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == '{' {
+			objStart = i
+			break
+		}
 	}
-	return idx
+	if objStart < 0 {
+		return "", false
+	}
+
+	// 2. 进入顶层对象 (depth=1). 后续 brace/bracket 进出维护 depth.
+	i := objStart + 1
+	depth := 1
+	inStr := false // 当前是否在 JSON string token 内
+	strEsc := false
+
+	for i < len(raw) {
+		c := raw[i]
+
+		// string 内部: 维持 inStr 状态, 不处理 depth 增减
+		if inStr {
+			if strEsc {
+				strEsc = false
+				i++
+				continue
+			}
+			if c == '\\' {
+				strEsc = true
+				i++
+				continue
+			}
+			if c == '"' {
+				inStr = false
+				i++
+				continue
+			}
+			i++
+			continue
+		}
+
+		// 不在 string 内
+		switch c {
+		case '"':
+			// 进入 string token — 检查是否是顶层 (depth==1) "content" key
+			if depth == 1 && i+len(field) <= len(raw) && raw[i:i+len(field)] == field {
+				// 命中: 解析 key → ":" → optional whitespace → '"value"'
+				j := i + len(field) // key 末尾
+				for j < len(raw) && isJSONWhitespace(raw[j]) {
+					j++
+				}
+				if j >= len(raw) || raw[j] != ':' {
+					// 不是 "content":"<value>" 形式 (key 后续不是冒号);
+					// 当普通 string 处理
+					inStr = true
+					strEsc = false
+					i++
+					continue
+				}
+				j++ // skip ':'
+				for j < len(raw) && isJSONWhitespace(raw[j]) {
+					j++
+				}
+				if j >= len(raw) || raw[j] != '"' {
+					// value 不是 string 类型 (number/object/array);
+					// 当作普通 string 处理
+					inStr = false
+					i++
+					continue
+				}
+				// 提取 value string
+				j++              // skip opening '\"'
+				valStart := j    // value 起始
+				valEsc := false  // value 内的 escape flag
+				for ; j < len(raw); j++ {
+					if valEsc {
+						valEsc = false
+						continue
+					}
+					if raw[j] == '\\' {
+						valEsc = true
+						continue
+					}
+					if raw[j] == '"' {
+						// 找到 closing '"' — 决定 complete
+						valStr := raw[valStart:j]
+						m := j + 1
+						for m < len(raw) && isJSONWhitespace(raw[m]) {
+							m++
+						}
+						complete := m < len(raw) && (raw[m] == ',' || raw[m] == '}')
+						return unquoteJSONString(valStr), complete
+					}
+				}
+				// 一直未找到 closing '"' — 返回 partial
+				return unquoteJSONString(raw[valStart:]), false
+			}
+			// 任何其他 string token: 进 inStr
+			inStr = true
+			strEsc = false
+			i++
+			continue
+		case '{', '[':
+			depth++
+			i++
+			continue
+		case '}', ']':
+			if depth > 0 {
+				depth--
+			}
+			i++
+			// 顶层对象提前关闭 → 没找到 content key
+			if depth < 1 {
+				return "", false
+			}
+			continue
+		default:
+			i++
+			continue
+		}
+	}
+	// raw 耗尽 → 扫描结束, 未闭合
+	return "", false
 }
 
-// unquoteJSONString 解码 JSON 转义（\"、\\、\n、\t 等），让前端拿到
-// 真正的中文字符串而不是带反斜杠的转义形式。
+func isJSONWhitespace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+// unquoteJSONString 解码 JSON 转义, 让前端拿到真正的中文字符串而不是
+// 带反斜杠的转义形式。
+//
+// v2.7 PR-1 (ADR 0041): 加 \uXXXX Unicode escape 解码. 之前版本直接
+// 跳过 "\u" 两个字节, 让 LLM 输出 `\u4e2d\u6587` 时前端拿到 literal
+// 字符串而非中文 "中文".
+//
+// 仍保持"不识别的 escape 原样保留"行为 (含 \b \f 等).
 func unquoteJSONString(s string) string {
 	var sb strings.Builder
+	sb.Grow(len(s))
 	for i := 0; i < len(s); i++ {
 		if s[i] == '\\' && i+1 < len(s) {
 			switch s[i+1] {
@@ -1117,7 +1250,22 @@ func unquoteJSONString(s string) string {
 			case 'r':
 				sb.WriteByte('\r')
 				i++
+			case 'u':
+				// \uXXXX → 4 hex digits → rune. 不够 4 位或非 hex 字面保留.
+				if i+5 < len(s) && isHex(s[i+2]) && isHex(s[i+3]) && isHex(s[i+4]) && isHex(s[i+5]) {
+					var r32 uint32
+					for k := 2; k < 6; k++ {
+						r32 = r32<<4 | hexNibble(s[i+k])
+					}
+					// UTF-8 encode rune (rune <= 0xFFFF 时 3 字节, 4 字节 surrogate pair 罕见 LLM 不会 output)
+					sb.WriteRune(rune(r32))
+					i += 5
+					continue
+				}
+				// 非法 \u escape: 保留 verbatim
+				sb.WriteByte(s[i])
 			default:
+				// 不识别 escape (含 \b \f \/): 保留反斜杠 + 下一字节
 				sb.WriteByte(s[i])
 			}
 			continue
@@ -1125,6 +1273,22 @@ func unquoteJSONString(s string) string {
 		sb.WriteByte(s[i])
 	}
 	return sb.String()
+}
+
+func isHex(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+func hexNibble(c byte) uint32 {
+	switch {
+	case c >= '0' && c <= '9':
+		return uint32(c - '0')
+	case c >= 'a' && c <= 'f':
+		return uint32(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return uint32(c-'A') + 10
+	}
+	return 0
 }
 
 func (r *ReActRunner) buildInitialMessages(transcript []model.Message) []llm.Message {
