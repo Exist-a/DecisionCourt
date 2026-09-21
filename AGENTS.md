@@ -114,7 +114,7 @@ Agent 需要熟悉以下核心文档：
 
 `.trae/` 目录被 `.gitignore` 排除，作为本地进行中设计稿存放区（不入仓）。当前活跃：
 
-- `silent-error-fix-plan.md` — 静默错误全局修复方案（v1.1, 2026-08-05 收尾：PR 1-5/7 已合入 v0.10.17, 剩余 3 项入 `docs/todo/deferred-items-2026-08-05.md` D2, 详见 ADR 0024。**2026-08-20 v1.0.0 状态更新**：D2 全部 3 项已在 v0.10.25 (PR 079371d + c8d76dc) 完成，12/12 黑洞 100% 修复）
+- `silent-error-fix-plan.md` — 静默错误全局修复方案（v1.1, 2026-08-05 收尾：PR 1-5/7 已合入 v0.10.17, 剩余 3 项入 `docs/todo/deferred-items-2026-08-05.md` D2, 详见 ADR 0024。**2026-08-20 v1.0.0 状态更新**：D2 全部 3 项已在 v0.10.25 (PR 079371d + c8d76dc) 完成，12/12 黑洞 100% 修复。**2026-09-21 v2.6 状态更新**：`docs/todo/deferred-items-2026-08-21.md` §D2 (cross-exam content silent error) + §D3 (direct_verdict fallback round=0) 已收尾（ADR 0040 + 9 sub-test），剩余 `streamSpeakContent` 流式解析根因 + `JudgeFinalDecision`/`GenerateVerdict` retry-on-canceled 待下次 PR）
 - `security-audit-2026-07-03.md` — 安全审计 v1.0（2026-07-03 全部 20 项 P0/P1/P2/P3 已修复或 deferred，P0-1 ~ P0-6 在 v0.8.3 + v0.10.18 全部完成，P1-P3 14 项 deferred D1）
 
 > **注意**：已完成的进行中设计文档（即 `docs/archive/` 下文件）的元数据在 AGENTS.md / README / 文档交叉引用中仍可能存在，但**实际文档位置**以本节为准。修改相关代码前应优先参考 `docs/` 主项目文档而非 archive 中的历史计划。

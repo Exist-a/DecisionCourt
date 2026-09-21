@@ -62,8 +62,9 @@
 | **v2.5 P1-2** | ✅ | CSRF double-submit cookie 中间件 (手写, 不引入 gorilla/csrf) + 前端 fetchJson 自动注入 header |
 | **v2.5 P1-4** | ✅ | sanitize.go (21 中英文 injection pattern) + 9 个 prompt 函数适配 + orchestrator 6 处 + react_runner 2 处 |
 | **v2.5 tests+docs** | ✅ | 22 个新 sub-test (csrf 10 + sanitize 12) + ADR 0039 + release-notes/v2.5 + deferred §D1 全部 P1 done |
-| ADR 累计 | 39 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + 0037 agent-gateway-observability + 0038 security-p1-batch-a + **0039 security-p1-batch-c** |
-| Go 测试 | ~377 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + v2.1 F4+F5 6 + v2.3 observability-tests 9 + v2.4 P1-tests 14 + **v2.5 P1-tests 22** |
+| **v2.6 D2+D3** | ✅ | silent error 黑洞 D2 收尾（streamSpeakContent 三处 WARN + saveAgentMessage 拦截 + 6 处 caller skip broadcast）+ direct_verdict fallback round D3（transitionPhase 保留 round + maxRound helper）+ 9 个新 sub-test + ADR 0040 + release-notes/v2.6 + deferred-items-2026-08-21 §D2+§D3 ✅ + 删孤儿分支 `fix/cross-exam-content-empty` |
+| ADR 累计 | 40 | 含 0031 + 0032 + 0033 + 0034 (Superseded) + 0034-supersede (Archived) + 0034-archive (✅) + 0037 agent-gateway-observability + 0038 security-p1-batch-a + 0039 security-p1-batch-c + **0040 silent-error-d2-d3-closeout** |
+| Go 测试 | ~386 sub-test | v1.0.3 304 + PR-C1 20 + v1.0-patch 2 (streamedFallback) + v2.1 F4+F5 6 + v2.3 observability-tests 9 + v2.4 P1-tests 14 + v2.5 P1-tests 22 + **v2.6 D2+D3 9** |
 | Frontend 测试 | 103 (9 .test.ts) | v1.0.4 79 + v2.0 5 + v1.0-patch 6 + **v2.1 F1+F2+F3+F4 11** + **v2.2 2** |
 | 部署目标 | ⏸ 本地 dev | ECS 2026-08-05 终止,转入个人长期本地开发模式 |
 
@@ -79,7 +80,7 @@
 - (本 commit): 文档同步
 详情见 [todo/bugfix-log-2026-08-23.md §F8-F12](./todo/bugfix-log-2026-08-23.md)。
 
-**当前阻塞**：✅ Round 1/2 共 12 个 bug 全修（8 个 v1.0-patch + 4 个 Round 2 高优）。剩余 deferred：D2 cross-exam content 空（`saveAgentMessage` 入口已加防御性 sanity check，等完整 silent-error 修复 PR）+ D3 direct_verdict fallback round + D1 安全审计 P1-P3（用户授权启动）+ M5 v3.0 端侧 TTS / v2.0 REDESIGN（用户 2026-08-23 确认不启动）。
+**当前阻塞**：✅ Round 1/2 共 12 个 bug 全修（8 个 v1.0-patch + 4 个 Round 2 高优）。剩余 deferred：D1 安全审计 P1-P3（用户授权启动）+ M5 v3.0 端侧 TTS / v2.0 REDESIGN（用户 2026-08-23 确认不启动）。D2 + D3 已于 v2.6 收尾（ADR 0040）。
 
 ---
 
@@ -287,7 +288,7 @@ M6 v1.2 ⏸ (安全 P1, 触发后启动)
 | v2.0 多模态投入过大 | 项目方向漂移 | 远期参考，不绑定触发条件 |
 | ArgumentMap 类 UI 组件"用户根本不会看" | 浪费开发资源 | 用户反馈驱动（ADR 0032 教训） |
 | Dev compose 启动配置脆弱（DATABASE_URL 拼接 / NEXT_PUBLIC_* 覆盖 / Windows npipe） | Windows / Linux 切换困难 | 文档化 + 简化为hardcode；回归测试（agent_dev compose E2E）|
-| Silent error 黑洞（react_runner 流式解析 silent fail） | 庭审记录全空但不报错 | D2 fix (`694a89e`) 加 WARN 日志 + 拦截；D3 fix 同 commit |
+| Silent error 黑洞（react_runner 流式解析 silent fail） | 庭审记录全空但不报错 | D2 + D3 fix（v2.6, ADR 0040）加 WARN 日志 + saveAgentMessage 拦截 + 6 处 caller skip broadcast + maxRound helper |
 
 ---
 
@@ -304,7 +305,7 @@ M6 v1.2 ⏸ (安全 P1, 触发后启动)
 
 ### 持续维护
 
-- **静默错误黑洞回归测试护栏**（v1.0.0 PR-3 框架 + D2/D3 9 sub-test 在 `694a89e`）
+- **静默错误黑洞回归测试护栏**（v1.0.0 PR-3 框架 + D2/D3 9 sub-test 在 v2.6 ADR 0040）
 - **DeepSeek API 文档变更跟进**（ADR 0029 教训）
 - **Dev compose 回归测试**（host 端口冲突 + env 优先级 + Windows npipe）
 - **AGENTS.md §8 敏感文件红线**（项目长期规范）

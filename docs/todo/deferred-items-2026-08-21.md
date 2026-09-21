@@ -3,9 +3,10 @@
 | | |
 |---|---|
 | **生成日期** | 2026-08-21 |
-| **状态** | ⏸ **Deferred**（等待下次 PR 修复） |
+| **状态** | ✅ **Done (v2.6, ADR 0040)** — D2 + D3 已于 2026-09-21 收尾 |
 | **触发** | 用户在 v1.0.3 PR-B1 (Prompt Lab) 启动验证时复现 |
 | **关联 PR** | v1.0.3 PR-B1 = commit `f1720f7` + 三个 dev compose 修复 (`eef932e`/`bea7289`/`1eb037f`) |
+| **关闭 PR** | v2.6 = silent error D2 收尾 + direct_verdict fallback round D3 修复（详见 `docs/adr/0040-silent-error-d2-d3-closeout.md` + `docs/release-notes/v2.6.md`） |
 
 ---
 
@@ -91,6 +92,20 @@ backend log 同步显示：
 - ❌ 不在 silent error 路径加 panic（防止 SIGKILL 让整个 trial crash）
 - ❌ 不引入新外部依赖（如 LangSmith）—— 与 v1.0.3 调研结论一致
 
+### ✅ v2.6 收尾 (2026-09-21, ADR 0040)
+
+D2 修复方案（详见 ADR 0040 §3）：
+
+- `backend/internal/agent/react_runner.go::streamSpeakContent` 三处 silent 失败点加 `slog.Warn`（ctx-cancel / chunk Err / empty lastExtracted）
+- 新增 `truncateForLog` helper（统一 truncation 风格 + 注明总字节数）
+- `backend/internal/courtroom/service.go::saveAgentMessage` 入口拦截空 content：log REJECT + 返 `silent LLM failure guard` error
+- caller `resumeOpening` / `resumeClosing` / `finishTrial` 三函数 6 处包成 `if err := ... { log + skip } else { broadcast }`（不阻塞 trial 流程）
+- 新增 4 个 regression sub-test（`save_agent_message_d2_test.go`）
+
+**未修的根因**（下次 PR 候选）：
+- `streamSpeakContent` 流式解析逻辑本身仍可能产生空 content（需重新设计 extract 逻辑，中度修复）
+- `JudgeFinalDecision` / `GenerateVerdict` 未加 retry-on-canceled（D3 第 3 项建议）
+
 ---
 
 ## D3. direct_verdict 判决书 fallback 显示 "本场庭审共 0 轮"
@@ -175,3 +190,18 @@ result["trial_summary"] = fmt.Sprintf("本场庭审共 %d 轮...", realRound)
 - ❌ 不在本次 PR-B1 范围动 service.go（已 commit `f1720f7` 仅动 promptlab + agent/prompts.go）
 - ❌ 不重命名 `current_round` 字段（向后兼容）
 - ❌ 不在 cancelCall 加白名单（与 D2 处理原则一致 — fail-soft 而非 fail-hard）
+
+### ✅ v2.6 收尾 (2026-09-21, ADR 0040)
+
+D3 修复方案（详见 ADR 0040 §4）：
+
+- `service.go::finishTrial` 第 1521 行 `transitionPhase(closing, 0)` → `transitionPhase(closing, session.CurrentRound)`（保留 round 字段）
+- `service.go::finishTrial` 第 1625 行 fallback `trial_summary` 文案：用 `maxRound(messages)` 替代 `session.CurrentRound`（跨 phase 真实轮数）
+- 新增 `maxRound(messages []model.Message) int` helper（处理 nil / 全 0 / 混合边界）
+- 新增 5 个 regression sub-test（`finish_trial_d3_test.go`）
+
+**未修的根因**（下次 PR 候选）：
+- `JudgeFinalDecision` / `GenerateVerdict` 未加 retry-on-canceled —— 让 cancelCall 触发的 ctx cancel 链仍会让 fallback 路径比正常路径更常见
+- D3 的"双重根因 B（cancelCall 跨 finishTrial）"未修根因，下次 PR 可考虑
+
+---

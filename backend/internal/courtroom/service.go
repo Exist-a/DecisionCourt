@@ -866,15 +866,24 @@ func (s *Service) resumeOpening(session model.CourtSession) error {
 		if err != nil {
 			return err
 		}
-		s.saveAgentMessage(session.ID, *prosecutor, model.PhaseOpening, 0, speaker)
-		s.broadcastAgentSpeak(session.SessionUUID, *prosecutor, model.PhaseOpening, 0, speaker)
+		// v2.6 D2 fix (2026-09-21): saveAgentMessage 入口空 content 拒绝,这里捕获并
+		// 跳过 broadcast (避免前端拿空 content 推送). 不返回 err 让 resumeOpening
+		// 失败 (recovery 阶段 streamSpeakContent 偶发空内容不应阻塞 trial 流程).
+		if err := s.saveAgentMessage(session.ID, *prosecutor, model.PhaseOpening, 0, speaker); err != nil {
+			log.Printf("[v0.6][resumeOpening] skip prosecutor broadcast due to empty content: %v", err)
+		} else {
+			s.broadcastAgentSpeak(session.SessionUUID, *prosecutor, model.PhaseOpening, 0, speaker)
+		}
 	} else if defender != nil && !hasDefender {
 		speaker, err := s.orchestrator.DefenderSpeak(ctx, *defender, session, evidences, messages)
 		if err != nil {
 			return err
 		}
-		s.saveAgentMessage(session.ID, *defender, model.PhaseOpening, 0, speaker)
-		s.broadcastAgentSpeak(session.SessionUUID, *defender, model.PhaseOpening, 0, speaker)
+		if err := s.saveAgentMessage(session.ID, *defender, model.PhaseOpening, 0, speaker); err != nil {
+			log.Printf("[v0.6][resumeOpening] skip defender broadcast due to empty content: %v", err)
+		} else {
+			s.broadcastAgentSpeak(session.SessionUUID, *defender, model.PhaseOpening, 0, speaker)
+		}
 	}
 
 	return nil
@@ -920,13 +929,20 @@ func (s *Service) resumeClosing(session model.CourtSession) error {
 
 	if prosecutor != nil && !hasProsecutor {
 		speaker, _ := s.speakWithReAct(ctx, *prosecutor, session, evidences, messages)
-		s.saveAgentMessage(session.ID, *prosecutor, model.PhaseClosing, session.CurrentRound, speaker)
-		s.broadcastAgentSpeak(session.SessionUUID, *prosecutor, model.PhaseClosing, session.CurrentRound, speaker)
+		// v2.6 D2 fix (2026-09-21): 空 content 拒绝,这里只 log + 跳过 broadcast
+		if err := s.saveAgentMessage(session.ID, *prosecutor, model.PhaseClosing, session.CurrentRound, speaker); err != nil {
+			log.Printf("[v0.6][resumeClosing] skip prosecutor broadcast due to empty content: %v", err)
+		} else {
+			s.broadcastAgentSpeak(session.SessionUUID, *prosecutor, model.PhaseClosing, session.CurrentRound, speaker)
+		}
 	} else if defender != nil && !hasDefender {
 		_, _, messages, _ = s.loadSessionData(session.ID)
 		speaker, _ := s.orchestrator.DefenderSpeak(ctx, *defender, session, evidences, messages)
-		s.saveAgentMessage(session.ID, *defender, model.PhaseClosing, session.CurrentRound, speaker)
-		s.broadcastAgentSpeak(session.SessionUUID, *defender, model.PhaseClosing, session.CurrentRound, speaker)
+		if err := s.saveAgentMessage(session.ID, *defender, model.PhaseClosing, session.CurrentRound, speaker); err != nil {
+			log.Printf("[v0.6][resumeClosing] skip defender broadcast due to empty content: %v", err)
+		} else {
+			s.broadcastAgentSpeak(session.SessionUUID, *defender, model.PhaseClosing, session.CurrentRound, speaker)
+		}
 	}
 
 	return nil
@@ -1518,7 +1534,10 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		return nil
 	}
 
-	if err := s.transitionPhase(&session, model.PhaseClosing, 0); err != nil {
+	// v2.6 D3 fix (2026-09-21): 保留 session.CurrentRound 不归零 (原 transitionPhase
+	// 显式传 0 让 round 字段被重置, 导致 fallback 文案显示 "共 0 轮"). 现在用
+	// 当前 round 让 fallback 文案 "本场庭审共 %d 轮" 与真实轮数一致.
+	if err := s.transitionPhase(&session, model.PhaseClosing, session.CurrentRound); err != nil {
 		return err
 	}
 
@@ -1532,14 +1551,22 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 	defender := findAgent(agents, model.AgentDefender)
 	if prosecutor != nil {
 		speaker, _ := s.speakWithReAct(ctx, *prosecutor, session, evidences, messages)
-		s.saveAgentMessage(session.ID, *prosecutor, model.PhaseClosing, session.CurrentRound, speaker)
-		s.broadcastAgentSpeak(session.SessionUUID, *prosecutor, model.PhaseClosing, session.CurrentRound, speaker)
+		// v2.6 D2 fix (2026-09-21): 空 content 拒绝,这里只 log + 跳过 broadcast
+		// (finishTrial 流程不阻塞, 但空 content 不再污染消息流 + 前端展示).
+		if err := s.saveAgentMessage(session.ID, *prosecutor, model.PhaseClosing, session.CurrentRound, speaker); err != nil {
+			log.Printf("[v0.6][finishTrial] skip closing prosecutor broadcast due to empty content: %v", err)
+		} else {
+			s.broadcastAgentSpeak(session.SessionUUID, *prosecutor, model.PhaseClosing, session.CurrentRound, speaker)
+		}
 	}
 	_, _, messages, _ = s.loadSessionData(session.ID)
 	if defender != nil {
 		speaker, _ := s.speakWithReAct(ctx, *defender, session, evidences, messages)
-		s.saveAgentMessage(session.ID, *defender, model.PhaseClosing, session.CurrentRound, speaker)
-		s.broadcastAgentSpeak(session.SessionUUID, *defender, model.PhaseClosing, session.CurrentRound, speaker)
+		if err := s.saveAgentMessage(session.ID, *defender, model.PhaseClosing, session.CurrentRound, speaker); err != nil {
+			log.Printf("[v0.6][finishTrial] skip closing defender broadcast due to empty content: %v", err)
+		} else {
+			s.broadcastAgentSpeak(session.SessionUUID, *defender, model.PhaseClosing, session.CurrentRound, speaker)
+		}
 	}
 
 	if err := s.transitionPhase(&session, model.PhaseDeliberation, session.CurrentRound); err != nil {
@@ -1622,7 +1649,11 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		}
 		result = map[string]interface{}{
 			"summary":         fmt.Sprintf("建议选择%s（基于法官信念度直接裁决）", preferredName),
-			"trial_summary":   fmt.Sprintf("本场庭审共 %d 轮。LLM 生成失败，依据法官信念度直接裁决，未生成过程纪要。", session.CurrentRound),
+			// v2.6 D3 fix (2026-09-21): fallback 文案的 "本场庭审共 N 轮" 不再用
+			// session.CurrentRound (已被前置 transitionPhase(closing, ...) 改写过),
+			// 而是用 messages MAX(round) 算真实轮数. 详见 docs/todo/deferred-items-
+			// 2026-08-21.md D3.
+			"trial_summary":   fmt.Sprintf("本场庭审共 %d 轮。LLM 生成失败，依据法官信念度直接裁决，未生成过程纪要。", maxRound(messages)),
 			"option_a_score":  judgeDecision.BeliefA,
 			"option_b_score":  judgeDecision.BeliefB,
 			"consensus_points": []string{},
@@ -2051,9 +2082,16 @@ func (s *Service) saveAgentMessage(
 	// saveAgentMessage 存入空 content → 前端气泡显示「」空内容。
 	// silent error 黑洞 (与 v0.10.17 修复的 react_runner silent fail 同类)。
 	// 这里加 hard reject: content 为空时返 error,不污染 DB。
+	//
+	// v2.6 D2 fix (2026-09-21): 加 REJECT log 让黑洞可见 + 改 sentinel 关键词为
+	// "silent LLM failure guard" 便于日志检索 (与 commit 694a89e 同语义, 重新基于
+	// main 134531a 重写)。caller (resumeOpening / resumeClosing / finishTrial) 收到
+	// error 时只 log + 跳过 broadcastAgentSpeak,不阻塞 trial 流程。
 	if strings.TrimSpace(speaker.Content) == "" {
+		log.Printf("[v0.6][saveAgentMessage] REJECT empty content: session=%s agentType=%s phase=%s round=%d agentID=%s (silent LLM failure guard)",
+			sessionID, agent.AgentType, phase, round, agent.ID)
 		return fmt.Errorf(
-			"saveAgentMessage: refusing to persist empty content (silent error guard) "+
+			"saveAgentMessage: refusing to persist empty content (silent LLM failure guard) "+
 				"session=%s agentType=%s phase=%s round=%d agentID=%s",
 			sessionID, agent.AgentType, phase, round, agent.ID,
 		)
@@ -2557,4 +2595,22 @@ func getFloat(m map[string]interface{}, key string) float64 {
 func marshalJSON(v interface{}) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// maxRound 返回 messages 里 round 字段的最大值.
+//
+// v2.6 D3 fix (2026-09-21): 用于 finishTrial fallback 文案. session.CurrentRound
+// 已被前置 transitionPhase(closing, session.CurrentRound) 改写过, fallback 文案
+// "本场庭审共 N 轮" 应基于 messages 真实轮数 (跨 opening + cross-exam + closing),
+// 不能用 session 字段.
+//
+// 退化: nil slice / 全 round=0 返回 0 (兼容空 trial / 全空 messages 边界).
+func maxRound(messages []model.Message) int {
+	maxR := 0
+	for _, m := range messages {
+		if m.Round > maxR {
+			maxR = m.Round
+		}
+	}
+	return maxR
 }
