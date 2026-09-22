@@ -110,6 +110,11 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
       AGENT_GATEWAY_LLM_TIMEOUT_SEC: 90
+      # v2.10: dev 栈默认开 Agent Gateway（v2.10 前 dev compose 缺该项，
+      # 需手动用临时容器注入；现在让 `docker compose up -d` 一键跑全链路）
+      # 子开关 (SMART_COMPRESSION / CACHE_ENABLED / BREAKER_ENABLED 等)
+      # 仍按各自 .env 值，默认全开 (viper.SetDefault true)
+      AGENT_GATEWAY_ENABLED: "true"
       # dev: 不限 trial 次数
       USER_TRIAL_LIMIT: 0
     volumes:
