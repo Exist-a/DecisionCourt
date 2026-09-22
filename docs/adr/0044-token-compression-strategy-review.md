@@ -219,11 +219,13 @@ Breaker（整块）/ FileLoggerPrompts / FileLoggerPromptsMaxBytes
 
 `docker-compose.dev.yml` 的 backend 服务只显式传 `AGENT_GATEWAY_LLM_TIMEOUT_SEC`，其余 gateway 变量依赖根 `.env`；而根 `.env` **没有** `AGENT_GATEWAY_ENABLED`，其 Go 默认值为 `false`。因此**默认 `docker compose -f docker-compose.dev.yml up -d` 起来时 Agent Gateway 整体是关闭的**（`SMART_COMPRESSION=true` 等配置不起作用）。本次验证是通过临时容器注入 env 绕过的，未修改 `.env`（AGENTS.md §8 红线）。是否在 compose 里补默认值由用户决定。
 
-### 3.7 问题 C 的 in-situ 复验状态
+### 3.7 问题 C 的 in-situ 复验状态（2026-09-22 更新）
 
 问题 C 是**只有实跑才看得见**的缺陷（单元测试全绿也漏），因此其修复也必须在真实链路复验。原计划的复验方式：开 gateway + 小 budget 跑一场，确认 FileLogger 里 `compression_before_count=1` 的 `react_think` 调用 `after_length` 不再等于 1500、而是接近 `before_length`。
 
-**该复验未完成**：执行期间宿主 **D: 盘写满（652G/652G，仅剩 7.8M）**，导致 Docker Desktop 的 containerd 存储转为只读（`meta.db: read-only file system`），无法创建或启动容器。这是环境故障，与代码改动无关。磁盘腾出后按上述方式复验即可。
+**历史**：2026-09-21 v2.10 验证末段，宿主 **D: 盘写满（652G/652G，仅剩 7.8M）**，导致 Docker Desktop 的 containerd 存储转为只读（`meta.db: read-only file system`），无法创建或启动容器。这是环境故障，与代码改动无关。
+
+**当前状态（2026-09-22）**：D 盘已腾出，dev 栈可恢复，复验就绪。如曾因 containerd 只读导致容器异常停止，下一步是 `docker compose -f docker-compose.dev.yml up -d --force-recreate`；前端可达性不变可省。复验本身仍是上面那段——开 gateway + 小 budget 跑一场。
 
 ---
 
