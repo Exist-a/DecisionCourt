@@ -79,6 +79,11 @@ type Handler struct {
 	// 注入方式: handler.WithTraceStore(trace.NewFileTraceStore(logDir))
 	// nil 时 RegisterTraceRoutes 不注册路由(降级为 404)。
 	traceStore trace.Store
+
+	// v2.11 (deferred D12): GET /courtrooms/:uuid/events 的数据源。
+	// 默认走 GORM 查 decision_events；测试注入内存 fake。
+	// nil 时端点降级为空列表（不 404，保持"无数据 ≠ 出错"语义）。
+	eventLister DecisionEventLister
 }
 
 // WithTraceStore 注入 trace.Store。装配阶段(main.go)调用一次。
@@ -99,6 +104,8 @@ func NewHandler(service *courtroom.Service, investigationService *investigation.
 		service:            service,
 		investigationService: investigationService,
 		sessionLookup:      defaultSessionLookup,
+		// v2.11 (deferred D12): 默认 GORM 实现，调用时才读 model.DB。
+		eventLister: gormDecisionEventLister{},
 	}
 	// Default the memory lister to whatever service we got. If service is
 	// nil (unit tests that only exercise the investigation routes), the
@@ -208,6 +215,11 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 	// 复用 decision_events 表,EventType 以 fe. 前缀与后端 span.X 区分。
 	// 鉴权复用 checkSessionAccess(必须是 session owner,防他人灌垃圾事件)。
 	api.POST("/courtrooms/:session_uuid/events", h.PostFrontendEvent)
+	// v2.11 (deferred D12): decision_events 的**读**端点。
+	// 补上"跨域查询能力"缺失的另一半——此前只有写路径，分析只能人工连库跑
+	// db-design §9.6 的 SQL。owner-only + limit/offset 分页 + event_type_prefix
+	// 前缀过滤(fe. / span. / state_)。
+	api.GET("/courtrooms/:session_uuid/events", h.ListDecisionEvents)
 
 	// LLM 端点(更严限流,user 维度)— 防"一秒 1000 次 dispatch_investigator"烧配额
 	llmGroup := api.Group("/")

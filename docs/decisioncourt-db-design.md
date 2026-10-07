@@ -518,6 +518,21 @@ ORDER BY err_count DESC;
 
 详见 [ADR 0020](../adr/0020-frontend-analytics-via-decision-events.md)。本节补充 DB 层面的约定。
 
+> **读端点（v2.11 / deferred D12）**：`GET /api/v1/courtrooms/:uuid/events`（见 [api-design §3.5.5](./decisioncourt-api-design.md)）
+> 把上面的查询固化成 API：owner-only + `limit`/`offset` 分页 + `event_type_prefix` 前缀过滤，
+> 排序 `created_at ASC, id ASC`。
+>
+> **口径对齐规则**：本节的 SQL 与端点必须保持同一语义，避免两处说法漂移——
+>
+> | 本节 SQL | 等价端点调用 |
+> |---|---|
+> | `WHERE session_uuid = ?` | `GET /courtrooms/:uuid/events` |
+> | `... AND event_type LIKE 'fe.%'` | `...?event_type_prefix=fe.` |
+> | `... AND event_type LIKE 'state_transition%'` | `...?event_type_prefix=state_transition` |
+> | `ORDER BY created_at ASC`（分页时补 `LIMIT/OFFSET`） | `?limit=100&offset=0`（`has_more` 表示还有下一页） |
+>
+> 新增/修改本节 SQL 时必须同步端点的过滤与排序语义；反之亦然。
+
 **EventType 命名空间**：
 
 | 前缀 | 来源 | 典型示例 |

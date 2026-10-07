@@ -1,7 +1,7 @@
 # 决策庭（DecisionCourt）API 接口设计文档
 
 > **版本**：v0.9.1
-> **状态**：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点；v0.6 增补 `GET /api/v1/courtrooms/:uuid/belief-diffs` + WS `belief.diff` / `belief.convergence` 事件；v0.7 整合文档结构 + ADR 提炼；v0.8 新增 `GET /metrics` 端点（白盒化）+ HTTP `X-Request-ID` 头 / `trace_id` 字段（端到端 trace 串联）；v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭"——新增 `GET /api/v1/courtrooms/:uuid/memory` 端点 / `reopen_trial` action / `verdict → evidence` 状态机边 / WS `ping/pong` 心跳 / WebSocket 自动重连退避（详情见 [`archive/refresh-and-reopen-fix-v0.8.3.md`](./archive/refresh-and-reopen-fix-v0.8.3.md)）；**v0.9 新增 Idempotency-Key header 端到端支持（ADR 0012 PR2）+ per-call LLM timeout 90s（ADR 0013）+ 启动扫描恢复 active session（ADR 0012 PR5）+ 用户级 429 Trial 限流（ADR 0014）**。
+> **状态**：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点；v0.6 增补 `GET /api/v1/courtrooms/:uuid/belief-diffs` + WS `belief.diff` / `belief.convergence` 事件；v0.7 整合文档结构 + ADR 提炼；v0.8 新增 `GET /metrics` 端点（白盒化）+ HTTP `X-Request-ID` 头 / `trace_id` 字段（端到端 trace 串联）；v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭"——新增 `GET /api/v1/courtrooms/:uuid/memory` 端点 / `reopen_trial` action / `verdict → evidence` 状态机边 / WS `ping/pong` 心跳 / WebSocket 自动重连退避（详情见 [`archive/refresh-and-reopen-fix-v0.8.3.md`](./archive/refresh-and-reopen-fix-v0.8.3.md)）；**v0.9 新增 Idempotency-Key header 端到端支持（ADR 0012 PR2）+ per-call LLM timeout 90s（ADR 0013）+ 启动扫描恢复 active session（ADR 0012 PR5）+ 用户级 429 Trial 限流（ADR 0014）**；**v2.11 新增 `GET /api/v1/courtrooms/:uuid/events`（decision_events 读端点，deferred D12）+ 统一四层限流响应契约 §5.2（per-IP 层补 `Retry-After`，deferred D11；L1/L0 阈值可配，deferred D10）**。
 > **目标**：定义决策庭前后端交互的 RESTful API 和 WebSocket 事件协议。
 > **设计演进（已归档）**：[`docs/archive/memory-a2a-redesign-v1.2.md`](./archive/memory-a2a-redesign-v1.2.md)
 > **实施记录**：[`archive/refresh-and-reopen-fix-v0.8.3.md`](./archive/refresh-and-reopen-fix-v0.8.3.md)（v0.8.3 5 个根因 + 修复方案 + 测试矩阵）
@@ -663,6 +663,63 @@ POST /api/v1/courtrooms/:session_uuid/events
 **降级策略**：recorder 写入失败（DB down / 超时）→ 仍返 200 + `recorded: false`，仅 `slog.Warn`。**埋点是 observability，不是 critical path**。
 
 **实现位置**：`backend/internal/api/handler_events.go::PostFrontendEvent`
+
+#### 3.5.5 事件查询（v2.11 / deferred D12）
+
+```http
+GET /api/v1/courtrooms/:session_uuid/events
+```
+
+**用途**：`decision_events` 的**读**端点。此前该表只有写路径，文档里说的"跨域查询能力"只以 SQL 形式存在于 [db-design §9.6](./decisioncourt-db-design.md)，需要人工连库执行；本端点把读链路补上。
+
+**Query 参数**：
+
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `limit` | ✗ | 1–500，默认 100 |
+| `offset` | ✗ | ≥ 0，默认 0 |
+| `event_type_prefix` | ✗ | 事件类型前缀，≤ 50 字符。常用 `fe.`（前端埋点）/ `span.`（后端业务 span）/ `state_`（状态机迁移） |
+
+**响应**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "events": [
+      {
+        "id": "uuid",
+        "session_uuid": "abc-123",
+        "request_id": "7f3a-bc12",
+        "event_type": "fe.trial_started",
+        "agent_type": "",
+        "payload": { "phase": "opening" },
+        "duration_ms": 0,
+        "status": "ok",
+        "error_msg": "",
+        "created_at": "2026-10-01T10:00:00Z"
+      }
+    ],
+    "count": 1,
+    "limit": 100,
+    "offset": 0,
+    "has_more": false
+  }
+}
+```
+
+排序为 `created_at ASC, id ASC`（与 db-design §9.4 的查询示例口径一致）。`has_more` 由"多取 1 行"判断，不额外做 `COUNT`。
+
+**错误码**：
+
+- 400 `{"code":1001,...}`：`limit` 非 1–500 整数 / `offset` 为负或非整数 / `event_type_prefix` 超长
+- 403 `{"code":1403,...}`：非 session owner（跨 session 越权读取直接拒绝）
+- 404 `{"code":1002,...}`：session 不存在
+- 500 `{"code":1500,...}`：查询失败
+
+**边界（deferred D12 明确不做）**：不引入 BI 平台、不做实时看板、不加跨 session 的全量分析端点（越权风险 + 非当前需求）、不在此项里做漏斗聚合。
+
+**实现位置**：`backend/internal/api/handler_events_list.go::ListDecisionEvents`
 
 ---
 
