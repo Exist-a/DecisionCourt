@@ -219,6 +219,9 @@ Breaker（整块）/ FileLoggerPrompts / FileLoggerPromptsMaxBytes
 
 `docker-compose.dev.yml` 的 backend 服务只显式传 `AGENT_GATEWAY_LLM_TIMEOUT_SEC`，其余 gateway 变量依赖根 `.env`；而根 `.env` **没有** `AGENT_GATEWAY_ENABLED`，其 Go 默认值为 `false`。因此**默认 `docker compose -f docker-compose.dev.yml up -d` 起来时 Agent Gateway 整体是关闭的**（`SMART_COMPRESSION=true` 等配置不起作用）。本次验证是通过临时容器注入 env 绕过的，未修改 `.env`（AGENTS.md §8 红线）。是否在 compose 里补默认值由用户决定。
 
+> **状态更新（2026-10-08，v2.11 D14）**：dev compose 侧已修（commit `9db2e0a` 在 `docker-compose.dev.yml` 显式写 `AGENT_GATEWAY_ENABLED: "true"`）。**根因仍未解决**：代码默认值还是 `false`，所以直接跑二进制（`go run ./cmd/server`、非 compose 部署）依旧会静默禁用网关。v2.11 采取"保留默认 + 启动告警"方案——`config.GatewayDisabledWarning` 在"网关关着且 `AGENT_GATEWAY_ENABLED` 未设置"时打 WARN + 染色 stderr banner，把静默失效变成可见；显式配 `false` 的部署保持安静。没有把默认值改成 `true`（避免行为变更，且保留用户关闭网关的能力）。
+
+
 ### 3.7 问题 C 的 in-situ 复验状态（2026-09-22 更新）
 
 问题 C 是**只有实跑才看得见**的缺陷（单元测试全绿也漏），因此其修复也必须在真实链路复验。原计划的复验方式：开 gateway + 小 budget 跑一场，确认 FileLogger 里 `compression_before_count=1` 的 `react_think` 调用 `after_length` 不再等于 1500、而是接近 `before_length`。

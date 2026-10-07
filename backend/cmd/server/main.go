@@ -131,6 +131,18 @@ func main() {
 	})))
 	observability.SetDefault(slog.Default())
 
+	// v2.11 (deferred D14): 让"网关静默禁用"变得可见。
+	// 代码默认 false，但 compose / .env.example 默认 true——直接跑二进制时变量
+	// 缺失会静默丢掉审计/预算/压缩/缓存/熔断，且没有任何提示。这里只对"没配"
+	// 的部署告警；显式配成 false 的部署保持安静（那是决策，不是故障）。
+	if warning := config.GatewayDisabledWarning(
+		config.AppConfig.AgentGateway.Enabled,
+		config.AgentGatewayEnabledEnvSet(),
+	); warning != "" {
+		slog.Warn("agent gateway disabled by default", "detail", warning)
+		fmt.Fprintln(os.Stderr, "\x1b[33m[WARN] "+warning+"\x1b[0m")
+	}
+
 	// 白盒化：进程级 metrics 实例（线程安全的内存实现）。
 	metrics := observability.NewMetrics()
 

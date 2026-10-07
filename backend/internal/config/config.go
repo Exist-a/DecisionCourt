@@ -359,3 +359,30 @@ func ValidateAppEnv() error {
 		return fmt.Errorf("invalid APP_ENV=%q (must be dev|staging|prod)", AppConfig.AppEnv)
 	}
 }
+
+// AgentGatewayEnabledEnvSet 报告 AGENT_GATEWAY_ENABLED 是否被显式设置（非空）。
+//
+// v2.11 (deferred D14): 代码默认 false，而 compose / .env.example 默认 true。
+// 直接跑二进制（`go run ./cmd/server`、非 compose 部署）时变量缺失 → 网关
+// 静默不启用，LLM 审计落库 / 预算 / 压缩 / 缓存 / 熔断全部失效且没有任何提示。
+//
+// 用"变量是否显式设置"区分两种关法：
+//   - 没配（返回 false）→ 默认值静默生效 → 该告警
+//   - 显式配 false（返回 true）→ 运维决策 → 不打扰
+func AgentGatewayEnabledEnvSet() bool {
+	v, ok := os.LookupEnv("AGENT_GATEWAY_ENABLED")
+	return ok && strings.TrimSpace(v) != ""
+}
+
+// GatewayDisabledWarning 返回启动告警文案；不需要告警时返回空字符串。
+//
+// 只在"网关关着，而且不是用户显式关的"时告警——即默认值静默生效的场景。
+// 把静默失效变成可见：否则运行者会以为审计 / 预算 / 压缩 / 缓存 / 熔断都在工作。
+func GatewayDisabledWarning(enabled, envExplicitlySet bool) string {
+	if enabled || envExplicitlySet {
+		return ""
+	}
+	return "AGENT_GATEWAY_ENABLED 未设置，Agent Gateway 按默认值(false)禁用：" +
+		"LLM 审计落库 / token 预算 / prompt 压缩 / 响应缓存 / 熔断降级全部不生效。" +
+		"compose 与 .env.example 默认开启；直接运行二进制请显式设置 AGENT_GATEWAY_ENABLED=true。"
+}
