@@ -108,9 +108,29 @@ func buildGatewayConfig(a config.AgentGatewayConfig) agent_gateway.GatewayConfig
 	}
 }
 
+// buildSessionRateLimitConfig 把 config 的 L1 per-session 限流阈值映射成
+// middleware.SessionConfig。阈值来自 env（ADR 0027 §4.3），默认 2 rps / burst 5。
+//
+// 与 buildGatewayConfig 同样的理由抽成函数：字段对字段的手工拷贝漏一个不会
+// 编译报错，只会静默用错默认值（D10 的成因就是这类"提议了可配但没接线"）。
+// cmd/server/ratelimit_config_mapping_test.go 用反射断言每个阈值字段都被搬过来。
+func buildSessionRateLimitConfig(c config.Config, onReject func()) middleware.SessionConfig {
+	return middleware.SessionConfig{
+		RPS:      c.SessionActionRPS,
+		Burst:    c.SessionActionBurst,
+		OnReject: onReject,
+	}
+}
+
+// concurrencyLimiterMax 返回 L0 全局并发 trial 上限（ADR 0027 §决策 3）。
+// 非正数由 courtroom.NewConcurrencyLimiter 兜底为 5；这里原样透传，
+// 让映射测试能断言"config → 上限"这一段没有漏接。
+func concurrencyLimiterMax(c config.Config) int {
+	return c.MaxConcurrentTrials
+}
+
 func main() {
 	config.Load()
-
 	// v2.4 (P1-7) APP_ENV fail-fast: dev/staging/prod 之外的拼写错误 → 立即退出。
 	// 防止 prod 部署误配 APP_ENV=Production / production 等 silent miss。
 	if err := config.ValidateAppEnv(); err != nil {
@@ -278,9 +298,10 @@ func main() {
 	// 业务级 span 自动归集指标 + 落库到 decision_events。
 	courtroomSvc.WithObservability(metrics, eventRecorder)
 	// v0.10.20 (ADR 0027 §决策 3) L0 全局并发 trial 信号量。
-	// max=5 是阿里云 ECS 2C2G 实测安全值 (5 trial × ~400MB/trial = 2GB)。
-	// 经用户 2026-07-12 确认。生产环境通过 .env RATE_LIMIT_MAX_CONCURRENT_TRIALS 调。
-	courtroomSvc.WithConcurrencyLimiter(courtroom.NewConcurrencyLimiter(5))
+	// max 默认 5 是阿里云 ECS 2C2G 实测安全值 (5 trial × ~400MB/trial = 2GB)，
+	// 经用户 2026-07-12 确认。v2.11 (deferred D10) 起改为可配：
+	// RATE_LIMIT_MAX_CONCURRENT_TRIALS 覆盖，非正数仍由 limiter 兜底为 5。
+	courtroomSvc.WithConcurrencyLimiter(courtroom.NewConcurrencyLimiter(concurrencyLimiterMax(config.AppConfig)))
 
 	handler := api.NewHandler(courtroomSvc, courtroomSvc.InvestigationService())
 	// v0.8 白盒化：Handler 暴露 metrics 实例，让 /metrics 端点能查询 snapshot。
@@ -366,15 +387,15 @@ func main() {
 	authedGroup.Use(middleware.RateLimit(middleware.DefaultConfig))
 	handler.LLMRateLimit = middleware.RateLimit(middleware.LLMConfig)
 	// v0.10.20 (ADR 0027 §决策 3) L1 Per-Session action 限流: 按 session 维度细粒度限流。
-	// RPS=2 / Burst=5 (经用户 2026-07-12 确认) — 防 F5 狂点把正常用户拖慢。
+	// RPS/Burst 默认 2/5 (经用户 2026-07-12 确认)，v2.11 (deferred D10) 起可经
+	// RATE_LIMIT_SESSION_ACTION_RPS / _BURST 覆盖 —— 防 F5 狂点把正常用户拖慢。
 	// OnReject 回调: 拒绝时记录 session_rate_limit_rejected_total metric, 给 Grafana dashboard。
-	handler.SessionRateLimit = middleware.SessionRateLimit(middleware.SessionConfig{
-		RPS:   middleware.DefaultSessionConfig.RPS,
-		Burst: middleware.DefaultSessionConfig.Burst,
-		OnReject: func() {
+	handler.SessionRateLimit = middleware.SessionRateLimit(buildSessionRateLimitConfig(
+		config.AppConfig,
+		func() {
 			metrics.IncCounter(observability.MetricSessionRateLimitRejectedTotal, nil)
 		},
-	})
+	))
 	authedGroup.Use(auth.Middleware(config.AppConfig.JWTSecret))
 	// v2.5 (P1-2) CSRF Token 中间件 (double-submit cookie 模式)。
 	// 必须在 auth 之后挂（需从 ctx 取 viewer_id 签 token）。

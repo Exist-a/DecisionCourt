@@ -1484,6 +1484,16 @@ WebSocket 心跳。前端每 25s 发一次 `{type:"ping"}`，服务端立即回
 
 退避秒数按令牌桶估算：`ceil((1 - tokens) / rps)`，下限 1 秒（返回 0 会鼓励立即重试，反而加重限流）。
 
+**阈值可配（v2.11）**：L1 / L0 的阈值不再硬编码，可经 `.env` 调整而无需重发版本——
+
+| env | 含义 | 默认（与历史硬编码一致） |
+|---|---|---|
+| `RATE_LIMIT_SESSION_ACTION_RPS` | L1 令牌桶 refill rate | `2` |
+| `RATE_LIMIT_SESSION_ACTION_BURST` | L1 令牌桶容量（F5 狂点上限） | `5` |
+| `RATE_LIMIT_MAX_CONCURRENT_TRIALS` | L0 全局并发 trial 上限 | `5` |
+
+改配置需重启（不做运行时热更新，与现有部署模型一致）。
+
 ---
 
 ## 6. 幂等性设计

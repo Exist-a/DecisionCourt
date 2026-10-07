@@ -101,11 +101,26 @@ type Config struct {
 	CookieDomain    string        `mapstructure:"COOKIE_DOMAIN"`
 	AllowedOrigins  []string      `mapstructure:"ALLOWED_ORIGINS"`
 
-	// === v0.9 用户限流 (ADR 0014) ===
+	// v0.9 用户限流 (ADR 0014) ===
 	// UserTrialLimit 每用户每天（UTC）最多 StartTrial 次数。
 	//   - 默认 5（测试阶段保守值;生产可调到 20）
 	//   - 0 → 禁用限流（紧急回滚用）
 	UserTrialLimit int `mapstructure:"USER_TRIAL_LIMIT"`
+
+	// === v2.11 (deferred D10) 四层限流的可配阈值 (ADR 0027 §4.3) ===
+	// ADR 0027 提议这三个阈值可配，但实现时漏掉接线——L0 上限硬编码在
+	// cmd/server/main.go，L1 用代码内置的 middleware.DefaultSessionConfig。
+	// 结果：运维只能改代码重发才能调参（限流误伤真实用户时无法快速放宽）。
+	//
+	// 默认值刻意与历史硬编码完全一致（5 / 2 / 5）——本次只做"可配"，不改行为。
+	//   - SessionActionRPS:    L1 per-session action 令牌桶 refill rate
+	//   - SessionActionBurst:  L1 per-session action 令牌桶容量（F5 狂点上限）
+	//   - MaxConcurrentTrials: L0 全局并发 trial 信号量上限
+	//
+	// 改配置需重启（不做运行时热更新，与现有部署模型一致）。
+	SessionActionRPS    float64 `mapstructure:"RATE_LIMIT_SESSION_ACTION_RPS"`
+	SessionActionBurst  int     `mapstructure:"RATE_LIMIT_SESSION_ACTION_BURST"`
+	MaxConcurrentTrials int     `mapstructure:"RATE_LIMIT_MAX_CONCURRENT_TRIALS"`
 
 	// AppEnv 标识当前部署环境: "dev" / "staging" / "prod"
 	// 默认 "dev"（本地开发模式 fall-back）;生产部署必须显式设 "prod"，
@@ -178,6 +193,12 @@ func Load() {
 
 		// v0.9 用户限流 (ADR 0014): 0 → 禁用限流
 		UserTrialLimit: envOrDefaultInt("USER_TRIAL_LIMIT", 5),
+
+		// v2.11 (deferred D10): 四层限流阈值可配 (ADR 0027 §4.3)。
+		// 默认值 = 历史硬编码值，接线后行为不变（详见 Config 字段注释）。
+		SessionActionRPS:    envOrDefaultFloat("RATE_LIMIT_SESSION_ACTION_RPS", 2),
+		SessionActionBurst:  envOrDefaultInt("RATE_LIMIT_SESSION_ACTION_BURST", 5),
+		MaxConcurrentTrials: envOrDefaultInt("RATE_LIMIT_MAX_CONCURRENT_TRIALS", 5),
 
 		// v2.4 (P1-7) APP_ENV: 默认 "dev"（本地开发模式），生产部署必须显式 APP_ENV=prod，
 		// 否则 main.go 启动 fail-fast（拦截 dev-style localhost / COOKIE_SECURE=false 等）。
@@ -285,6 +306,8 @@ var diagnosticEnvKeys = []string{
 	"SEARCH_PROVIDER", "TAVILY_API_KEY", "BOCHA_API_KEY",
 	"JWT_SECRET", "JWT_EXPIRY_HOURS", "COOKIE_SECURE", "COOKIE_SAME_SITE", "COOKIE_DOMAIN",
 	"ALLOWED_ORIGINS", "USER_TRIAL_LIMIT",
+	"RATE_LIMIT_SESSION_ACTION_RPS", "RATE_LIMIT_SESSION_ACTION_BURST",
+	"RATE_LIMIT_MAX_CONCURRENT_TRIALS",
 	"AGENT_GATEWAY_ENABLED", "AGENT_GATEWAY_PROMPT_COMPRESSION", "AGENT_GATEWAY_TOKEN_BUDGET",
 	"AGENT_GATEWAY_THROTTLING", "AGENT_GATEWAY_FALLBACK", "AGENT_GATEWAY_FILE_LOGGER",
 	"AGENT_GATEWAY_BUDGET_PER_SESSION", "AGENT_GATEWAY_COMPRESSION_THRESHOLD",
