@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -9,6 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 )
 
 func TestRateLimit_AllowsBelowThreshold(t *testing.T) {
@@ -42,6 +46,63 @@ func TestRateLimit_RejectsAboveThreshold(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, 429, w.Code, "expected 429 after burst exhausted")
+}
+
+// v2.11 (deferred D11): per-IP 层拒绝必须带 Retry-After 响应头 + 正整数的
+// retry_after_seconds，让被限流的客户端有明确退避依据。此前该层只有
+// 429 + code 1429，与已有 Retry-After 的试用配额层契约不一致。
+func TestRateLimit_429HasRetryAfterHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(RateLimit(Config{RPS: 1, Burst: 1, By: "ip"}))
+	r.GET("/x", func(c *gin.Context) { c.String(200, "ok") })
+
+	// burst=1 → 第 1 个 200，第 2 个 429
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/x", nil))
+
+	require.Equal(t, 429, w.Code, "expected 429 after burst exhausted")
+
+	hdr := w.Header().Get("Retry-After")
+	require.NotEmpty(t, hdr, "429 必须带 Retry-After 头")
+	secs, err := strconv.Atoi(hdr)
+	require.NoError(t, err, "Retry-After 必须是整数秒, got %q", hdr)
+	assert.Greater(t, secs, 0, "Retry-After 必须是正整数")
+
+	// 响应体同样暴露 retry_after_seconds，与 header 一致；code 保持 1429。
+	var body struct {
+		Code              int `json:"code"`
+		RetryAfterSeconds int `json:"retry_after_seconds"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 1429, body.Code, "拒绝码必须保持 1429(前端 ErrorBus 依赖)")
+	assert.Equal(t, secs, body.RetryAfterSeconds)
+}
+
+// TestRetryAfterSeconds_EstimatesFromBucket 表驱动覆盖估算函数：
+// 等待秒数按"缺口 token / refill rate"向上取整，且下限为 1s。
+func TestRetryAfterSeconds_EstimatesFromBucket(t *testing.T) {
+	cases := []struct {
+		name    string
+		rps     float64
+		burst   int
+		wantMin int
+	}{
+		{"0.1 rps 缺口 1 token => 至少 10s", 0.1, 1, 10},
+		{"1 rps => 至少 1s", 1, 1, 1},
+		{"100 rps 也至少 1s(不鼓励立即重试)", 100, 1, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			lim := rate.NewLimiter(rate.Limit(c.rps), c.burst)
+			for lim.Allow() { // 耗尽桶
+			}
+			assert.GreaterOrEqual(t, retryAfterSeconds(lim), c.wantMin)
+		})
+	}
+
+	assert.Equal(t, 1, retryAfterSeconds(nil), "nil limiter 兜底为 1s")
 }
 
 func TestRateLimit_RecoversAfterRefill(t *testing.T) {

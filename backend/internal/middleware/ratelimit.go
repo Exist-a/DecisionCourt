@@ -12,7 +12,9 @@
 package middleware
 
 import (
+	"math"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -61,6 +63,33 @@ type rateLimiter struct {
 	mu      sync.Mutex
 	entries map[string]*limiterEntry
 	cfg     Config
+}
+
+// retryAfterSeconds 估算"还要等几秒才攒够 1 个 token"。
+//
+// 被拒时桶内余量必然 < 1，缺口除以 refill rate（RPS）向上取整即等待时间。
+// 至少返回 1：返回 0 会鼓励客户端立刻重试，反而加重限流。
+//
+// 调用方（RateLimit 中间件）把它写进 `Retry-After` 响应头 + 响应体，
+// 让被限流的客户端有明确退避依据 —— 与试用配额层（handler.StartTrial）
+// 的契约对齐。v2.11 (deferred D11)。
+func retryAfterSeconds(lim *rate.Limiter) int {
+	if lim == nil {
+		return 1
+	}
+	rps := float64(lim.Limit())
+	if rps <= 0 {
+		return 1
+	}
+	deficit := 1.0 - lim.Tokens()
+	if deficit <= 0 {
+		return 1
+	}
+	secs := int(math.Ceil(deficit / rps))
+	if secs < 1 {
+		secs = 1
+	}
+	return secs
 }
 
 func newRateLimiter(cfg Config) *rateLimiter {
@@ -128,9 +157,15 @@ func RateLimit(cfg Config) gin.HandlerFunc {
 		key := keyFn(c)
 		lim := rl.get(key)
 		if !lim.Allow() {
+			// v2.11 (deferred D11): 补 Retry-After —— 之前只有 429 + code 1429，
+			// 客户端拿不到退避依据（试用配额层早就有，两层契约因此不一致）。
+			// code / message 保持不变（前端 ErrorBus 依赖 1429）。
+			retryAfter := retryAfterSeconds(lim)
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"code":    1429,
-				"message": "rate limit exceeded, please slow down",
+				"code":                1429,
+				"message":             "rate limit exceeded, please slow down",
+				"retry_after_seconds": retryAfter,
 			})
 			return
 		}

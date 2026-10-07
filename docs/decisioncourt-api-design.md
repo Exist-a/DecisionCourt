@@ -1467,6 +1467,23 @@ WebSocket 心跳。前端每 25s 发一次 `{type:"ping"}`，服务端立即回
 完整错误码清单见 [ADR 0024 §2.1](./adr/0024-silent-error-fix-pr1.md)。
 新增错误码时必须同时更新 ADR 0024 + 前后端常量。
 
+### 5.2 限流响应契约（v2.11 统一）
+
+四层限流（详见 [ADR 0027](./adr/0027-rate-limit-defense-in-depth.md)）中，两层会直接返回 HTTP 429：
+
+| 层 | 触发点 | 业务码 | 响应头 | 响应体退避字段 |
+|---|---|---|---|---|
+| L0 全局并发 trial | `service.withCancel` | 走 WS `user_facing_error`（非 HTTP 429） | — | — |
+| L1 per-session action | `middleware.SessionRateLimit` | `1427` | 无 | `user_facing_error.retry_after_seconds` |
+| L2 per-user trial 配额 | `handler.StartTrial` | 无业务码（`error: rate_limit_exceeded`） | `Retry-After` | `retry_after_seconds` / `resets_at` |
+| L3 per-IP | `middleware.RateLimit` | `1429` | `Retry-After` | `retry_after_seconds` |
+
+**v2.11 变更**：L3 per-IP 层补齐 `Retry-After` 响应头 + `retry_after_seconds` 响应体字段。
+此前该层只有 `429` + `code: 1429`，被限流的客户端拿不到退避依据（L2 早就有了，两层契约因此不一致）。
+**`code: 1429` 与 `message` 保持不变**——前端 `ErrorBus` 依赖该码做分类。
+
+退避秒数按令牌桶估算：`ceil((1 - tokens) / rps)`，下限 1 秒（返回 0 会鼓励立即重试，反而加重限流）。
+
 ---
 
 ## 6. 幂等性设计
