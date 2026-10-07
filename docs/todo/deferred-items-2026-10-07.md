@@ -48,6 +48,28 @@
 
 **未做（按各节「不做什么」边界）**：D12 漏斗聚合端点（可选）、D13 全部（待授权）、D9 历史回填、D7 定时 GC / TTL 过期、D8 多级退避调参。
 
+## 本轮新发现（D15 候选，未实现）
+
+实现 D10 时发现：**prod compose 用显式 `environment:` 列表而没有 `env_file`**（`docker-compose.yml`），
+所以只在 `.env` 里写的变量**进不了后端容器**。这正是 D10 要修的同一类静默失效，只是换了一层。
+
+- 已修：D10 的三个 `RATE_LIMIT_*` 已补进 `docker-compose.yml`（否则 D10 在 compose 部署下等于没做）。
+- **仍然缺失（未修，超出本批范围）**：gateway 的一批子开关（`AGENT_GATEWAY_SMART_COMPRESSION` /
+  `_PROMPT_COMPRESSION` / `_SCORE_THRESHOLD` / `_KEEP_RECENT_FORCED_N` / `_SUMMARY_INSERT_THRESHOLD` /
+  `_SMART_COMPRESSION_ABSTRACTIVE_SUMMARY` / `_TOKEN_BUDGET` / `_THROTTLING` / `_THROTTLING_THRESHOLD` /
+  `_FALLBACK` / `_BUDGET_PER_SESSION` / `_REJECT_WHEN_EXHAUSTED` / `_BUDGET_SLIDING_WINDOW_SEC` /
+  `_FILE_LOGGER_PROMPTS` / `_FILE_LOGGER_PROMPTS_MAX_BYTES`）+ `IDEMPOTENCY_TTL_HOURS` /
+  `PROMPTLAB_YAML_PATH` 都不在 prod compose 的显式列表里。
+
+**当前影响有限**：`AGENT_GATEWAY_ENABLED=true` 且没有任何子开关被显式设置时会走 `isChildDefault()`
+（子能力全开），恰好与意图一致；所以表现为"**只能开、不能在 prod 关掉某个子能力**"，而不是"功能不生效"。
+**触发条件**：需要在不改 compose 的前提下用 `.env` 调 gateway 子能力（例如线上想单独关掉
+`SMART_COMPRESSION`）；或将来重新部署到云环境（ECS 已于 2026-08-05 终止，故现在不紧迫）。
+
+**修复方式**（与 D10 同构，工作量极小）：把上述变量按 `${VAR:-默认值}` 形式补进
+`docker-compose.yml` 的 backend `environment:`，并加一条测试/脚本比对"config 声明的 env 清单"
+与"compose 传递的 env 清单"防再次漏接。
+
 ---
 
 ## 分阶段计划

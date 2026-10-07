@@ -115,6 +115,13 @@ services:
       AGENT_GATEWAY_LOG_DIR: ${AGENT_GATEWAY_LOG_DIR:-logs}
       # v0.9 (ADR 0014): 用户级 trial 限流(0 禁用)
       USER_TRIAL_LIMIT: ${USER_TRIAL_LIMIT:-5}
+      # v2.11 (deferred D10): 四层限流阈值可配。
+      # ⚠️ 必须在这里列出来 —— prod compose 用显式 environment 列表而**没有** env_file，
+      # 所以只在 .env 里写 RATE_LIMIT_* 是进不了容器的（"配置看起来存在、实际不生效"
+      # 正是 D10 要修的那类静默失效）。默认值 = 历史硬编码值，行为不变。
+      RATE_LIMIT_SESSION_ACTION_RPS: ${RATE_LIMIT_SESSION_ACTION_RPS:-2}
+      RATE_LIMIT_SESSION_ACTION_BURST: ${RATE_LIMIT_SESSION_ACTION_BURST:-5}
+      RATE_LIMIT_MAX_CONCURRENT_TRIALS: ${RATE_LIMIT_MAX_CONCURRENT_TRIALS:-5}
       # v0.8.3 决定：默认 Bocha(必填 BOCHA_API_KEY)
       SEARCH_PROVIDER: ${SEARCH_PROVIDER:-bocha}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
