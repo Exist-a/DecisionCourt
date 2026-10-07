@@ -240,15 +240,22 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 	//   - 每次 outer op(可能含 retryer 内部多次 inner 调用)算 breaker 的 1 个请求
 	//   - 这样 breaker 看到的是"业务视角"的失败率(每 op 1 次),而不是 inner 物理请求数
 	//   - retryer 内部仍可重试,但 breaker 只在 outer op 整体失败时计数 + 1
+	//
+	// v2.11 (deferred D8): retryCount 由 DoContext 的返回值携带（闭包内捕获）。
+	// 之前是"调完再问 retryer.LastCount()"—— 共享单例上的普通字段，并发下会
+	// 互相覆盖；而且在 breaker 走 fallback（op 根本没被调用）时读到的是别次
+	// 调用的陈旧值。gobreaker.Execute 是同步的，闭包写入不会被并发覆盖。
+	var retryCount int
 	op := func(ctx context.Context) (string, llm.Usage, error) {
 		if g.retryer != nil {
 			var c string
 			var u llm.Usage
-			retryErr := g.retryer.DoContext(ctx, func() error {
+			n, retryErr := g.retryer.DoContext(ctx, func() error {
 				var e error
 				c, u, e = g.inner.Complete(ctx, systemPrompt, messages, opts)
 				return e
 			})
+			retryCount = n
 			return c, u, retryErr
 		}
 		return g.inner.Complete(ctx, systemPrompt, messages, opts)
@@ -261,10 +268,6 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 		}{SystemPrompt: systemPrompt, Messages: messages})
 	} else {
 		content, usage, err = op(ctx)
-	}
-	retryCount := 0
-	if g.retryer != nil {
-		retryCount = g.retryer.LastCount()
 	}
 	latency := time.Since(start)
 

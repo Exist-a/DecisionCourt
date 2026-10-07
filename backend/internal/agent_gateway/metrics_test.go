@@ -246,12 +246,15 @@ func TestMetrics_Retryer(t *testing.T) {
 	r := NewRetryerWithBackoff([]time.Duration{1 * time.Millisecond, 2 * time.Millisecond}, m)
 
 	calls := 0
-	_ = r.Do(func() error {
+	retries, _ := r.Do(func() error {
 		calls++
 		return errors.New("fail")
 	})
 	if calls != 3 {
 		t.Errorf("expected 3 calls (1 initial + 2 retries), got %d", calls)
+	}
+	if retries != 2 {
+		t.Errorf("retries: got %d want 2", retries)
 	}
 
 	snap := m.Snapshot()

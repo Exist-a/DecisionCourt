@@ -168,6 +168,54 @@ func keywordFallback(prompt string) (string, error) {
 
 ---
 
+## 状态更新（2026-10-08，v2.11 D8）：重试器重写
+
+背景里"已有退避重试"的那个实现有两个问题，本 ADR 交付时没暴露（单副本、低并发），v2.11 一并修掉：
+
+**1. 并发不安全（数据竞争）**
+
+`Retryer` 是共享单例，重试次数存在普通 `int` 字段 `lastCount` 上，由 `LastCount()` 在调用**之后**读取。
+并发调用下既存在数据竞争，又会把别次调用的重试次数读成自己的（`gateway.go` 里就是这样用的）。
+
+**修法**：`Do` / `DoContext` 改为返回 `(retries, err)`，删掉 `lastCount` 与 `LastCount()`。
+从根上消除共享状态，而不是给字段加锁；`Gateway.Complete` 在 `op` 闭包里捕获返回值
+（`gobreaker.Execute` 同步执行，闭包写入无并发问题），顺带修掉"breaker 走 fallback 时
+读到陈旧计数"的问题。
+
+**2. 任何错误都重试（可能放大资损）**
+
+原策略对任何非 nil 错误一律重试，超时、鉴权失败、参数错误一视同仁。现在引入分类（`IsRetryable`）：
+
+| 类别 | 判定 | 例子 |
+|---|---|---|
+| 不可重试 | 用户/上层取消 | `context.Canceled` |
+| 不可重试 | 鉴权 / 参数等永久性 4xx | 400 / 401 / 403 / 404 / 409 / 422 |
+| 可重试 | 超时 / 连接中断 | `context.DeadlineExceeded`、`net.Error` 超时、`io.EOF` |
+| 可重试 | 限流 / 服务端错误 | 408 / 425 / 429 / 5xx |
+| **兜底** | **无法识别 → 可重试** | 未分类错误 |
+
+兜底刻意选"可重试"：D8 之前是"任何错误都重试"，若把未知错误改成不可重试，
+会把未分类的瞬时故障变成硬失败（比原缺陷更糟）。本次只收紧**确信是永久性**的那几类。
+
+为了让状态码分类真正生效，`llm` 包新增 `APIStatusError`（一行窄接口 `HTTPStatusCode() int`），
+`Complete` / `StreamComplete` 包装上游 SDK 错误时带上状态码 —— 这样 `agent_gateway` 不必
+import 上游 SDK。**流式依然不重试**（重试会破坏 chunk 连续性），此决策不变。
+
+**3. 退避加 jitter + 上限**
+
+`backoffDuration` 取 `[d/2, d]` 的随机值（equal jitter，避免多个并发调用同时失败后
+在同一毫秒一起重试），并统一截断到 `maxBackoffCap = 5s`。
+
+**验证**：新增并发状态串扰测试（32 goroutine，断言各自拿到自己的重试次数）+ 表驱动分类测试
+（覆盖 4xx/5xx 边界、包装穿透、net 超时、io.EOF）+ 退避 jitter/上限测试 + 结构护栏
+（`Retryer` 不得再出现可变计数字段 / `LastCount` 方法）。
+
+⚠️ 环境限制：本机 Windows 的 race runtime 起不来（`go test -race` 报
+`exit status 0xc0000139`，entry point not found；连 `internal/util` 这种无关包也复现），
+所以 `-race` 由 CI（`.github/workflows/test.yml` 的 `go test -count=1 -race ./...`）把关。
+
+---
+
 ## 实施顺序
 
 ```

@@ -124,7 +124,9 @@ func (c *openAIClient) Complete(
 	latency := time.Since(start)
 
 	if err != nil {
-		return "", Usage{}, fmt.Errorf("llm completion failed: %w", err)
+		// v2.11 (deferred D8): 带上 HTTP 状态码，让 agent_gateway 的重试分类
+		// 能区分"限流/服务端错误（值得重试）"与"鉴权/参数错误（重试无益）"。
+		return "", Usage{}, wrapAPIError(fmt.Errorf("llm completion failed: %w", err))
 	}
 
 	if len(resp.Choices) == 0 {
@@ -195,7 +197,9 @@ func (c *openAIClient) StreamComplete(
 			MaxTokens:   opts.MaxTokens,
 		})
 		if err != nil {
-			out <- StreamChunk{Done: true, Err: fmt.Errorf("open stream: %w", err)}
+			// v2.11 (deferred D8): 同样带上状态码（流式不重试，但错误分类
+			// 与日志/告警口径保持一致）。
+			out <- StreamChunk{Done: true, Err: wrapAPIError(fmt.Errorf("open stream: %w", err))}
 			return
 		}
 
