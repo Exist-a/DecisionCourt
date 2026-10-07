@@ -69,9 +69,32 @@ func (s *GORMStore) Insert(r Record) error {
 	}
 
 	// 3. Insert
-	row := model.LLMCall{
+	if err := model.DB.Create(buildLLMCallRowPtr(session.ID, r)).Error; err != nil {
+		// D2-LLM-FK: insert 失败 (未来加硬 FK 约束时此处会触发), 写 audit
+		s.recordFKViolation(r, "insert_failed", err.Error())
+		return err
+	}
+	return nil
+}
+
+// buildLLMCallRow 把 Recorder 的 Record 映射成 llm_calls 行。
+//
+// 抽成独立函数是为了能在无 DB 的情况下断言"每个审计字段都被写入"（见
+// gorm_store_test.go 的反射护栏）：这个映射是字段对字段的手工拷贝，漏一个
+// 不会编译报错，只会让对应列恒为 NULL/DEFAULT。D9 就是这么发生的 ——
+// agent_id 列建了、映射时被跳过，于是长期恒为 NULL 而无人发现。
+//
+// sessionID 是 court_sessions.id（DB 主键），由调用方 lookup 得到，不是
+// Record 里的业务 key SessionUUID。
+func buildLLMCallRow(sessionID uuid.UUID, r Record) model.LLMCall {
+	return model.LLMCall{
 		ID:               uuid.New(),
-		SessionID:        session.ID,
+		SessionID:        sessionID,
+		// v2.11 (deferred D9): 补写 AgentType + RequestID。
+		// 此前只有 AgentID 列（且从不填充）→ DB 层无法按链路/Agent 关联审计，
+		// 只能翻文件日志或 decision_events 表。
+		AgentType:        r.AgentType,
+		RequestID:        r.RequestID,
 		TaskType:         r.TaskType,
 		Model:            r.Model,
 		PromptTokens:     r.PromptTokens,
@@ -82,12 +105,11 @@ func (s *GORMStore) Insert(r Record) error {
 		ErrorMsg:         r.ErrorMsg,
 		CreatedAt:        r.CreatedAt,
 	}
-	if err := model.DB.Create(&row).Error; err != nil {
-		// D2-LLM-FK: insert 失败 (未来加硬 FK 约束时此处会触发), 写 audit
-		s.recordFKViolation(r, "insert_failed", err.Error())
-		return err
-	}
-	return nil
+}
+
+func buildLLMCallRowPtr(sessionID uuid.UUID, r Record) *model.LLMCall {
+	row := buildLLMCallRow(sessionID, r)
+	return &row
 }
 
 // recordFKViolation (D2-LLM-FK): 写 DecisionEvent 审计事件。

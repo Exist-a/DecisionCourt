@@ -265,7 +265,9 @@
 |---|---|---|
 | `id` | UUID PK | 自增主键 |
 | `session_id` | UUID FK | 所属庭审 |
-| `agent_id` | UUID FK | 调用 Agent |
+| `agent_id` | UUID FK | **历史列，恒为 NULL**（见下方 v2.11 说明） |
+| `agent_type` | VARCHAR(50) | 调用 Agent 类型：`prosecutor` / `defender` / `investigator` / `clerk` / `judge`（v2.11 起写入；用户级调用为空） |
+| `request_id` | VARCHAR(36) | 关联 HTTP / WS trace_id（与 `decision_events.request_id` 同源，v2.11 起写入） |
 | `task_type` | VARCHAR(50) | 任务类型：`opening` / `rebuttal` / `verdict` / `question` |
 | `model` | VARCHAR(50) | 实际调用模型 |
 | `prompt_tokens` | INT | prompt token 数 |
@@ -281,6 +283,39 @@
 **索引**：
 - `session_id` + `created_at`
 - `agent_id` + `created_at`
+- `agent_type` + `created_at`（v2.11）
+- `request_id`（v2.11）
+
+> **v2.11 变更（deferred D9）**：补 `request_id` + `agent_type` 两列。
+>
+> 此前 DB 层无法按"某次请求/某条 trace"关联，也无法按 Agent 维度查——只能翻
+> `agent_gateway` 的 JSON Lines 文件日志或 `decision_events` 表。
+>
+> **为什么加 `agent_type` 而不是把 `agent_id` 填上**：`agent_id` 是 UUID 外键（指向
+> `agents` 表），但调用点手上只有 Agent 类型字符串，映射时被跳过，该列因此长期恒为
+> NULL——典型的"字段存在即被认为已实现"。审计需要的是可读的 Agent 类型，而不是再
+> JOIN 一次；为此引入"类型 → UUID"解析不划算（还会多一次查库）。`agent_id` 列保留
+> 不动（历史行 + AutoMigrate 兼容），新写入走 `agent_type`。
+>
+> **不做**：不回填历史数据（无链路信息可取）；不与 `decision_events` 合表（写入频率
+> 与保留策略不同）。
+>
+> **查询示例**（现在可以直接查库，不必翻文件日志）：
+>
+> ```sql
+> -- 某次请求经过了哪些 Agent、各花了多少 token
+> SELECT agent_type, task_type, model, total_tokens, latency_ms, status
+> FROM llm_calls
+> WHERE request_id = '7f3a-bc12-...'
+> ORDER BY created_at ASC;
+>
+> -- 单场庭审中各 Agent 的 token 占比
+> SELECT agent_type, SUM(total_tokens) AS tokens, COUNT(*) AS calls
+> FROM llm_calls
+> WHERE session_id = '<court_sessions.id>'
+> GROUP BY agent_type
+> ORDER BY tokens DESC;
+> ```
 
 ---
 

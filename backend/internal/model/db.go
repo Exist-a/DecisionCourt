@@ -253,10 +253,25 @@ func (e *EvidenceAdoptionJSONB) Scan(value interface{}) error {
 }
 
 // LLMCall logs every LLM invocation for cost and observability.
+//
+// v2.11 (deferred D9) 补两个审计字段：
+//   - RequestID: 链路关联键。此前 DB 层无法按"某次请求/某条 trace"关联，
+//     只能翻 agent_gateway 的 JSON Lines 文件日志或 decision_events 表。
+//   - AgentType: 调用的 Agent 类型字符串（prosecutor / defender / ...）。
+//
+// 为什么加 AgentType 而不是把已有的 AgentID 填上：AgentID 是 UUID 外键
+// （指向 agents 表），但调用点手上只有 Agent 类型字符串，映射时被跳过 →
+// 该列长期恒为 NULL。审计真正需要的是可读的 Agent 类型，而不是再 JOIN 一次；
+// 为此引入"类型 → UUID"的解析不划算（还会多一次查库）。AgentID 列保留不动
+// （历史行 + AutoMigrate 兼容），新写入走 AgentType。
 type LLMCall struct {
 	ID                uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
 	SessionID         uuid.UUID `gorm:"type:uuid;index;not null"`
 	AgentID           *uuid.UUID `gorm:"type:uuid;index"`
+	// AgentType 见上方说明：可读的 Agent 类型，v2.11 起由 GORMStore 写入。
+	AgentType         string    `gorm:"type:varchar(50);index"`
+	// RequestID 关联 HTTP / WS trace_id（同 decision_events.request_id），v2.11 起写入。
+	RequestID         string    `gorm:"type:varchar(36);index"`
 	TaskType          string    `gorm:"type:varchar(50)"`
 	Model             string    `gorm:"type:varchar(50)"`
 	PromptTokens      int
