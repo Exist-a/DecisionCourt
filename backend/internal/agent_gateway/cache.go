@@ -19,6 +19,11 @@ package agent_gateway
 //   - TTL 5min:trial 不会跨 5min 复用同一 prompt(超过就当新思路)
 //   - LRU 10000 entries:~200KB / entry,总 ~2GB,2C2G ECS 够用
 //   - EvictSession:trial 结束时主动清空该 session 的 cache,防止内存膨胀
+//
+// ⚠️ 调用路径(v2.11 deferred D7 修正):EvictSession 本身不找调用点 —— 它由
+// Gateway.Release(sessionUUID) 统一调用,而 Release 挂在 courtroom 的终态钩子
+// (判决落库处)。D7 之前这两个清理方法**只有测试调用**,生产无入口,导致
+// 缓存与预算映射随进程存活一直增长。新增入口时请走 Release,不要散着调。
 
 import (
 	"container/list"

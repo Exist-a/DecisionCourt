@@ -39,6 +39,18 @@ type EvidenceCreator interface {
 	Create(sessionID uuid.UUID, content, evType, source, submittedBy string) (model.Evidence, error)
 }
 
+// SessionReleaser 是"庭审终态时释放会话级资源"的窄接口。
+//
+// v2.11 (deferred D7)：按 session 累积的进程内状态（token 预算滑动窗口、
+// 响应缓存条目）原先没有回收点 —— 清理方法实现了但包外拿不到入口。终态钩子
+// 需要一个可被 courtroom 调用的出口，但 courtroom 不该 import agent_gateway
+// （网关是 LLM 调用的装饰器，业务层用窄接口反驱动它，避免依赖倒挂）。
+//
+// 生产实现是 agent_gateway.Gateway.Release；main.go 装配时注入。
+type SessionReleaser interface {
+	Release(sessionUUID string)
+}
+
 type Service struct {
 	db               *gorm.DB
 	stateMachine     *StateMachine
@@ -84,6 +96,27 @@ type Service struct {
 	// v0.10.20 (ADR 0027 §决策 3) L0 全局并发 trial 信号量。
 	// nil 表示不限流 (向后兼容)。生产通过 WithConcurrencyLimiter 注入。
 	concurrencyLimiter *ConcurrencyLimiter
+
+	// v2.11 (deferred D7) 庭审终态时释放会话级进程内资源（网关的 token 预算
+	// 滑动窗口 + 响应缓存）。nil 表示不释放（单测 / 老装配兼容）。
+	sessionReleaser SessionReleaser
+}
+
+// WithSessionReleaser 注入"庭审终态释放会话级资源"的实现。
+// 装配阶段（main.go）调用一次，传 agent_gateway.Gateway。测试可不调。
+func (s *Service) WithSessionReleaser(r SessionReleaser) {
+	s.sessionReleaser = r
+}
+
+// releaseSessionResources 在庭审终态释放会话级进程内资源。
+//
+// v2.11 (deferred D7)：挂在已有的终态钩子（判决落库）上，不新起定时任务。
+// nil-safe —— 未注入实现、空 sessionUUID 时直接 no-op。
+func (s *Service) releaseSessionResources(sessionUUID string) {
+	if s.sessionReleaser == nil || sessionUUID == "" {
+		return
+	}
+	s.sessionReleaser.Release(sessionUUID)
 }
 
 // WithObservability 注入 metrics + event recorder。装配阶段（main.go）调用一次。
@@ -1784,10 +1817,18 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 	if err := s.db.Create(&verdict).Error; err != nil {
 		// Another goroutine may have created the verdict concurrently. Treat as success.
 		if strings.Contains(err.Error(), "duplicate key value violates unique constraint") || errors.Is(err, gorm.ErrDuplicatedKey) {
+			// 并发落库说明本场庭审同样已经终态 → 同样要释放会话级资源。
+			s.releaseSessionResources(session.SessionUUID)
 			return nil
 		}
 		return err
 	}
+
+	// v2.11 (deferred D7): 判决已落库 = 本场庭审终态 → 释放网关侧按 session
+	// 累积的进程内资源（token 预算滑动窗口 + 响应缓存条目）。这两张映射表
+	// 原先没有任何回收点，随进程存活一直增长。挂在这里而不是新起定时任务：
+	// 判决落库是"庭审结束"的既有语义点，无需额外生命周期抽象。
+	s.releaseSessionResources(session.SessionUUID)
 
 	// v2.10 ADR 0044 #7: 判决质量回环度量 —— 压缩是否伤到判决质量。
 	// 只能回答"省了多少 token"是不够的：这里检查判决书引用的证据 display id

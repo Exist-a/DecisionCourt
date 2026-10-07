@@ -130,6 +130,10 @@ func (tb *TokenBudget) AddOnWarning(fn OnWarningFunc) {
 }
 
 // Reset 清空某个 session 的所有计数（session-end 时调用）。
+//
+// ⚠️ 调用路径(v2.11 deferred D7 修正):不要直接调 —— 由 Gateway.Release
+// (sessionUUID) 统一调用,Release 挂在 courtroom 终态钩子(判决落库处)。
+// D7 之前本方法在生产代码里**没有任何调用点**,预算滑动窗口随进程存活增长。
 func (tb *TokenBudget) Reset(ctx context.Context, sessionUUID string) error {
 	return tb.store.Reset(ctx, sessionUUID)
 }

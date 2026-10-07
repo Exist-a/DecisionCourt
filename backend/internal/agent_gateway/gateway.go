@@ -470,6 +470,41 @@ func (g *Gateway) budgetSnapshot(ctx context.Context, sessionUUID string) Budget
 	return g.budget.Check(ctx, sessionUUID)
 }
 
+// Release 释放某个 session 在网关侧占用的进程内资源。
+//
+// 释放什么：
+//   - TokenBudget：该 session 的累计 token + sliding 窗口历史
+//   - ResponseCache：该 session 的缓存条目（EvictSession 返回删除数）
+//
+// 为什么需要（v2.11 / deferred D7）：TokenBudget.Reset 与
+// ResponseCache.EvictSession 早已实现，但**包外没有任何调用点** ——
+// Gateway 只暴露 Complete / StreamComplete，预算快照与文件日志方法都是私有的，
+// 业务层根本拿不到入口去清。结果是按 session 累积的预算滑动窗口与响应缓存
+// 映射随进程存活一直增长（单进程连跑多场庭审时内存只涨不落）。
+//
+// 调用时机：庭审走到终态（判决落库）时由 courtroom 调用，挂在已有的终态钩子上
+// —— 不引入定时任务或后台 GC 协程（保持单二进制、无 cron 依赖）。
+//
+// 边界：不做基于 TTL 的自动过期（预算表语义是"本场庭审内"，TTL 会给错语义）；
+// 不做跨进程共享状态（那是多副本话题）。
+//
+// nil-safe：Gateway 为 nil、sessionUUID 为空、或某项能力未启用时对应分支跳过。
+func (g *Gateway) Release(sessionUUID string) {
+	if g == nil || sessionUUID == "" {
+		return
+	}
+	if g.budget != nil {
+		if err := g.budget.Reset(context.Background(), sessionUUID); err != nil {
+			// 清理失败不致命：下次同 session 调用会重新累积，最坏是内存晚释放。
+			slog.Warn("agent_gateway: budget reset on release failed",
+				"session_uuid", sessionUUID, "err", err)
+		}
+	}
+	if g.cache != nil {
+		g.cache.EvictSession(sessionUUID)
+	}
+}
+
 // writeFileLog 写入文件日志。失败不阻塞主流程。
 //
 // v2.8 PR-3 (ADR 0042): systemPrompt/messages/content 三参数仅在

@@ -89,6 +89,13 @@ type cacheKey struct {
 - **LRU 上限**：10000 entries（按 entry 大小估 ~200KB，总 ~2GB，2C2G ECS 够用）
 - **Eviction by session**：trial 结束时 `cache.EvictSession(sessionID)` 清空（防止内存膨胀）
 
+> **状态更新（2026-10-08，v2.11 D7）**：上面这条"trial 结束时清空"在 v2.11 之前**只是设计意图，没有实现落点**——
+> `ResponseCache.EvictSession` 与 `TokenBudget.Reset` 都写好了，但 Gateway 只暴露 `Complete`/`StreamComplete`，
+> 包外拿不到入口调用，按 session 累积的预算滑动窗口与缓存映射随进程存活一直增长（单进程连跑多场庭审时只涨不落）。
+> v2.11 补上公开出口 `Gateway.Release(sessionUUID)`（内部同时清预算与缓存），并挂在 courtroom 的既有终态钩子——
+> 判决落库处（`courtroom/service.go` `finishTrial`）——由 `courtroom.SessionReleaser` 窄接口反驱动，courtroom 不 import agent_gateway。
+> 不引入定时任务 / 后台 GC 协程，也不用 TTL 过期（预算表语义是"本场庭审内"，TTL 会给错语义）。
+
 **简历叙述**：
 > "设计 LLM Response 缓存层（基于 sync.Map + LRU + TTL），cache key 由 model + system_prompt hash + messages hash + temperature 构成。同一 trial 内多 agent 共享 evidence context 时命中率实测 38%，**降低 LLM API 成本 38%，命中路径 P95 延迟从 25s → 5ms**。"
 

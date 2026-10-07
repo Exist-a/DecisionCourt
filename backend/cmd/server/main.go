@@ -302,6 +302,10 @@ func main() {
 	// 经用户 2026-07-12 确认。v2.11 (deferred D10) 起改为可配：
 	// RATE_LIMIT_MAX_CONCURRENT_TRIALS 覆盖，非正数仍由 limiter 兜底为 5。
 	courtroomSvc.WithConcurrencyLimiter(courtroom.NewConcurrencyLimiter(concurrencyLimiterMax(config.AppConfig)))
+	// v2.11 (deferred D7): 判决落库（庭审终态）时释放网关侧按 session 累积的
+	// 进程内资源。Gateway.Release 同时清 token 预算滑动窗口 + 响应缓存条目 ——
+	// 这两个清理方法此前实现了但包外没有调用点，随进程存活一直增长。
+	courtroomSvc.WithSessionReleaser(gatewayClient)
 
 	handler := api.NewHandler(courtroomSvc, courtroomSvc.InvestigationService())
 	// v0.8 白盒化：Handler 暴露 metrics 实例，让 /metrics 端点能查询 snapshot。
