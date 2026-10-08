@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | ✅ **全部收口（v2.12，2026-10-08）**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；验证中新发现的 D15/D16/D17/D18/D19 已全部修复并再次实跑 + 浏览器真实路径验证。**仅剩 D20/D21（P3 噪音级）与 D22/D23（v0.8.3 遗留 / 集成测试腐烂）未修**，详见「v2.12 收口」一节 |
+| **状态** | ✅ **全部收口（v2.12，2026-10-08）**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；验证中新发现的 D15/D16/D17/D18/D19 已全部修复并再次实跑 + 浏览器真实路径验证。**仅剩 D20/D21/D24（P3：gauge 不更新 / 日志噪音 / 发言幻觉无度量）与 D22/D23（P2 v0.8.3 重开流程只做一半 / P3 integration tag 腐烂）未修**，详见「v2.12 收口」一节 |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -76,25 +76,68 @@
 | D18（P1）reopen 不可达 + 失败静默 | ✅ 已修（两半） | `f3ea525` + `26790e9` | 判决后 DB `current_phase=verdict`、UI 按钮变「查 看 判 决 書」；判决页「补充证据重开」点击后无报错并回到 `evidence`（「· 举证阶段」）；`UserAction` 现在对阶段不允许的 action 回 400/1003 |
 | D13（P2）投影隔离硬化 | ✅ 已实现 | `b10b477` | [ADR 0045](../adr/0045-projection-isolation-hardening.md)：转写出口显式化（零行为变更）+ 载荷正向白名单 + 注入式/等价性测试 12 项 |
 | D15（P3→P1）prod compose 漏传子开关 | ✅ 根因已消 | `18bb55b` | D16 改成"显式 env 优先、否则继承总开关"后，**不再需要**在 compose 里逐个列出子开关（compose 已传 `AGENT_GATEWAY_ENABLED=true` 即全开）。剩余"是否在 compose 里显式列出以便阅读"属可选整洁项 |
-| D20（P3）concurrency gauge 不更新 | 🔴 未修 | — | 仍只在 acquire 时 `SetGauge`，release 后不更新 |
-| D21（P3）`/auth/anon` duplicate key 噪音 | 🔴 未修 | — | 仍是 ERROR 级日志噪音（功能不受影响） |
+| D20（P3）concurrency gauge 不更新 | 🔴 未修 | — | `recordConcurrencyMetric`（`courtroom/service.go:293`）只在 `withCancel` 的 acquire 分支被调用（`:345`/`:349`），`ConcurrencyLimiter.Release` 后不更新 → gauge 停在最后一次 acquire 的值。修法：在 `Release` 路径也调一次（或改由 `Stats()` 定时刷新） |
+| D21（P3）`/auth/anon` duplicate key 噪音 | 🔴 未修 | — | `cmd/server/main.go:570` 的 user upsert 在并发（前端一次立案会打两次 `/auth/anon`）时触发 `SQLSTATE 23505 duplicate key (users_pkey)` → 打 WARN + GORM 自己打一行 ERROR。功能不受影响（token 照发）。修法：用 `ON CONFLICT DO UPDATE`（`clause.OnConflict`）或吞掉 duplicate-key 错误 |
 
 **验证方式**：`go build` / `go vet` / `go test ./...` 22 包全绿；dev compose 实跑 + **浏览器真实路径**（填表立案 → 开庭 → 真实 LLM 开场陈述 → 直接判决 → 判决页 → 补充证据重开 → 回到举证阶段）。栈已 down，命名 volume 全部保留。
 
 ### 验证中新发现（D22 / D23，未修）
 
-**D22（P2）「补充证据重开」只实现了一半**（v0.8.3 遗留，非本次引入）：
-- 后端 `reopenTrial` 只改 phase → `evidence`，**不把 status 从 `completed` 改回 `active`**；
-  而 `finishTrial` 的幂等守卫含 `fresh.Status == StatusCompleted → return nil` →
-  **重开后再点「直接判决」是静默 no-op**（实测：phase=evidence + status=completed）。
-- 前端没有 `trial.reopened` 的处理器，`waitingForNextRound` 不会被置位 → 举证阶段**没有**
-  「进入第 N 轮」按钮；且 `ValidateAction` 的 `continue_cross_exam` 只允许 `cross_exam` 阶段
-  （而 `reopenTrial` 的注释恰恰说"用户点 continue_cross_exam 进入下一轮"）→ 后端注释与守卫不一致。
-- 结论：重开能"回去"，但回不去"继续辩论"。修法需用户决策（见下）。
+**D22（P2）「补充证据重开」只实现了一半**（v0.8.3 遗留，非本次引入）—— 重开能"回去"，但回不去"继续辩论"。
+
+**现象 1：重开后「直接判决」是静默 no-op**
+
+| 事实 | 位置 |
+|---|---|
+| `reopenTrial` 只 `transitionPhase(→evidence)`，**不把 status 从 `completed` 复位** | `courtroom/service.go:803` |
+| `finishTrial` 幂等守卫含 `fresh.Status == StatusCompleted → return nil` | `courtroom/service.go:1611` |
+
+实测：重开后 DB 是 `phase=evidence` + `status=completed` → 再点「直接判决」直接 return nil，**无任何提示**（用户视角=点了没反应）。
+
+**现象 2：举证阶段没有"继续辩论"入口，且后端注释与守卫不一致**
+
+| 事实 | 位置 |
+|---|---|
+| `ValidateAction` 的 `continue_cross_exam` 只允许 `cross_exam` 阶段 | `courtroom/statemachine.go:92-95` |
+| 但 `reopenTrial` 的注释写着"用户要先看到证据板…然后点 `continue_cross_exam` 进入下一轮" | `courtroom/service.go` 的 reopen 契约注释 |
+| 前端「进入第 N 轮」按钮仅在 `waitingForNextRound` 为真时渲染；该状态只由 WS `round.waiting_for_user` / `opening.finished` 置位 | `frontend/components/courtroom/CourtroomScene.tsx`（`useState` 与 CTA 渲染处） |
+| 前端**没有** `trial.reopened` 的处理器 | 全仓 grep 无命中 |
+
+所以 `evidence` 阶段既没有按钮、守卫也不允许 → 用户无法恢复质证。
+
+**修法（需决策，三条都动才闭环）**：
+
+1. `reopenTrial` 里把 `status` 复位为 `active`（重开 = 庭审重新进行中），顺带消掉现象 1 的静默 no-op；
+2. `ValidateAction` 允许从 `evidence` 发 `continue_cross_exam`（state machine 本来就允许 `evidence → cross_exam`），
+   并把 `round` 从保留值继续递增 —— 这与 `reopenTrial` 的既有注释一致，属"补齐注释承诺"；
+3. 前端加 `trial.reopened` 处理（置 `waitingForNextRound`）或在 `evidence` 阶段直接渲染「进入第 N 轮」。
+
+**验收**：判决 → 重开 → 回举证 → 点「进入第 N 轮」→ 真的跑起来第 N+1 轮（`round` 连续、`beliefs/evidences/messages` 保留）→ 再判决能落库。
 
 **D23（P3）`//go:build integration` 的测试文件编译不过**：`integration_helpers_test.go:157`
-调用 `CreateSession` 少传一个参数 → 该 tag 已腐烂、CI 不跑（`go test ./...` 不覆盖）。
+调用 `CreateSession` 少传一个参数（`have 5, want 6`）→ 该 tag 已腐烂、CI 不跑
+（`go test ./...` 不带 `-tags integration`，所以从不编译这些文件）。
 本次只按 D18a 的契约变更更新了里面的 final-phase 断言，**未修**编译错误。
+**修法**：补齐 `CreateSession` 调用参数（或删掉这批集成测试）；若要让它重新有效，
+还需在 CI 里加一个 `-tags integration` 的 job（且它需要真实 LLM/DB）。
+
+**D24（P3，可选增强）发言级幻觉只有守卫、没有度量**：ADR 0015 的幻觉守卫对
+**发言**有效（实测一场 0 证据的庭审里，控方开场编造了"第3号证据/复合月增速41%"，
+守卫打了 2 条 `streamSpeakContent hallucination validation failed, falling back to retry`
+并重试 —— `agent/react_runner.go:447`），但**质量度量只覆盖判决书**
+（`MetricVerdictEvidenceAccuracy`，`courtroom/service.go:1859`，v2.10 ADR 0044 #7）。
+结果：发言阶段的幻觉率无法从 `/metrics` 观察，只能翻日志。
+**触发条件**：想量化"压缩是否伤到发言质量"或做发言幻觉率告警时。
+
+### 设计取舍说明（**不是缺口**，避免下次误判）
+
+- **抬预算上限后压缩不再触发**：压缩/限流的触发线是上限的**比例**（0.7 / 0.8）。
+  D17 把上限从 20k 抬到 200k 后，一场 quick 庭审（实测 89.8k）全程 `compressed=false`
+  —— 这是设计本意（短庭审没有可压的冗余，压缩的价值在长庭审的长历史）。
+  想在本地看压缩效果，把 `AGENT_GATEWAY_BUDGET_PER_SESSION` 临时调小即可
+  （ADR 0044 §3.6 当时正是这么做的）。详见 [ADR 0013 状态更新](../adr/0013-llm-gateway-engineering.md)。
+- **`.env` 里 `AGENT_GATEWAY_CACHE_ENABLED=false` / `BREAKER_ENABLED=false` 是有意显式关闭**：
+  D16 之后它们是"显式值优先"，所以保持关闭是正确的（不是漏配）。要开就改 `.env`。
 
 ## 本轮新发现（D15–D21，全部未实现，需你决定）
 
