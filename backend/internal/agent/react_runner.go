@@ -112,6 +112,18 @@ type RunnerConfig struct {
 	// tools whose Name() appears in the list. This is defense-in-depth: the
 	// runner itself rejects unknown tools anyway.
 	AllowedTools []string
+	// AllowedEvidenceIDs (v2.13) 是本场庭审真实存在的 evidence_id 集合
+	// （如 ["E001","E002"]），供反幻觉校验做正向验证。
+	//
+	// 背景：ValidateAgainstHallucination 的 Layer B 在 evidence_refs 非空、
+	// 但 allowedIDs 为空时「保守拒绝所有引用」—— 而 runner 此前恒传 nil，
+	// 于是**任何带 evidence_refs 的发言都会被判幻觉**：先白白重试一次
+	// （2s 无流式输出 → 前端打字机卡住），重试也过不了，最后把刚拒掉的内容
+	// 原样恢复回去。守卫因此只贡献延迟、没拦住任何东西。
+	//
+	// 传入真实 ID 后，引用能被验证：命中的放行，编造的（不存在的 ID）才拒绝。
+	// Nil/空 保持旧的保守行为（无证据的庭审仍走 Layer A 硬约束）。
+	AllowedEvidenceIDs []string
 	// OnIterStart, if non-nil, fires once per iteration BEFORE the LLM is
 	// called. The courtroom service uses this to broadcast
 	// agent.thinking_started so the frontend can render a thinking bubble
@@ -153,6 +165,12 @@ type RunnerConfig struct {
 	// 拉 standing 状态 rebuttal evidence。Nil = 跳过 rebut hard-reject 检查
 	// (向后兼容 + pre-v1.0.2 调用方)。
 	RebuttalRepository RebuttalRepository
+	// OnHallucination (v2.13, deferred D24), if non-nil, fires whenever a speak
+	// step's content fails ValidateAgainstHallucination (mode + matched pattern).
+	// The orchestrator wires it to a metric so speak-level hallucination rate is
+	// observable from /metrics (previously only the verdict had a quality metric).
+	// Nil is safe and disables observation — useful for tests / old callers.
+	OnHallucination func(mode, pattern string)
 	// SpeakerHistory (v0.10.23 候选 2), if non-nil, 是当前 speaker 同 agent
 	// 的历史 speak messages (跨 phase 跨 round, 但只看自己)。runner 用它做
 	// 新意度 Jaccard 检查: 本次新发言 vs 自己历史任一条 jaccard > 0.6 → reject +
@@ -310,30 +328,38 @@ func (r *ReActRunner) Run(ctx context.Context, transcript []model.Message) (Spea
 			step.ToolName = out.Tool
 			step.ToolInput = out.ToolInput
 
-			if r.cfg.AllowedTools != nil {
-				allowed := false
-				for _, name := range r.cfg.AllowedTools {
-					if name == out.Tool {
-						allowed = true
-						break
-					}
-				}
-				if !allowed {
-					return Speaker{}, steps, fmt.Errorf("react iter %d: tool %q not in allowed list", iter, out.Tool)
+			// v2.13 fix: 未授权 / 未注册的 tool 不再终止整轮，改为与 tool 执行
+			// 失败同构的"可恢复观察"（把错误喂回消息流，模型下一轮自纠：换合法
+			// tool 或直接 speak）。
+			//
+			// 原实现直接 return error：一次偶发的畸形输出就会让整个 cross_exam
+			// round 中断。实测 2026-10-08 deepseek 吐出 action="tool_call" 但
+			// tool 为空 → react iter 2: tool "" not registered → 控方说完辩方
+			// 永远不说话、trial 卡死（用户可见"没法继续了"）。
+			tool, registered := r.tools[out.Tool]
+			allowed := r.cfg.AllowedTools == nil
+			for _, name := range r.cfg.AllowedTools {
+				if name == out.Tool {
+					allowed = true
+					break
 				}
 			}
 
-			tool, ok := r.tools[out.Tool]
-			if !ok {
-				return Speaker{}, steps, fmt.Errorf("react iter %d: tool %q not registered", iter, out.Tool)
-			}
-
-			obs, toolErr := tool.Execute(ctx, out.ToolInput)
-			if toolErr != nil {
-				step.Observation = fmt.Sprintf("[tool_error] %s", toolErr.Error())
-				step.Error = toolErr.Error()
-			} else {
-				step.Observation = obs
+			switch {
+			case !allowed:
+				step.Observation = fmt.Sprintf("[tool_error] tool %q not in allowed list", out.Tool)
+				step.Error = "tool_not_allowed"
+			case !registered:
+				step.Observation = fmt.Sprintf("[tool_error] tool %q not registered", out.Tool)
+				step.Error = "tool_not_registered"
+			default:
+				obs, toolErr := tool.Execute(ctx, out.ToolInput)
+				if toolErr != nil {
+					step.Observation = fmt.Sprintf("[tool_error] %s", toolErr.Error())
+					step.Error = toolErr.Error()
+				} else {
+					step.Observation = obs
+				}
 			}
 			step.ElapsedMs = time.Since(stepStart).Milliseconds()
 			steps = append(steps, step)
@@ -440,7 +466,7 @@ streamSucceeded := false
 				//   out.Content 仍为空, 用 streamed content 恢复 (软降级, 不硬拒)。
 				//   反幻觉初衷保留: retry 有机会重新生成干净内容; retry 失败时
 				//   保留可能含具体数字的 stream 内容 (好过整轮中断)。
-				if valResult := ValidateAgainstHallucination(out.Content, out.EvidenceRefs, nil); !valResult.OK {
+				if valResult := ValidateAgainstHallucination(out.Content, out.EvidenceRefs, r.cfg.AllowedEvidenceIDs); !valResult.OK {
 					// 把 streamed content 存为 fallback (不清空 out.Content 之外的引用),
 					// 走 retry 路径让 LLM 重新生成
 					streamedFallback = out.Content
@@ -449,6 +475,8 @@ streamSucceeded := false
 						"pattern", valResult.Issues[0].Pattern,
 						"content_len", len(streamedFallback),
 					)
+					// v2.13 (deferred D24): 上报发言级幻觉 metric(此前只有日志)。
+					r.reportHallucination(valResult.Issues)
 					streamSucceeded = false
 					out.Content = "" // 清空,触发 retry 路径
 				} else {
@@ -485,7 +513,7 @@ streamSucceeded := false
 				return applySpeakerLengthLimit(speaker), steps, nil
 			}
 			}
-			if err := validateSpeak(&out); err != nil {
+			if err := r.validateSpeak(&out); err != nil {
 				// One retry with a correction hint, same pattern as parse
 				// failures, to keep the loop deterministic.
 				hint := llm.Message{
@@ -506,7 +534,7 @@ streamSucceeded := false
 					var retryOut AgentOutput
 					if json.Unmarshal([]byte(retryContent), &retryOut) == nil {
 						retryOut.NormalizeAction()
-						if retryOut.Action == ActionSpeak && validateSpeak(&retryOut) == nil {
+						if retryOut.Action == ActionSpeak && r.validateSpeak(&retryOut) == nil {
 							out = retryOut
 						}
 					}
@@ -1311,7 +1339,16 @@ func (r *ReActRunner) buildInitialMessages(transcript []model.Message) []llm.Mes
 	}
 }
 
-func validateSpeak(o *AgentOutput) error {
+// reportHallucination 触发可选的 OnHallucination 观察者 (v2.13, deferred D24)。
+// 单点收敛 metric 上报: 流式成功路径与 validateSpeak 非流式路径都调它。
+func (r *ReActRunner) reportHallucination(issues []ValidationIssue) {
+	if r.cfg.OnHallucination == nil || len(issues) == 0 {
+		return
+	}
+	r.cfg.OnHallucination(string(issues[0].Mode), issues[0].Pattern)
+}
+
+func (r *ReActRunner) validateSpeak(o *AgentOutput) error {
 	if strings.TrimSpace(o.Reasoning) == "" {
 		return fmt.Errorf("empty reasoning")
 	}
@@ -1334,10 +1371,11 @@ func validateSpeak(o *AgentOutput) error {
 	// Reject 会触发现有 retry 机制(react_runner.go:385),LLM 看到
 	// FormatValidationIssuesForRetry() 解释后重新生成。
 	//
-	// 当前实现只验证 evidence_refs 空时的硬约束(用户最痛的 bug),
-	// evidence_refs 非空时的 ID 校验(需 session 上下文)留 v0.11。
-	valResult := ValidateAgainstHallucination(o.Content, o.EvidenceRefs, nil)
+	// v2.13: evidence_refs 非空时的 ID 正向校验已接线 —— RunnerConfig.AllowedEvidenceIDs
+	// 由 orchestrator 从本场 evidences 填入(原为 nil,导致 Layer B 无差别拒绝)。
+	valResult := ValidateAgainstHallucination(o.Content, o.EvidenceRefs, r.cfg.AllowedEvidenceIDs)
 	if !valResult.OK {
+		r.reportHallucination(valResult.Issues)
 		return fmt.Errorf("hallucination detected: %s", FormatValidationIssuesForRetry(valResult.Issues))
 	}
 

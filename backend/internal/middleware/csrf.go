@@ -75,6 +75,30 @@ func DefaultCSRFConfig(secret []byte) CSRFConfig {
 	}
 }
 
+// csrfTokenTTL 是 token 的时效滑动窗口（参考 gorilla/csrf 默认 ±2h）。
+//
+// ⚠️ 注意它**短于** cookie 的 MaxAge（默认 24h）—— 所以浏览器里"cookie 还在
+// 但 token 已过期"是常态。GET 分支必须能自愈地重签，否则长驻浏览器会一直 403
+// （v2.13 / deferred D26 就是踩了这个坑）。
+const csrfTokenTTL = 2 * time.Hour
+
+// csrfTokenValid 判断一个已存在的 token 是否仍然可用（格式 / 签名 / 时效）。
+//
+// v2.13 (deferred D26): GET 分支用它决定"是否需要重签"。原实现只在 cookie
+// **缺失**时签发新 token，于是"已存在但已过期"的 token 永远不会刷新 ——
+// 长驻浏览器（cookie 存活 > 2h）的所有写请求会永久 403，且前端只看到笼统错误。
+func csrfTokenValid(cfg CSRFConfig, token string) bool {
+	parsed, err := parseToken(token)
+	if err != nil {
+		return false
+	}
+	expected := signToken(cfg.Secret, parsed.userID, parsed.timestamp, parsed.nonce)
+	if !secureCompare(parsed.signature, expected) {
+		return false
+	}
+	return abs(time.Now().Unix()-parsed.timestamp) <= int64(csrfTokenTTL/time.Second)
+}
+
 // csrfTokenPayload 嵌入 cookie value 的可解码结构（用于 HMAC 验签）。
 // 设计：value = base64(userIDHex + "." + timestampUnix + "." + nonceHex + "." + HMAC)
 type csrfTokenPayload struct {
@@ -193,9 +217,15 @@ func CSRF(cfg CSRFConfig) gin.HandlerFunc {
 		// 2. 根据 method 分支
 		method := c.Request.Method
 		if method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions {
-			// idempotent 方法：自动 issue cookie（若不存在），放行
-			if _, err := c.Cookie(cfg.CookieName); err != nil {
-				// 没有 cookie → 签发新 token
+			// idempotent 方法：自动 issue cookie（缺失**或已失效**时），放行。
+			//
+			// v2.13 (deferred D26): 原实现只在 cookie 缺失时签发 —— 但 token 的
+			// ±2h 窗口短于 cookie 的 24h MaxAge，所以"已存在但过期"的 token
+			// 永远不会被刷新，长驻浏览器所有写请求会一直 403。现在"缺失或校验
+			// 不过（过期/签名错/格式错）"都重签，一次 GET 即自愈。
+			existing, err := c.Cookie(cfg.CookieName)
+			if err != nil || existing == "" || !csrfTokenValid(cfg, existing) {
+				// 没有 / 失效的 cookie → 签发新 token
 				uid := currentUserID(c)
 				token, err := generateToken(cfg.Secret, uid)
 				if err == nil {
@@ -243,7 +273,7 @@ func CSRF(cfg CSRFConfig) gin.HandlerFunc {
 		}
 		now := time.Now().Unix()
 		// 滑动窗口 ±2h（与 gorilla/csrf 默认一致）
-		if abs(now-parsed.timestamp) > int64(2*time.Hour/time.Second) {
+		if abs(now-parsed.timestamp) > int64(csrfTokenTTL/time.Second) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"code":    "CSRF_TOKEN_EXPIRED",
 				"message": "CSRF token expired",

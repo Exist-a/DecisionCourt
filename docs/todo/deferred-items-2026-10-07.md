@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | ✅ **全部收口（v2.12，2026-10-08）**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；验证中新发现的 D15/D16/D17/D18/D19 已全部修复并再次实跑 + 浏览器真实路径验证。**仅剩 D20/D21/D24（P3：gauge 不更新 / 日志噪音 / 发言幻觉无度量）与 D22/D23（P2 v0.8.3 重开流程只做一半 / P3 integration tag 腐烂）未修**，详见「v2.12 收口」一节 |
+| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节 |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -76,14 +76,57 @@
 | D18（P1）reopen 不可达 + 失败静默 | ✅ 已修（两半） | `f3ea525` + `26790e9` | 判决后 DB `current_phase=verdict`、UI 按钮变「查 看 判 决 書」；判决页「补充证据重开」点击后无报错并回到 `evidence`（「· 举证阶段」）；`UserAction` 现在对阶段不允许的 action 回 400/1003 |
 | D13（P2）投影隔离硬化 | ✅ 已实现 | `b10b477` | [ADR 0045](../adr/0045-projection-isolation-hardening.md)：转写出口显式化（零行为变更）+ 载荷正向白名单 + 注入式/等价性测试 12 项 |
 | D15（P3→P1）prod compose 漏传子开关 | ✅ 根因已消 | `18bb55b` | D16 改成"显式 env 优先、否则继承总开关"后，**不再需要**在 compose 里逐个列出子开关（compose 已传 `AGENT_GATEWAY_ENABLED=true` 即全开）。剩余"是否在 compose 里显式列出以便阅读"属可选整洁项 |
-| D20（P3）concurrency gauge 不更新 | 🔴 未修 | — | `recordConcurrencyMetric`（`courtroom/service.go:293`）只在 `withCancel` 的 acquire 分支被调用（`:345`/`:349`），`ConcurrencyLimiter.Release` 后不更新 → gauge 停在最后一次 acquire 的值。修法：在 `Release` 路径也调一次（或改由 `Stats()` 定时刷新） |
-| D21（P3）`/auth/anon` duplicate key 噪音 | 🔴 未修 | — | `cmd/server/main.go:570` 的 user upsert 在并发（前端一次立案会打两次 `/auth/anon`）时触发 `SQLSTATE 23505 duplicate key (users_pkey)` → 打 WARN + GORM 自己打一行 ERROR。功能不受影响（token 照发）。修法：用 `ON CONFLICT DO UPDATE`（`clause.OnConflict`）或吞掉 duplicate-key 错误 |
+| D20（P3）concurrency gauge 不更新 | ✅ **v2.13 已修** | — | `wrappedCancel` 在 `Release` 后调 `recordConcurrencyMetric(true)` 刷新 `global_concurrency_current`（此前只在 acquire 分支写）；并用 `sync.Once` 保证一次 trial 只释放一次 slot（`cancelCall` + `defer cancel` 可能重复 Release → 误放别的 trial 的 slot） |
+| D21（P3）`/auth/anon` duplicate key 噪音 | ✅ **v2.13 已修** | — | `FirstOrCreate`（SELECT-then-INSERT）改 `clause.OnConflict{Columns: user_id, DoUpdates: last_seen/last_ip/last_ua}` 单条原子 upsert，消除并发 `SQLSTATE 23505`；`FirstSeen` 冲突时不覆盖。抽 `upsertAnonUser` 便于单测 |
 
 **验证方式**：`go build` / `go vet` / `go test ./...` 22 包全绿；dev compose 实跑 + **浏览器真实路径**（填表立案 → 开庭 → 真实 LLM 开场陈述 → 直接判决 → 判决页 → 补充证据重开 → 回到举证阶段）。栈已 down，命名 volume 全部保留。
 
-### 验证中新发现（D22 / D23，未修）
+## v2.13 收口（2026-10-08，本轮）
 
-**D22（P2）「补充证据重开」只实现了一半**（v0.8.3 遗留，非本次引入）—— 重开能"回去"，但回不去"继续辩论"。
+v2.12 收口后剩余的 **D20 / D21 / D22 / D23 / D24 全部实现**。本轮**未 push**（用户要求）；
+**docker 业务验证（AGENTS.md §11.2）按用户要求暂缓**，等用户通知后补跑。
+
+| 项 | 状态 | 实现要点 |
+|---|---|---|
+| D20（P3）并发 gauge 不更新 | ✅ 已修 | `withCancel` 的 `wrappedCancel` 在 `Release` 后调 `recordConcurrencyMetric(true)`，以 `Stats()` 真值刷新 `global_concurrency_current`（此前只在 acquire 分支写 → 判决后 gauge 停在最后一次 acquire 值）。并加 `sync.Once`：`cancelCall` + `defer cancel` 可能重复触发同一个 cancel，重复 `Release` 会误放别的 trial 的 slot。 |
+| D21（P3）`/auth/anon` duplicate key 噪音 | ✅ 已修 | `FirstOrCreate`（SELECT-then-INSERT）改为 `clause.OnConflict{Columns: user_id, DoUpdates: last_seen/last_ip/last_ua}` 单条原子 upsert，消除并发 `SQLSTATE 23505`（WARN + ERROR 噪音）。`FirstSeen` 冲突时不覆盖。抽 `upsertAnonUser` 便于单测（SQL 形状 + 幂等 + 并发）。 |
+| D22（P2）「补充证据重开」只做一半 | ✅ 已修（三处 + D25 补第四处） | ① `reopenTrial` 把 `status` 复位 `active`（否则 `finishTrial` 幂等守卫 `Status==completed → nil` 让重开后「直接判决」静默 no-op）；② `ValidateAction` 允许 `evidence → continue_cross_exam`（状态机 transitions 本就允许该边，补齐 reopen 注释承诺）；③ 前端 `CourtroomScene` 加 `trial.reopened` 处理 + 在 `evidence` 阶段**派生渲染**「进入第 N 轮」（判决页跳转回来时事件已发过，不能只靠 WS 事件）；④ `finishTrial` 第二道 `hasVerdict` 守卫（"重开后再次判决"被静默挡住）→ 见 D25（已修） |
+| D23（P3）`integration` tag 腐烂 | ✅ 已修 | `integration_helpers_test.go` 的 `CreateSession` 补必填 `ownerID`。`go vet -tags integration` + `go test -tags integration -run '^$'` 通过 → tag 恢复可编译。 |
+| D24（P3）发言幻觉无度量 | ✅ 已实现 | 新增 `MetricSpeakHallucinationTotal`（label `mode`，有界枚举）；`RunnerConfig.OnHallucination` 观察者 + `Orchestrator.SetHallucinationObserver` + `Service.WithObservability` 接线；流式（`streamSpeakContent` 硬拒）与非流式（`validateSpeak`）两条路径都上报。**docker 实测**：一场 quick 庭审日志 3 条幻觉 WARN ↔ metric 3 次（`evidence_ref_empty_with_citation`=2、`..._with_stats`=1），分桶与 mode 完全对齐 |
+| D25（P2）重开后再次判决被 `hasVerdict` 挡住 | ✅ **已修（覆盖式）+ docker/浏览器复验通过** | 根因 = `finishTrial` 第二道守卫 `hasVerdict()`（`count>0`）在首判后恒真，且只会在"重开后"拦到。修法：① 守卫抽成 `shouldSkipFinishTrial()`，改为"已有判决 **且** 此后 session 未被改动过 才跳过"（`session.updated_at > verdict.created_at` 即视为重开后的新一轮）；② 判决落库抽成 `upsertVerdict()`，`ON CONFLICT (session_id) DO UPDATE` 覆盖旧行（`verdicts.session_id` 是 uniqueIndex）。**复验**：API 与浏览器两条路径都通过（浏览器里新判决书变为"采纳 选项B·45/55"，旧的是"50/50 采纳 A"），`verdicts` 行数恒 **1** |
+| D26（P2）CSRF token 过期后永不刷新 → 长驻浏览器写请求全 403 | ✅ **已修** | 根因 = `middleware/csrf.go` GET 分支只在 cookie **不存在**时签发新 token，而校验有 ±2h 滑动窗口 → 已存在但过期的 token 永不刷新。修法：抽 `csrfTokenTTL` 常量 + `csrfTokenValid()`（格式/签名/时效），GET 改成"缺失 **或校验不过** 就重签"。**验收**：过期 token + GET → 补发新 token；用补发的 token POST → **200**（对照：不刷新直接 POST 仍 **403 CSRF_TOKEN_EXPIRED**）；有效 token + GET → **不轮换**（无 Set-Cookie）。新增 4 条单测 |
+
+**本轮验证**：`go build ./...` / `go vet ./...` / `go test ./...`（22 包全绿）；
+`go vet -tags integration ./internal/courtroom/...` 通过；前端 `tsc --noEmit` 通过。
+
+**docker 业务验证（2026-10-08，dev compose + 真实 LLM，已实跑）**：栈已 down，命名 volume 保留。
+
+| 项 | 结果 | 现场证据 |
+|---|---|---|
+| D20 | ✅ | 庭审运行中 `/metrics` `global_concurrency_current=1`、`max=5`；判决落库后回落 **0**（修复前会停在 1） |
+| D21 | ✅ | 8 个并发 `/auth/anon` 打同一 user_id → 全部 200/code 0；后端 `duplicate key` 计数 **0**、`user upsert failed` 计数 **0**；`users` 表该 user 仅 **1** 行 |
+| D22（前两半） | ✅ | `reopen_trial` → `phase=evidence` 且 **`status=active`**（修复前 `completed`）；`continue_cross_exam` → **200/code 0**（修复前 400/1003）且 `phase=cross_exam`、`round` 0→**1** |
+| D22（验收最后一步） | ✅（修 D25 后复验） | 再发 `direct_verdict` → phase 从 `cross_exam` 推进到 `closing → deliberation → **verdict**`（round=1），`verdicts` 行数恒 **1**，`created_at` 08:28:06→08:28:58、`summary` 变为新判决文案 → 见 **D25** |
+| D25 | ✅ | 同上（同一场庭审 `74703e95…`：判决 → 重开 → 进第 2 轮 → 再判决覆盖落库）。**首轮复验时此处是静默 no-op（200s 不动）**，修 D25 后通过 |
+| D24 | ✅ | 日志 3 条 `streamSpeakContent hallucination validation failed` ↔ `/metrics` `speak_hallucination_total` 3 次（按 mode 分桶一致：`evidence_ref_empty_with_citation`=2、`evidence_ref_empty_with_stats`=1） |
+
+**浏览器 GUI 实测（2026-10-08，补做）**：此前 rAF 不触发导致 GUI 全废，根因是**浏览器面板没在前台渲染**（`about:blank` 空白页同样不触发 → 与项目无关）；用户把 ZCode 窗口切到前台后 **rAF 立即恢复（2ms）**。随后补跑真实浏览器路径，全链路通过：
+
+| 步骤 | 结果 | 现场证据 |
+|---|---|---|
+| 立案（表单 → `POST /courtrooms`） | ✅ | 跳转 `/court/<uuid>`，session `8b9558d4…` 落库 |
+| 开庭（`POST /start`） | ✅ | 阶段=开庭陈述，真实 LLM 生成开场陈述 |
+| 直接判决 | ✅ | 判决页显示判决书（50/50、采纳 选项A） |
+| 补充证据重开 | ✅ | 回到 `/court/<uuid>`，阶段=**举证阶段**、`status=active` |
+| **举证阶段渲染「进 入 第 1 轮」**（D22 前端那一半） | ✅ | 底栏红色按钮真的出现（修复前不存在） |
+| 点「进 入 第 1 轮」 | ✅ | 阶段=质证阶段·第 1 轮，真实 LLM 跑第 1 轮 |
+| 再判决（D25 前端+后端） | ✅ | 判决页显示**新**判决书：采纳 **选项B·留在大厂**、45/55 分（旧的是 50/50 采纳 A），`verdicts` 行数恒 **1** |
+
+**过程中发现新缺陷 D26**：第一次点「立案」被 403 挡住（CSRF token 过期未刷新），清 cookie 后才继续。**已修复**（GET 自愈重签）并 curl 验收通过。详见 D26。
+
+### 验证中新发现（D22 / D23，未修）→ ✅ **v2.13 全部已修**
+
+**D22（P2）「补充证据重开」只实现了一半**（v0.8.3 遗留，非本次引入）—— 重开能"回去"，但回不去"继续辩论"。 → ✅ **v2.13 已修（三处）**
 
 **现象 1：重开后「直接判决」是静默 no-op**
 
@@ -105,7 +148,7 @@
 
 所以 `evidence` 阶段既没有按钮、守卫也不允许 → 用户无法恢复质证。
 
-**修法（需决策，三条都动才闭环）**：
+**修法（v2.13 已实现，三条都动了）**：
 
 1. `reopenTrial` 里把 `status` 复位为 `active`（重开 = 庭审重新进行中），顺带消掉现象 1 的静默 no-op；
 2. `ValidateAction` 允许从 `evidence` 发 `continue_cross_exam`（state machine 本来就允许 `evidence → cross_exam`），
@@ -114,20 +157,93 @@
 
 **验收**：判决 → 重开 → 回举证 → 点「进入第 N 轮」→ 真的跑起来第 N+1 轮（`round` 连续、`beliefs/evidences/messages` 保留）→ 再判决能落库。
 
-**D23（P3）`//go:build integration` 的测试文件编译不过**：`integration_helpers_test.go:157`
+**D23（P3）`//go:build integration` 的测试文件编译不过** → ✅ **v2.13 已修**：`integration_helpers_test.go:157`
 调用 `CreateSession` 少传一个参数（`have 5, want 6`）→ 该 tag 已腐烂、CI 不跑
 （`go test ./...` 不带 `-tags integration`，所以从不编译这些文件）。
-本次只按 D18a 的契约变更更新了里面的 final-phase 断言，**未修**编译错误。
-**修法**：补齐 `CreateSession` 调用参数（或删掉这批集成测试）；若要让它重新有效，
-还需在 CI 里加一个 `-tags integration` 的 job（且它需要真实 LLM/DB）。
+**修法（已实施）**：补齐 `CreateSession` 的 `ownerID` 参数。`go vet -tags integration` +
+`go test -tags integration -run '^$'` 均通过 → tag 恢复可编译。
+若要让它重新有效，还需在 CI 里加一个 `-tags integration` 的 job（且它需要真实 LLM/DB）。
 
-**D24（P3，可选增强）发言级幻觉只有守卫、没有度量**：ADR 0015 的幻觉守卫对
+**D24（P3，可选增强）发言级幻觉只有守卫、没有度量** → ✅ **v2.13 已实现**：ADR 0015 的幻觉守卫对
 **发言**有效（实测一场 0 证据的庭审里，控方开场编造了"第3号证据/复合月增速41%"，
 守卫打了 2 条 `streamSpeakContent hallucination validation failed, falling back to retry`
 并重试 —— `agent/react_runner.go:447`），但**质量度量只覆盖判决书**
 （`MetricVerdictEvidenceAccuracy`，`courtroom/service.go:1859`，v2.10 ADR 0044 #7）。
 结果：发言阶段的幻觉率无法从 `/metrics` 观察，只能翻日志。
 **触发条件**：想量化"压缩是否伤到发言质量"或做发言幻觉率告警时。
+
+**D25（P2）「重开后再次判决」被 `finishTrial` 的 `hasVerdict` 幂等守卫挡住 —— D22 只闭环了一半**（2026-10-08 docker 复验发现）→ ✅ **已按"覆盖式"修复并复验通过**
+
+**现象**：按 D22 的验收路径实跑（API 级，dev compose + 真实 LLM）：判决（`phase=verdict` / `status=completed`）→ `reopen_trial`（→ `evidence` / `active` ✅）→ `continue_cross_exam`（→ `cross_exam` / `round=1` ✅）→ 再发 `direct_verdict` → **HTTP 200 / code 0，但 200 秒内 phase 一直停在 `cross_exam`，`verdicts` 表仍是 1 行**（静默 no-op）。
+
+**根因**：`finishTrial` 有两个幂等守卫（`courtroom/service.go`，`fresh` 重载后）：
+
+```go
+if fresh.CurrentPhase == model.PhaseDeliberation || fresh.CurrentPhase == model.PhaseVerdict || fresh.Status == model.StatusCompleted {
+    return nil
+}
+if s.hasVerdict(fresh.ID) { return nil }   // ← D22 没动这一条
+```
+
+D22 只消掉了第一个（`reopenTrial` 把 status 复位 `active`）。第二个 `hasVerdict` 是 `count(verdicts where session_id) > 0`：首判已写入 1 行 → 重开后仍为真 → 直接 `return nil`。
+关键观察：**它只会在"重开后"这种情况下拦到** —— 正常重复点击 `direct_verdict` 会被第一个守卫（`phase == verdict`）先拦下。所以它挡的正是 D22 想放行的路径。
+
+**影响**：`reopen_trial` 的语义是"补充证据后重新判决"，但重新判决永远拿不到新判决书 → 该功能**仍不可用**（失败点从"重开不可达"后移到"再判决无效"），且仍是静默失败（HTTP 200 / code 0，用户视角=点了没反应）。
+
+**关键约束**：`model.Verdict.SessionID` 带 **`uniqueIndex`**（`model/db.go:179`）→ 数据库层面**一场庭审只能有一行判决书**。所以"追加第二份判决书"必须先改 schema（去掉唯一索引），且 `GetVerdict`（`handler.go:746` 无排序 `First`）与 `ExportSession` 都要补 `ORDER BY created_at DESC`，否则多行时返回哪一份不确定。
+
+**修法（已实施：方案 1「覆盖式」，用户 2026-10-08 拍板）**：
+
+1. **覆盖式（推荐，最小且不改 schema）**：放松 `hasVerdict` 守卫（改成"最近一份判决之后 session 是否又被改动过"，即用 `session.updated_at > verdict.created_at` 区分"重复点击同一轮"与"重开后的新一轮"），并把 `finishTrial` 的判决落库改为 **upsert**（`ON CONFLICT (session_id) DO UPDATE`，`clause.OnConflict`）。→ 唯一索引不变、"一场一判决书"不变量不变、`/verdict` 没有 404 窗口、重开后拿到的是**新判决书覆盖旧行**。
+2. **显式失败（最保守）**：保留守卫，但让 `direct_verdict` 在"已有判决且未重开"时回 400/1003（需要一个"重开标记"），至少把静默 no-op 变成可见错误；代价是"重开后再次判决"仍然不可用。
+3. **追加式（改动最大，不推荐）**：去掉 `verdicts.session_id` 的唯一索引，允许同 session 多份判决书，并给读路径补排序。好处是保留判决历史，代价是 schema 变更 + 多处读路径调整。
+
+**验收**（同 D22）：判决 → 重开 → 进第 N+1 轮 → 再判决 → `GET /verdict` 返回**新**判决书（覆盖式：`verdicts` 仍 1 行但内容/`created_at` 变化）。
+
+**实施落点（2026-10-08）**：
+
+- `finishTrial` 的两道守卫抽成 `Service.shouldSkipFinishTrial(fresh)`：终态 phase / `status=completed` → 跳过；否则"已有判决且 `fresh.updated_at <= verdict.created_at`" → 跳过，**`updated_at` 更新过则放行**。
+- 判决落库抽成 `upsertVerdict(db, v)`：`clause.OnConflict{Columns: session_id, DoUpdates: 内容列 + user_feedback + created_at}`。`user_feedback` 复位成 `none`（新判决尚未被评分），`created_at` 更新为本次判决时间（页面/导出展示的就是它）。
+- 删除不再使用的 `hasVerdict()`；新增 `latestVerdictCreatedAt()`。
+- 测试：`verdict_reopen_d25_test.go` 5 个用例（无判决不跳过 / 有判决未重开跳过 / 重开后不跳过 / 终态跳过 / upsert 覆盖且恒 1 行）。另需给两个既有测试 fixture 的 `verdicts` 手工 DDL 补 `session_id ... UNIQUE`（否则 sqlite 报 `ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint`）—— 生产侧由 AutoMigrate 的 `uniqueIndex` 保证。
+
+**D26（P2）CSRF token 过期后永不刷新 —— 长驻浏览器超过 2h 后所有写请求 403**（2026-10-08 浏览器实测发现）→ ✅ **已修并验收通过**
+
+**现象**：浏览器里点「立 案 · 开 庭」→ 页面只弹一个笼统的 "1 error"（红色角标），历史列表不增加，用户看不到原因；后端 `POST /api/v1/courtrooms` 返回 **403**。
+
+**证据链**（可复现）：
+- `/metrics` 的 `http_request_duration_seconds`：`POST /api/v1/courtrooms` → `403 count=1`。
+- 浏览器 `document.cookie` 里 `XSRF-TOKEN` 解码后时间戳 `1791436102`（≈ 3.7 小时前，正是上一次浏览器测试签发的），**超出中间件 ±2h 滑动窗口**。
+- 清掉该 cookie + 刷新页面（后端补发新 token，时间戳=当前时刻）→ 同一按钮 POST **200**，session `8b9558d4…` 建成。
+- 干净复现（curl，同一 `dc_session`）：**过期** token → `403 {"code":"CSRF_TOKEN_EXPIRED","message":"CSRF token expired"}`；**新鲜** token → `200`。
+
+**根因**：`middleware/csrf.go` 的 GET 分支只在 cookie **不存在**时才签发新 token：
+
+```go
+if _, err := c.Cookie(cfg.CookieName); err != nil { /* 签发新 token */ }
+```
+
+而校验分支对已存在的 token 做 ±2h 时效检查（`abs(now-ts) > 2h → 403 CSRF_TOKEN_EXPIRED`）。两者叠加 = **"已存在但已过期"的 token 永远不会被刷新** → 写请求从此永久 403，直到用户手动清 cookie 或浏览器淘汰它。
+
+**影响**：任何"浏览器 cookie 存活 > 2 小时"的场景（长驻标签页、每天复用同一 profile 的本地开发、真实用户长时间开着页面）都会在**所有写操作**上 403：立案 / 提交证据 / 各种 action / 判决后重开。且前端拿不到可读原因 —— 403 体用的是**字符串** `code`（`"code":"CSRF_TOKEN_EXPIRED"`），而前端按数字 `code` 判定成功/失败，只能落到笼统错误提示。
+
+**修法（已实施：方案 1「GET 时自愈」）**：
+1. **GET 时自愈（已实施）**：签发条件从"cookie 不存在"改成"cookie 不存在 **或校验不通过**"（过期 / 签名不符 / 格式错都重签）。一次 GET 即恢复，最小改动、无需前端配合。
+2. 或**每次 GET 轮换** token（double-submit 语义下安全，代价是每个请求都换 cookie）——**未采用**（避免无谓的 cookie 抖动，`TestCSRF_GetKeepsValidToken` 钉住这一点）。
+3. 顺带对齐错误契约：CSRF 的 403 体把 `code` 从字符串改成数字（或在 api-design 里把 CSRF 的 code 定义为字符串并让前端兼容），否则前端永远只能显示笼统错误。→ **本次未动**（属独立的契约统一工作，且改动会牵动前端 errcode 映射）。
+
+**实施落点（2026-10-08）**：
+- 新增 `csrfTokenTTL = 2 * time.Hour` 常量（把两处魔法数收敛到一处），新增 `csrfTokenValid(cfg, token) bool`（格式 + HMAC 签名 + 时效，一次判完）。
+- GET/HEAD/OPTIONS 分支：`if err != nil || existing == "" || !csrfTokenValid(cfg, existing) { 重签 }`。
+- 写分支的过期判定改用同一常量（行为不变）。
+- 新增 4 条单测：过期 token 的 GET 补发且补发值可用（含"立刻 POST 应 200"的端到端断言）、有效 token 不轮换、格式错重签、签名不符重签。
+
+**验收（docker 实跑，curl）**：
+- 过期 token + `GET /api/v1/courtrooms` → 响应 `Set-Cookie: XSRF-TOKEN=<新值>; Path=/; Max-Age=86400` ✅
+- 用**补发的** token `POST /api/v1/courtrooms` → **200** ✅
+- 对照：不刷新、直接拿过期 token POST → **403 `{"code":"CSRF_TOKEN_EXPIRED"}`**（安全属性保留：过期 token 本身不能授权写操作）✅
+- 有效 token + GET → **无 Set-Cookie**（不乱轮换）✅
+- `go build` / `go vet` / `go test ./...` 22 包全绿（middleware 包含 4 条新测试）✅
 
 ### 设计取舍说明（**不是缺口**，避免下次误判）
 
@@ -139,9 +255,9 @@
 - **`.env` 里 `AGENT_GATEWAY_CACHE_ENABLED=false` / `BREAKER_ENABLED=false` 是有意显式关闭**：
   D16 之后它们是"显式值优先"，所以保持关闭是正确的（不是漏配）。要开就改 `.env`。
 
-## 本轮新发现（D15–D21，全部未实现，需你决定）
+## 本轮新发现（D15–D21）→ ✅ **D15–D19 于 v2.12 修复、D20/D21 于 v2.13 修复**
 
-> 都是"功能骨架在、闭环/默认值断在别处"的同一族问题。**均未改动代码**（除 D15 已随 D10 修 compose 透传）。
+> 都是"功能骨架在、闭环/默认值断在别处"的同一族问题。**现已全部修复**（D15 随 D10 修 compose 透传 + D16 根因消除；D20/D21 见「v2.13 收口」）。
 
 ### D16（P1）Agent Gateway 子能力默认全关 —— `AGENT_GATEWAY_ENABLED=true` 只等于开了 FileLogger　→ ✅ **v2.12 已修（`18bb55b`）**
 
@@ -632,3 +748,147 @@ docker 实跑（D16）证明 `isChildDefault()` 因 `FileLogger` 默认 true 而
 - [ADR 0003 投影](../adr/0003-contextview-projection.md) / [ADR 0002 私有通道](../adr/0002-a2a-private-channel.md) — D13
 - [V1-ROADMAP](../V1-ROADMAP.md) — 排期时需与此处里程碑对齐
 - `.trae/documents/interview-answers-project-highlights.md` — 本批缺口的来源核对（含口径风险）
+
+---
+
+## v2.13 实跑中新修（2026-10-08，浏览器真实路径测试期发现，均未 push）
+
+v2.13 收口后的浏览器实测暴露 3 个**新的运行时缺陷**，都是「功能骨架在、异常路径没兜住」同一族。已修复 + 补回归测试。
+
+### R1（P0，卡死）ReAct 未注册 tool 是致命错误 → 整个 cross_exam round 中断
+
+**现象**：实测一场庭审，cross_exam 第 1 轮控方发言后**辩方永远不说话**，trial 卡死在 `active/cross_exam/round 1`，用户视角「没法继续了」。
+
+**证据**：`decision_events` 中 `span.RunCrossExamRound` 带 `error.message = react iter 2: tool "" not registered`。
+
+**根因**：`react_runner.go` 的 tool 分支对「不在白名单 / 未注册」直接 `return error`（终止整轮）；而 tool **执行**失败却是可恢复 observation。deepseek 偶发吐出 `action="tool_call"` 但 `tool` 为空（`NormalizeAction` 只兜空 action，不管空 tool），一次畸形输出就把整轮打死。
+
+**修复**：未授权 / 未注册的 tool 统一降级为可恢复 observation（`step.Error` 记 `tool_not_allowed` / `tool_not_registered`，把错误喂回消息流让模型自纠）。测试 `TestReActRunner_UnknownToolIsRecoverableObservation`（替换原 `..._UnknownToolRejected` —— 原测试断言的正是被本次修掉的旧契约，属契约变更而非简化测试）。
+
+### R2（P1）埋点 transport 漏发 CSRF header → 所有 `fe.*` 事件 403
+
+**现象**：浏览器控制台持续 `POST /api/v1/courtrooms/{uuid}/events 403` + `[analytics] frontend event flush failed: fe.evidence_submitted status=403`。
+
+**根因**：`lib/api.ts:fetchJson` 对 POST 自动注入 `X-XSRF-TOKEN`（读 `XSRF-TOKEN` cookie），但埋点走 `lib/transport.ts` 自己的 fetch，只带 `Content-Type` + `Authorization` + cookie，**唯独没有 CSRF header** → 后端 `CSRF_TOKEN_MISMATCH`。DB 佐证：最后一条成功的 `fe.*` 埋点是 **2026-09-14 11:12**，正好在 CSRF 中间件（v2.5, 2026-09-15）上线前一天 —— **前端埋点已静默丢失约 3 周**。附带代价：失败事件回填队列后每 5s 重试 → 控制台刷屏。
+
+**修复**：`transport.ts` 默认 fetcher 补 `X-XSRF-TOKEN`（`readCookie` 内联，避免与 api.ts 循环依赖），加 2 个测试（有 cookie 注入 / 无 cookie 不伪造）。
+
+### R3（P1）反幻觉守卫对「带 evidence_refs 的发言」一律误拒 → 每次发言白重试一次
+
+**现象**：每次开场/质证发言都出现 `streamSpeakContent hallucination validation failed (mode=evidence_ref_unverified)` → 2 秒后 `retry failed, restoring streamed fallback content` → 把**刚拒掉的内容原样放行**。前端表现为流式打字机**卡 2 秒**（重试是非流式调用，期间无 `agent.speak_chunk` 帧）。
+
+**根因**：`ValidateAgainstHallucination` 的 Layer B 在 `evidence_refs` 非空但 `allowedIDs` 为空时「保守拒绝所有引用」；而 `RunnerConfig.AllowedEvidenceIDs` **从未接线**（`output_validator.go` 注释里「等 v0.11 加 AllowedEvidenceIDs」的 TODO 一直没做）。于是守卫只贡献延迟、没拦住任何东西。
+
+**修复**：`RunnerConfig` 新增 `AllowedEvidenceIDs`，由 `lawyerSpeakReAct` 从本场 `evidences` 的 `EvidenceID` 填入；两个调用点（流式 + `validateSpeak`）都改传该列表。现在引用真实 ID 放行、编造 ID 才拒绝。测试 `TestReActRunner_ValidateSpeak_HonorsAllowedEvidenceIDs`（命中 / 编造 / 未接线三态）。
+
+**验证**：`go build ./...` + `go test ./...` 22 包全绿；前端 `tsc --noEmit` + 99 个 lib 测试全绿（+2 新）。
+
+**顺带发现（dev 工具链）**：`air` 未观测到 `internal/agent` 下的改动 —— 实测改完代码后端不会自动重建，需 `docker restart dc_dev_backend`。Docker Desktop Windows bind mount 上 fsnotify 事件本就不可靠，改后端代码后应显式重启容器再验证。
+
+### R4（用户要求删除）庭审回放 / Trace 可视化整体移除（2026-10-08）
+
+**触发**：用户在浏览器实测中点「庭审回放」报错，明确要求「将庭审回放功能删除」。
+
+**范围确认**：该按钮打开的对话框含 3 个 Tab —— ①庭审时轴 ②信念轨迹 ③技术 trace（高级）。技术 trace 是 v1.0.4 PR-C2 / ADR 0033 的交付物且无其他入口。用户明确选择**全删（含技术 trace）**。
+
+**已删除（仅前端；后端 trace 子系统未动）**：
+
+| 删除项 | 说明 |
+|---|---|
+| `frontend/components/trace/` 整个目录 | `TrialReplay.tsx` / `AgentTraceNode.tsx` / `BeliefDiffTimeline.tsx` / `RebuttalTraceNode.tsx` / `TrialReplay.test.ts` |
+| `frontend/lib/trace.ts` + `lib/trace.test.ts` | 只被 TrialReplay 使用，一并移除 |
+| `CourtroomScene.tsx` | 移除 `TrialReplay` import、`replayOpen` state、「庭审回放」按钮（含 `data-testid="trial-replay-button"`）、顶层 `<TrialReplay>` JSX、`History` 图标 import、4 处 stale 注释 |
+
+**验证**：`tsc --noEmit` 干净；lib 测试 95/95 绿（原 99，减去随功能删除的 4 个 `lib/trace.test.ts` 用例）。
+
+**遗留（未处理，需决策）**：后端 `/api/v1/courtrooms/:uuid/traces` REST 端点 + `internal/trace` 聚合器/解析器 + trace 落盘仍在，但**前端已无消费者**，现在是可达性死代码。相关注释（`api/handler_trace.go:99`、`trace/parser.go:6`、`trace/aggregator.go:20`）仍写着「供前端 TrialReplay 渲染」，已过时。要清理需要单独一轮（涉及 `AgentGatewayTrace` 写入路径 + metrics + 测试），本次未动。
+
+**待办清单影响**：V1-ROADMAP 里 v1.0.4 PR-C2「Trace 前端可视化」这条已交付项**现已被移除**，后续叙述不应再把它当作现有能力。
+
+### R5 庭审现场布局重做 + 气泡改顶层浮层（2026-10-08）
+
+**触发**：用户反馈（**反复反馈过**）：①庭审现场内部会滚动、被内容压缩；②辩方流式气泡把现场撑出横向滚动。
+
+**R5-a 气泡横向溢出的真正根因**（此前多次"修"都没修对）：
+
+气泡（`AgentAvatar`）是容器内 `absolute bottom-full left-1/2` + Tailwind `-translate-x-1/2` 做水平居中，**但它同时是 framer-motion 的 `motion.div`**，而 `bubbleEnterExit` variants 含 `y` + `scale`（`lib/animations/variants.ts:92`）。framer 会把整个 `transform` 写成行内样式，**直接覆盖掉 `-translate-x-1/2`** → 气泡变成 `left:50%` 但没回移，**整体右移半个气泡宽（120px）**。居中角色看不出来，最右列的辩方正好顶出面板 → 横向滚动。此前用 `overflow-x-clip` 只是把症状裁掉。
+
+**修法**：气泡改为 **portal 到 `document.body` + `position: fixed`**（顶层浮层）。定位由不做动画的外层 div 负责（纯 CSS `-translate-x-1/2 -translate-y-full`），动画留在里层 `motion.div`，两者不再互相覆盖；气泡也不再参与任何祖先的布局/滚动。位置由 `getBoundingClientRect` 量出，并在 `resize` + `scroll`（capture）时重算 —— 左列现在是滚动容器，气泡必须跟着滚。
+
+**R5-b 布局**：
+
+| 容器 | 改前 | 改后 |
+|---|---|---|
+| 左列（庭审现场 + 证据板） | `overflow-x-clip` | `overflow-y-auto overflow-x-hidden` —— **整列作为滚动容器** |
+| 庭审现场面板 | `overflow-y-auto`（内滚 + 被 flex 压缩） | `shrink-0 overflow-hidden`（**不再内滚、不再被压缩**，高度由外层决定） |
+
+效果：庭审现场保持正常（不挤压）的渲染高度；内容多到超出视口时，滚动的是**左列整体**，而不是把现场压扁。
+
+**验证**：`tsc --noEmit` 干净；lib 测试 95/95 绿；前端 HMR 重编译通过。**浏览器实测未做**（本机 IAB 渲染帧不可用），需用户实跑确认。
+
+### R5-c 气泡上边界收敛到顶栏（2026-10-08，用户补充要求）
+
+用户澄清：「在顶层」不等于可以压住顶栏 —— 气泡不许越过 `<header>`（即「直接判决」按钮所在的那条栏）。
+
+**修法**：气泡浮层外面再包一层**固定裁剪容器**：`fixed left-0 right-0 bottom-0` + `top: <顶栏底边>` + `overflow-hidden`。气泡在容器内 `absolute` 定位，坐标减去容器 top。于是气泡**可以越出庭审现场面板、但被顶栏底边裁掉**，不会盖住功能栏。
+
+顶栏加了 `id="courtroom-topbar"` 供 `measureAnchor` 量边界；浮层 z-index 从 `z-[60]` 降到 `z-40`（在 Radix 对话框 `z-50` 之下，避免盖住「调查员提问」等模态框）。
+
+### R5-d 证据归档加「排队中」反馈（2026-10-08，用户要求）
+
+**触发**：用户反馈归档时看不到任何等待提示。根因是 `SubmitEvidence` 要拿 session 互斥锁（ADR 0012 决策 1），发言轮次持同一把锁 → 发言途中提交会**排到本轮结束**才落库，而 UI 此前毫无反馈。
+
+**修法**：乐观插入 + 待确认角标。
+- `EvidenceBoard` 新增 `pendingEvidences` 入参（导出 `PendingEvidence` 类型），渲染灰态虚线卡片 + 「排队中」脉冲角标（`data-testid="pending-evidence-chip"`）。
+- `CourtroomScene.handleSubmitEvidence` 提交瞬间 push 一条占位；`useEffect` 监听 `store.evidences.length` 增量，按 **FIFO** 消掉对应占位（真正的证据由后端 `evidence.added` 落库后出现）。
+
+**已知边界（未做）**：只有"按数量增量 FIFO 消占位"，没有做超时兜底 —— 若提交最终失败（例如后端拒绝），占位会一直停在「排队中」。失败路径要精确对应需要后端回一个可关联的 request_id，属后续增强。
+
+### R6 导出 JSON 401 + 导出 PDF 样式丢失（2026-10-08）
+
+**R6-a 导出 JSON 401**
+
+**根因**：`lib/api.ts:exportSession` 用的是**裸 `fetch`** —— 既没带 `Authorization`，也没带 `credentials`。auth 中间件（`internal/auth/middleware.go`）只认 `dc_session` cookie 或 `Authorization: Bearer`；而 dev 下前端(3010)与后端(8180)是**跨域**，默认 `credentials:"same-origin"` 连 cookie 都不发 → 必然 401。`fetchJson` 是对的（`ensureAuthToken()` + Bearer + `credentials:"include"`），导出这条路径当初没跟着走。
+
+**修法**：与 `fetchJson` 对齐 —— `await ensureAuthToken()` → 带 `Authorization: Bearer` → `credentials:"include"`（GET 幂等，不需要 CSRF header）。
+
+**实跑验证**（curl 对真实后端）：
+- 不带认证 → `HTTP 401`（复现用户症状）
+- 用该 session owner 的 anon token 带 Bearer → **`HTTP 200`, `application/json`, 36596 bytes**
+
+**R6-b 导出 PDF 样式丢失（两轮：第一轮判断偏了，第二轮实拍 PDF 后重写）**
+
+**第一轮（错）**：以为是"深底浅字没被覆盖"，于是在 print 里把 `.bg-ink*` 全刷成白底黑字。用户回传实拍 PDF 后确认**判断偏了**——用户要的不是省墨黑白，而是与屏幕一致。
+
+**第二轮（实拍核对后）**：把用户导出的 `11.pdf` 渲染成 12 张 PNG 逐页看，确认两个系统性原因：
+
+- **A. 配色被旧规则主动抹掉**。原 print 第 2/4/5/6 条把 `body/.bg-paper/.bg-paperDeep/.bg-white` 刷白、把 `.bg-prosecution/.bg-defense/.bg-judge` 刷成 `transparent`、把评分条刷成纯黑 → 设计里所有色条、分隔线、评分条直接消失，整份 PDF 变黑白。
+- **B. 打印视口掉到 Tailwind `md` 断点以下 → 所有响应式布局失效**。旧 `@page { margin: 1.5cm 1cm }` → A4 内容宽 = 210mm−20mm = 190mm ≈ **718px < 768px(md 断点)** → `md:/lg:` 工具类全部不生效 → 多列 grid 塌成单列。**实拍证据**：判决页顶部 `grid md:grid-cols-[1fr_auto_1fr]`（控方 | ⚖ | 辩方）在 PDF 第 1 页变成控方/辩方**上下堆叠**。
+
+**修法**（`app/globals.css` 的 `@media print` 整块重写）：
+1. `print-color-adjust: exact` 全局强制 —— 背景/配色照原样打印；
+2. **删掉全部"改配色"规则**（原第 2/4/5/6 条 + 第一轮加的第 10 条一并移除），只保留"隐藏交互元素 / 停动画 / 展开 max-height / section 分页"；
+3. `@page { size: A4; margin: 0 }` —— 内容宽回到 A4 全宽 ≈ 794px > 768px，`md:` 断点重新生效；视觉留白交给页面自身 `container px-6`。
+
+**验证**：`tsc --noEmit` 干净；括号配平校验通过；前端 HMR 重编译通过。**PDF 效果仍需用户实跑确认**（本机无可用浏览器渲染）。
+
+**注意**：`@page margin:0` 依赖浏览器打印对话框的"页边距"选 `Default`（Chrome 会用 CSS 里的 `@page` 值）。若用户选 `Minimum`/自定义边距，内容宽可能又掉回 768px 以下。
+
+### R6-c 导出 PDF 卡顿 + 分页控制（2026-10-08，用户追问后一并做）
+
+**卡顿根因**：`window.print()` 是**同步阻塞**调用，浏览器要按 print media 整页重新布局 + 绘制（本判决页打印出来 12 页，且 transcript 容器在打印时被展开为全量内容）。加重因素两个，都在本轮去掉：
+- **盒阴影**：我上一轮为保真把 `box-shadow: none` 删了，阴影是逐元素光栅化的主要开销 → 本轮加回。
+- **纸张纹理**：`.paper-overlay::before` 是一整页 `repeating-linear-gradient`，打印时会整页反复光栅化 → 本轮 print 下 `display: none`。
+- 另外把 `print-color-adjust: exact` 从 `*` 收窄到 `html, body`（该属性**可继承**，无需逐元素铺开）。
+
+**分页控制**（用户问「方便做吗」→ 简单，一并做了）：判决页每个 box 本来就包在 `<section>` 里（10 处），所以主力规则是现成的；本轮补齐标准配套：
+```css
+section { break-inside: avoid; }              /* box 整块不劈开 */
+h1..h6  { break-after: avoid; }               /* 标题不留孤行在页尾 */
+p, li, blockquote { orphans: 2; widows: 2; }  /* 正文不留单行孤悬 */
+img, table, pre { break-inside: avoid; }
+```
+
+**注意（预期行为）**：`break-inside: avoid` 只在「块本身装得下一整页」时生效；若某个 box 高于一整页，浏览器仍会拆开它 —— 这是规范行为，不是 bug。
+
+**验证**：`tsc --noEmit` 干净；括号配平 142/142；前端 HMR 重编译通过。**PDF 观感与卡顿改善仍需用户实跑确认**。

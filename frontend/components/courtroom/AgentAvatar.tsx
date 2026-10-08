@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Agent } from "@/types";
 import { useCourtroomStore } from "@/store/courtroomStore";
 import { JudgeBiasMeter } from "./JudgeBiasMeter";
@@ -83,6 +84,21 @@ const agentConfig = {
     quote: "判决",
   },
 };
+
+// v2.13: 顶栏的 DOM id —— 气泡浮层的上边界（气泡可越出庭审现场面板，但**不许越过顶栏**）。
+const TOP_BAR_ID = "courtroom-topbar";
+
+// v2.13: 量出锚点元素的视口坐标 + 气泡可用的上边界（顶栏底边）。
+function measureAnchor(
+  el: HTMLElement | null,
+): { x: number; top: number; clipTop: number } | null {
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const bar =
+    typeof document !== "undefined" ? document.getElementById(TOP_BAR_ID) : null;
+  const clipTop = bar ? bar.getBoundingClientRect().bottom : 0;
+  return { x: r.left + r.width / 2, top: r.top, clipTop };
+}
 
 export function AgentAvatar({
   agent,
@@ -178,65 +194,135 @@ export function AgentAvatar({
         ? "streaming"
         : "speak";
 
+  // v2.13: 发言 / 思考 / 搜索气泡改走**顶层浮层**（portal 到 document.body + fixed）。
+  //
+  // 为什么必须这么做：气泡原来是容器内的 absolute 元素，靠 Tailwind 的
+  // `-translate-x-1/2` 水平居中；但它同时是 framer-motion 的 motion.div，而
+  // variants 里有 y/scale —— framer 会把整个 transform 写成行内样式，
+  // **直接覆盖掉 -translate-x-1/2**，于是气泡整体右移半个宽度（120px）。
+  // 居中角色看不出，最右列的辩方正好顶出庭审现场面板 → 横向滚动
+  //（用户反复反馈的那个问题；此前用 overflow-x-clip 只是把症状裁掉）。
+  //
+  // 现在：定位交给这个不做动画的外层 div（纯 CSS transform），动画留在里层
+  // motion.div，两者互不干扰；气泡也不再参与任何祖先的布局与滚动。
+  const avatarAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [bubblePos, setBubblePos] = useState<{
+    x: number;
+    top: number;
+    clipTop: number;
+  } | null>(null);
+  const bubbleVisible = !!visibleBubble;
+
+  type BubblePos = { x: number; top: number; clipTop: number };
+  const bubblePosChanged = (prev: BubblePos | null, next: BubblePos | null) =>
+    !prev ||
+    !next ||
+    Math.abs(prev.x - next.x) >= 0.5 ||
+    Math.abs(prev.top - next.top) >= 0.5 ||
+    Math.abs(prev.clipTop - next.clipTop) >= 0.5;
+
+  useEffect(() => {
+    if (!bubbleVisible) return; // 保留上次位置，让淡出动画能播完
+    const update = () => {
+      const next = measureAnchor(avatarAnchorRef.current);
+      setBubblePos((prev) => (bubblePosChanged(prev, next) ? next : prev));
+    };
+    update();
+    window.addEventListener("resize", update);
+    // capture:true —— 左列是滚动容器，气泡必须跟着一起滚动。
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bubbleVisible]);
+
+  // 流式期间内容每 chunk 变化 → 只重新量一次位置，不重复注册监听。
+  useEffect(() => {
+    if (!bubbleVisible) return;
+    const next = measureAnchor(avatarAnchorRef.current);
+    setBubblePos((prev) => (bubblePosChanged(prev, next) ? next : prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bubbleVisible, visibleBubble]);
+
   return (
-    <div className="flex flex-col items-center gap-1.5 px-3 py-1 relative">
-      {/* 气泡（搜索 / 思考 / 流式 / 发言）共用同一个锚点 */}
+    <div
+      ref={avatarAnchorRef}
+      className="flex flex-col items-center gap-1.5 px-3 py-1 relative"
+    >
+      {/* v2.13: 顶层浮层气泡（搜索 / 思考 / 流式 / 发言共用），portal 到 body */}
       {/* v1.0.4 PR-C3: SpeechBubbleAnimated 接管 mount/unmount 淡入淡出 */}
-      {/* v2.2 fix(court): 气泡 absolute + 父 relative — 气泡不占 layout 空间, 不撑开庭审现场 */}
-      <SpeechBubbleAnimated
-        bubbleId={`${agent.agent_type ?? "unknown"}-${bubbleKind}-${(visibleBubble ?? "").slice(0, 32)}`}
-        visible={!!visibleBubble}
-        className={`absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-60 max-h-40 overflow-y-auto z-50 ${
-          bubbleKind === "thinking"
-            ? "thinking-bubble"
-            : bubbleKind === "searching"
-              ? "bg-paperDeep border border-inkSoft shadow-paper-lg"
-              : "speech-bubble-paper"
-        }`}
-      >
-        <p
-          className={`text-[11px] text-display italic leading-relaxed flex items-start gap-1.5 px-2 py-1 ${
-            bubbleKind === "thinking" ? "text-inkSoft" : "text-inkSoft"
-          }`}
-          data-bubble-kind={bubbleKind}
-          data-streaming={isStreamingThisAgent ? "true" : "false"}
-        >
-          {bubbleKind === "thinking" && (
-            <Cloud
-              className="cloud w-3.5 h-3.5 mt-0.5 shrink-0 text-prosecution-ink"
-              aria-hidden
-            />
-          )}
-          {bubbleKind === "searching" && (
-            <Search className="w-3 h-3 mt-0.5 shrink-0 animate-pulse" />
-          )}
-          {/* 流式时不截断前 100 字符，让用户看到完整累积文本 + 末尾光标 */}
-          <span>
-            「
-            {isStreamingThisAgent
-              ? visibleBubble
-              : visibleBubble && visibleBubble.length > 100
-                ? `${visibleBubble.slice(0, 100)}…`
-                : visibleBubble}
-            {isStreamingThisAgent && (
-              <span
-                className="inline-block w-[2px] h-[1em] align-middle ml-0.5 bg-ink animate-pulse"
-                aria-hidden
-                data-cursor="true"
-              />
-            )}
-            」
-          </span>
-        </p>
-        {/* 气泡尾部小三角 */}
-        <div
-          className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 border-b border-r rotate-45 ${
-            bubbleKind === "thinking"
-              ? "bg-paperDeep border-inkSoft"
-              : "bg-white border-rule"
-          }`}
-        />
-      </SpeechBubbleAnimated>
+      {/* 顶层浮层气泡：portal 到 document.body，fixed 定位（见上方注释） */}
+      {bubblePos && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="fixed left-0 right-0 bottom-0 z-40 overflow-hidden pointer-events-none"
+              style={{ top: bubblePos.clipTop }}
+            >
+              <div
+                className="absolute -translate-x-1/2 -translate-y-full pointer-events-none"
+                style={{ left: bubblePos.x, top: bubblePos.top - bubblePos.clipTop - 8 }}
+              >
+              <SpeechBubbleAnimated
+                bubbleId={`${agent.agent_type ?? "unknown"}-${bubbleKind}-${(visibleBubble ?? "").slice(0, 32)}`}
+                visible={bubbleVisible}
+                className={`w-60 max-h-40 overflow-y-auto pointer-events-auto ${
+                  bubbleKind === "thinking"
+                    ? "thinking-bubble"
+                    : bubbleKind === "searching"
+                      ? "bg-paperDeep border border-inkSoft shadow-paper-lg"
+                      : "speech-bubble-paper"
+                }`}
+              >
+                <p
+                  className={`text-[11px] text-display italic leading-relaxed flex items-start gap-1.5 px-2 py-1 ${
+                    bubbleKind === "thinking" ? "text-inkSoft" : "text-inkSoft"
+                  }`}
+                  data-bubble-kind={bubbleKind}
+                  data-streaming={isStreamingThisAgent ? "true" : "false"}
+                >
+                  {bubbleKind === "thinking" && (
+                    <Cloud
+                      className="cloud w-3.5 h-3.5 mt-0.5 shrink-0 text-prosecution-ink"
+                      aria-hidden
+                    />
+                  )}
+                  {bubbleKind === "searching" && (
+                    <Search className="w-3 h-3 mt-0.5 shrink-0 animate-pulse" />
+                  )}
+                  {/* 流式时不截断前 100 字符，让用户看到完整累积文本 + 末尾光标 */}
+                  <span>
+                    「
+                    {isStreamingThisAgent
+                      ? visibleBubble
+                      : visibleBubble && visibleBubble.length > 100
+                        ? `${visibleBubble.slice(0, 100)}…`
+                        : visibleBubble}
+                    {isStreamingThisAgent && (
+                      <span
+                        className="inline-block w-[2px] h-[1em] align-middle ml-0.5 bg-ink animate-pulse"
+                        aria-hidden
+                        data-cursor="true"
+                      />
+                    )}
+                    」
+                  </span>
+                </p>
+                {/* 气泡尾部小三角 */}
+                <div
+                  className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 border-b border-r rotate-45 ${
+                    bubbleKind === "thinking"
+                      ? "bg-paperDeep border-inkSoft"
+                      : "bg-white border-rule"
+                  }`}
+                />
+              </SpeechBubbleAnimated>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {/* v2.1: 默认走 DotAvatar (纯几何抽象 + 状态动效) — silhouette/circle 仍 opt-in 可用 */}
       <AvatarAnimations

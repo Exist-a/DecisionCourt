@@ -88,7 +88,7 @@ func newFinishTrialTestService(t *testing.T) (*Service, *gorm.DB) {
 			created_at DATETIME
 		)`,
 		`CREATE TABLE verdicts (
-			id TEXT PRIMARY KEY, session_id TEXT NOT NULL, content TEXT,
+			id TEXT PRIMARY KEY, session_id TEXT NOT NULL UNIQUE, content TEXT,
 			summary TEXT, trial_summary TEXT,
 			option_a_score REAL DEFAULT 0, option_b_score REAL DEFAULT 0,
 			consensus_points TEXT, divergence_points TEXT,

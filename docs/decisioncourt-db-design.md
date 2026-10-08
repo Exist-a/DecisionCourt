@@ -255,6 +255,12 @@
 - 老 verdict 行 `trial_summary = ''`，前端 `v-if` 不渲染"庭审纪要"卡片
 - 重新生成 verdict 时（用户点"上诉/再审"）自动填充新字段
 
+**v2.13（deferred D25）重新判决语义**：
+- `session_id` 的 UNIQUE 约束是**硬不变量**：一场庭审恒一份判决书。
+- 「补充证据重开 → 再次判决」走 **upsert（`ON CONFLICT (session_id) DO UPDATE`）覆盖同一行**，不插入第二行；`content` / `summary` / `trial_summary` / 分数 / 共识分歧 / `recommendation` / `evidence_adoption` / `created_at` 全部改写为新判决，`user_feedback` 复位为 `none`（新判决尚未被评分）。
+- 因此 `GET /api/v1/courtrooms/:uuid/verdict` 无需排序即可取到"当前"判决书（唯一一行）；旧的判决内容不保留历史。
+- 实施细节与根因见 [`todo/deferred-items-2026-10-07.md` §D25](./todo/deferred-items-2026-10-07.md)。
+
 ---
 
 ### 3.7 llm_calls（LLM 调用日志）

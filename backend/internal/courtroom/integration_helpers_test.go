@@ -154,7 +154,10 @@ func setupFixture(t *testing.T) *testFixture {
 }
 
 func (f *testFixture) createSession(title, optionA, optionB, ctx, mode string) model.CourtSession {
-	session, err := f.svc.CreateSession(title, optionA, optionB, ctx, mode)
+	// v2.13 (deferred D23): CreateSession 在 v0.8.3 后加了必填的 ownerID
+	// (P0-1 auth)。集成测试文件带 //go:build integration,CI 默认不编译,
+	// 所以少传参数一直没被发现 → 该 tag 腐烂。这里补上固定 owner。
+	session, err := f.svc.CreateSession(title, optionA, optionB, ctx, mode, "integration-owner")
 	require.NoError(f.t, err)
 	return session
 }

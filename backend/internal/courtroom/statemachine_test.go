@@ -122,3 +122,26 @@ func TestStateMachine_NoRegressionsInTransitionTable(t *testing.T) {
 		}
 	}
 }
+// v2.13 (deferred D22 现象 2)：continue_cross_exam 从 evidence 阶段也必须
+// 允许 —— "补充证据重开"把 phase 转回 evidence 后，用户需要从这里进入
+// 下一轮质证（reopenTrial 的契约注释本来就承诺了这条出口）。
+func TestStateMachine_ContinueCrossExamAllowedFromEvidence(t *testing.T) {
+	sm := NewStateMachine()
+
+	// cross_exam（原有）+ evidence（D22 新增）都应放行。
+	for _, phase := range []model.CourtPhase{model.PhaseCrossExam, model.PhaseEvidence} {
+		if err := sm.ValidateAction(phase, "continue_cross_exam"); err != nil {
+			t.Errorf("continue_cross_exam from %s should be allowed, got %v", phase, err)
+		}
+	}
+
+	// 其余阶段仍必须拒绝（防止把守卫放宽成"任何阶段都行"）。
+	for _, phase := range []model.CourtPhase{
+		model.PhaseIdle, model.PhaseOpening, model.PhaseClosing,
+		model.PhaseDeliberation, model.PhaseVerdict, model.PhaseAppeal,
+	} {
+		if err := sm.ValidateAction(phase, "continue_cross_exam"); err == nil {
+			t.Errorf("continue_cross_exam from %s must still be rejected", phase)
+		}
+	}
+}

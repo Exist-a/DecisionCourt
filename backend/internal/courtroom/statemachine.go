@@ -90,8 +90,12 @@ func (sm *StateMachine) ValidateAction(phase model.CourtPhase, action string) er
 			return reject("cannot interrupt in current phase")
 		}
 	case "continue_cross_exam":
-		if phase != model.PhaseCrossExam {
-			return reject("can only continue cross exam during cross_exam phase")
+		// v2.13 (deferred D22 现象 2): 允许从 evidence 阶段继续。这是
+		// "补充证据重开"回到 evidence 后的唯一出口(reopenTrial 的契约注释
+		// 本来就承诺"用户点 continue_cross_exam 进入下一轮");状态机
+		// transitions 表也已允许 evidence → cross_exam,这里只是把守卫对齐。
+		if phase != model.PhaseCrossExam && phase != model.PhaseEvidence {
+			return reject("can only continue cross exam during cross_exam or evidence phase")
 		}
 	case "start_cross_exam":
 		if phase != model.PhaseOpening {

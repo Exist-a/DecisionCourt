@@ -330,6 +330,20 @@ const initialState = {
   convergenceInfo: null as CourtroomState["convergenceInfo"],
 };
 
+// v2.13: 流式气泡的自愈看门狗。
+//
+// streamingContent 原本**只有** store 的 `agent.speak` 分支会清除（见下方
+// case "agent.speak"）。因此任何"流已经开始、但最终 agent.speak 没到"的路径
+// ——本轮出错、事件处理链抛异常被 websocket.ts 的静默 catch 吞掉、或重试期间
+// 长时间没有 chunk——都会让气泡**永久卡在最后一段文字上，且没有任何报错**。
+// 这正是用户反馈的"小球上方流式输出的框卡住、而且是隐性的"。
+//
+// 这里加 idle 看门狗：chunk 停止超过 STREAM_IDLE_TIMEOUT_MS 就清掉气泡。
+// 阈值取 6s —— 明显大于后端"幻觉守卫重试 + novelty/stance judge"造成的正常
+// 停顿（实测 2-3s，避免误清导致闪烁），又远小于"永久卡住"。
+let streamIdleTimer: ReturnType<typeof setTimeout> | null = null;
+const STREAM_IDLE_TIMEOUT_MS = 6_000;
+
 export const useCourtroomStore = create<CourtroomState>((set, get) => ({
   ...initialState,
 
@@ -456,9 +470,21 @@ export const useCourtroomStore = create<CourtroomState>((set, get) => ({
         },
       }));
     });
+    // v2.13: 每个 chunk 重置 idle 看门狗(见文件上方 STREAM_IDLE_TIMEOUT_MS 注释)。
+    if (streamIdleTimer !== null) clearTimeout(streamIdleTimer);
+    streamIdleTimer = setTimeout(() => {
+      streamIdleTimer = null;
+      set({ streamingContent: null });
+    }, STREAM_IDLE_TIMEOUT_MS);
   },
 
-  clearStreamingContent: () => set({ streamingContent: null }),
+  clearStreamingContent: () => {
+    if (streamIdleTimer !== null) {
+      clearTimeout(streamIdleTimer);
+      streamIdleTimer = null;
+    }
+    set({ streamingContent: null });
+  },
 
   /**
    * setInvestigationFindings hydrates the investigation feed from the
@@ -856,6 +882,9 @@ export function applyCourtEvent(event: CourtEvent) {
         current_round?: number;
         message?: string;
       };
+      // v2.13: 阶段切换意味着上一轮发言一定结束了 —— 兜底清掉流式气泡,
+      // 防止"流已开始但 agent.speak 没到"时气泡跨阶段残留。
+      store.clearStreamingContent();
       store.setPhase(p.current_phase, p.current_round);
       store.addMessage({
         id: `system_${Date.now()}`,

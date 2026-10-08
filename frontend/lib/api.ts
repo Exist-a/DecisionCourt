@@ -122,9 +122,23 @@ export const api = {
       window.alert("Mock 模式暂不支持导出，请连接真实后端。");
       return;
     }
+    // v2.13 fix（401）：这里原来是**裸 fetch** —— 既没带 Authorization，也没带
+    // credentials。而 dev 下前端(3010)与后端(8180)是**跨域**，默认
+    // credentials:"same-origin" 连 dc_session cookie 都不会发 → 后端
+    // auth.Middleware 认不出身份，直接 401。
+    // 与 fetchJson 对齐：先 ensureAuthToken()，再带 Bearer + credentials:"include"。
+    // （GET 幂等，不需要 CSRF header。）
+    await ensureAuthToken();
+    const token = getAuthToken();
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
+    const exportHeaders: Record<string, string> = {};
+    if (token) {
+      exportHeaders["Authorization"] = `Bearer ${token}`;
+    }
     const res = await fetch(`${baseUrl}/api/v1/courtrooms/${sessionUUID}/export`, {
       method: "GET",
+      headers: exportHeaders,
+      credentials: "include",
     });
     if (!res.ok) {
       throw new Error(`Export failed: ${res.status} ${res.statusText}`);

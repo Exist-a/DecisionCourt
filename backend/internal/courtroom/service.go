@@ -3,7 +3,6 @@ package courtroom
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -24,6 +23,7 @@ import (
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Event struct {
@@ -124,6 +124,23 @@ func (s *Service) releaseSessionResources(sessionUUID string) {
 func (s *Service) WithObservability(m observability.Metrics, rec observability.EventRecorder) {
 	s.metrics = m
 	s.recorder = rec
+	// v2.13 (deferred D24): 把发言级幻觉观察者接到 metric —— 之前质量度量只
+	// 覆盖判决书(MetricVerdictEvidenceAccuracy),发言阶段的幻觉率只能翻日志。
+	// mode 是有界枚举(HallucinationMode 6 值),可安全做 label。
+	if s.orchestrator != nil && m != nil {
+		s.orchestrator.SetHallucinationObserver(speakHallucinationObserver(m))
+	}
+}
+
+// speakHallucinationObserver (v2.13, deferred D24) 返回把发言级幻觉硬拒
+// 计入 MetricSpeakHallucinationTotal 的观察者。独立成函数便于单测。
+// mode 是有界枚举(HallucinationMode 6 值),作为 label 安全。
+func speakHallucinationObserver(m observability.Metrics) func(mode, pattern string) {
+	return func(mode, _ string) {
+		m.IncCounter(observability.MetricSpeakHallucinationTotal, map[string]string{
+			"mode": mode,
+		})
+	}
 }
 
 func NewService(
@@ -284,7 +301,8 @@ func (s *Service) TryAcquireConcurrencySlot() bool {
 }
 
 // recordConcurrencyMetric v0.10.20 (PR 3) 写 L0 metric 的辅助方法。
-// 调用时机: withCancel 入口 (成功或失败时各调一次)。
+// 调用时机: withCancel 入口 (acquire 成功/失败各一次) +
+// wrappedCancel 释放 slot 之后刷新 current gauge (v2.13 / deferred D20)。
 // 写 3 个 metric:
 //   - MetricGlobalConcurrencyRejectedTotal: counter (成功时不变, 失败时 +1)
 //   - MetricGlobalConcurrencyCurrent: gauge (成功时 +1, 失败时不变 — 因为失败 = 没 acquire)
@@ -355,12 +373,25 @@ func (s *Service) withCancel(ctx context.Context, sessionUUID string) (context.C
 
 	// wrappedCancel: 原 cancel + 自动 Release L0 slot。
 	// 调用方 defer cancel() 会触发 wrappedCancel,自动释放 slot。
+	//
+	// v2.13 (deferred D20): 释放后刷新 current gauge。此前只在 acquire 分支
+	// 调 recordConcurrencyMetric → 判决完成后 gauge 停在最后一次 acquire 的值,
+	// D7 的"看 gauge 是否回落"因此不可信。
+	//
+	// sync.Once: 同一个 cancel 可能被 cancelCall(direct_verdict 路径)与调用方
+	// defer 各调一次;重复 Release 会把别的 trial 的 slot 误放(信号量计数不再
+	// 反映真实活跃数),这里保证一次 trial 只释放一次。
 	originalCancel := cancel
+	var releaseOnce sync.Once
 	wrappedCancel := func() {
-		originalCancel()
-		if s.concurrencyLimiter != nil {
-			s.concurrencyLimiter.Release()
-		}
+		releaseOnce.Do(func() {
+			originalCancel()
+			if s.concurrencyLimiter != nil {
+				s.concurrencyLimiter.Release()
+			}
+			// 释放后以 Stats() 真实值刷新 gauge(同时刷新 max)。
+			s.recordConcurrencyMetric(true)
+		})
 	}
 	return ctx, wrappedCancel, nil
 }
@@ -820,6 +851,17 @@ func (s *Service) reopenTrial(ctx context.Context, session model.CourtSession) e
 
 	if err := s.transitionPhase(&fresh, model.PhaseEvidence, fresh.CurrentRound); err != nil {
 		return err
+	}
+
+	// v2.13 (deferred D22 现象 1): 重开 = 庭审重新进行中 → 把 status 从 completed
+	// 复位为 active。否则 status 停在 completed,而 finishTrial 的幂等守卫是
+	// `fresh.Status == StatusCompleted → return nil` → 重开后点「直接判决」变成
+	// 静默 no-op(用户视角=点了没反应)。
+	if fresh.Status != model.StatusActive {
+		if err := s.db.Model(&fresh).Update("status", model.StatusActive).Error; err != nil {
+			return err
+		}
+		fresh.Status = model.StatusActive
 	}
 
 	s.broadcastEvent(session.SessionUUID, Event{
@@ -1608,10 +1650,7 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 	if err := s.db.Where("id = ?", session.ID).First(&fresh).Error; err != nil {
 		return err
 	}
-	if fresh.CurrentPhase == model.PhaseDeliberation || fresh.CurrentPhase == model.PhaseVerdict || fresh.Status == model.StatusCompleted {
-		return nil
-	}
-	if s.hasVerdict(fresh.ID) {
+	if s.shouldSkipFinishTrial(fresh) {
 		return nil
 	}
 
@@ -1834,13 +1873,7 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		}
 	}
 
-	if err := s.db.Create(&verdict).Error; err != nil {
-		// Another goroutine may have created the verdict concurrently. Treat as success.
-		if strings.Contains(err.Error(), "duplicate key value violates unique constraint") || errors.Is(err, gorm.ErrDuplicatedKey) {
-			// 并发落库说明本场庭审同样已经终态 → 同样要释放会话级资源。
-			s.releaseSessionResources(session.SessionUUID)
-			return nil
-		}
+	if err := upsertVerdict(s.db, &verdict); err != nil {
 		return err
 	}
 
@@ -1896,10 +1929,63 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 	return nil
 }
 
-func (s *Service) hasVerdict(sessionID interface{}) bool {
-	var count int64
-	s.db.Model(&model.Verdict{}).Where("session_id = ?", sessionID).Count(&count)
-	return count > 0
+// latestVerdictCreatedAt 返回该 session 最近一份判决书的创建时间。
+// ok=false 表示还没有判决书（或查询失败——按"没有"处理，让 finishTrial 继续）。
+//
+// v2.13 (D25): finishTrial 用它区分「重复点击同一轮判决」与「重开后的新一轮判决」。
+// verdicts.session_id 是 uniqueIndex，所以最多一行，First 即可。
+func (s *Service) latestVerdictCreatedAt(sessionID interface{}) (time.Time, bool) {
+	var v model.Verdict
+	if err := s.db.Model(&model.Verdict{}).Where("session_id = ?", sessionID).First(&v).Error; err != nil {
+		return time.Time{}, false
+	}
+	return v.CreatedAt, true
+}
+
+// shouldSkipFinishTrial 判断 finishTrial 是否应幂等返回（不重复生成判决书）。
+//
+// v2.13 (D25): 第二道守卫从无条件 `hasVerdict()` 改成"只有重开后放行"。
+//
+//   - 阶段已是终态（deliberation / verdict）或 status 已是 completed → 跳过。
+//     正常的重复点击 direct_verdict 会被这条拦下。
+//   - 已有判决书、且此后 session 没有再被改动过 → 跳过（视为重复请求）。
+//   - 已有判决书、但 session 在其后被改动过 → **放行**。reopenTrial 会
+//     transitionPhase 到 evidence + 复位 status，两者都会 bump updated_at，
+//     所以这正是"补充证据重开后的新一轮判决"。
+//
+// 原实现是无条件 hasVerdict()，首判落库后恒为真 → 「重开 → 再判决」永远是
+// 静默 no-op（HTTP 200/code 0，用户视角=点了没反应）。
+func (s *Service) shouldSkipFinishTrial(fresh model.CourtSession) bool {
+	if fresh.CurrentPhase == model.PhaseDeliberation ||
+		fresh.CurrentPhase == model.PhaseVerdict ||
+		fresh.Status == model.StatusCompleted {
+		return true
+	}
+	if lastVerdictAt, ok := s.latestVerdictCreatedAt(fresh.ID); ok && !fresh.UpdatedAt.After(lastVerdictAt) {
+		return true
+	}
+	return false
+}
+
+// upsertVerdict 写入判决书；session_id 冲突时**覆盖旧行**。
+//
+// v2.13 (D25): verdicts.session_id 是 uniqueIndex（数据库强制"一场庭审一行判决书"）。
+// 重开后重新判决要覆盖旧行而不是插入第二行 → ON CONFLICT (session_id) DO UPDATE。
+// 这样既保持"一场一判决书"不变量，也不会出现 /verdict 的 404 窗口。
+func upsertVerdict(db *gorm.DB, v *model.Verdict) error {
+	return db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "session_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"content", "summary", "trial_summary",
+			"option_a_score", "option_b_score",
+			"consensus_points", "divergence_points",
+			"recommendation", "evidence_adoption",
+			// 新判决书 = 用户尚未评分，把上一版反馈复位。
+			"user_feedback",
+			// created_at 也更新：判决书页面/导出展示的是"这份判决书的时间"。
+			"created_at",
+		}),
+	}).Create(v).Error
 }
 
 // ExportSession returns a self-contained snapshot of a completed trial

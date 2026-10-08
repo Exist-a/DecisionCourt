@@ -35,6 +35,8 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // version 由 ldflags 在编译时注入，注入命令：
@@ -563,10 +565,7 @@ func anonAuthHandler(cfg config.Config) gin.HandlerFunc {
 				LastIP:    c.ClientIP(),
 				LastUA:    util.TruncateUA(c.GetHeader("User-Agent")),
 			}
-			// SQLite-style upsert;Postgres 同样支持 ON CONFLICT via GORM
-			if err := model.DB.Where("user_id = ?", req.UserID).
-				Assign(model.User{LastSeen: now, LastIP: row.LastIP, LastUA: row.LastUA}).
-				FirstOrCreate(&row).Error; err != nil {
+			if err := upsertAnonUser(model.DB, row); err != nil {
 				slog.Warn("user upsert failed", "user", req.UserID, "error", err)
 			}
 		}
@@ -598,6 +597,27 @@ func anonAuthHandler(cfg config.Config) gin.HandlerFunc {
 			},
 		})
 	}
+}
+
+// upsertAnonUser 把匿名用户原子 upsert 进 users 表。
+//
+// v2.13 (deferred D21): 用 ON CONFLICT DO UPDATE 替代 FirstOrCreate。
+//
+// FirstOrCreate 是 SELECT-then-INSERT:前端一次立案会并发打两次 /auth/anon,
+// 两个请求都 SELECT 不到该 user → 都走 INSERT → 后到的一个撞 users_pkey →
+// SQLSTATE 23505 duplicate key(WARN + GORM 自己一行 ERROR 噪音)。
+// ON CONFLICT 把竞态交给 DB,单条语句原子完成 upsert。
+//
+// FirstSeen 只在首次插入时落值;冲突时只更新 last_seen / last_ip / last_ua,
+// 避免把老用户的首次访问时间冲掉。
+//
+// 独立成函数是为了单测能断言"生成 ON CONFLICT SQL"与幂等语义(见
+// anon_upsert_test.go),不必起整个 HTTP handler。
+func upsertAnonUser(db *gorm.DB, u model.User) error {
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"last_seen", "last_ip", "last_ua"}),
+	}).Create(&u).Error
 }
 
 // logoutAuthHandler 清 cookie + 写 audit。

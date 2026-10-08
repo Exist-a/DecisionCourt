@@ -32,6 +32,10 @@ type Orchestrator struct {
 	// 拉同 agent 历史 speak messages 用于新意度 Jaccard 检查。
 	// Nil = 跳过新意度检查 (向后兼容 + 测试 mock 用)。
 	historyProvider HistoryProvider
+	// hallucinationObserver (v2.13, deferred D24), if non-nil, 收到每次 speak
+	// 输出被反幻觉校验硬拒的通知 (mode + pattern)。service 层 wire 成 metric,
+	// 让发言级幻觉率可观测。Nil = 不上报 (向后兼容)。
+	hallucinationObserver func(mode, pattern string)
 }
 
 // HistoryProvider v0.10.23 候选 2: 抽象接口, 让 service 层注入 history 拉取逻辑
@@ -46,6 +50,13 @@ type HistoryProvider interface {
 // SetHistoryProvider v0.10.23 候选 2: 注入 history provider
 func (o *Orchestrator) SetHistoryProvider(hp HistoryProvider) {
 	o.historyProvider = hp
+}
+
+// SetHallucinationObserver (v2.13, deferred D24) 注入发言级幻觉观察者。
+// 由 courtroom.Service 在 WithObservability 时 wire 成 metric 递增。
+// Nil-safe: 传 nil 关闭上报(向后兼容 / 测试)。
+func (o *Orchestrator) SetHallucinationObserver(fn func(mode, pattern string)) {
+	o.hallucinationObserver = fn
 }
 
 // NewOrchestrator wires the orchestrator with an A2A bus (for message
@@ -240,11 +251,26 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		}
 	}
 
+	// v2.13: 把本场真实存在的 evidence_id 集合交给反幻觉校验做正向验证。
+	// 此前 RunnerConfig 不传该列表 → ValidateAgainstHallucination 的 Layer B
+	// 对任何带 evidence_refs 的发言一律"保守拒绝"（见 output_validator.go），
+	// 造成每次发言白重试一次（2s 无流式输出 = 前端打字机卡顿）后仍原样放行。
+	allowedEvidenceIDs := make([]string, 0, len(evidences))
+	for _, e := range evidences {
+		if e.EvidenceID != "" {
+			allowedEvidenceIDs = append(allowedEvidenceIDs, e.EvidenceID)
+		}
+	}
+
 	runner := NewReActRunner(o.llmClient, systemPrompt, toolMap, RunnerConfig{
-		MaxIterations: 4,
-		Timeout:       30 * 1_000_000_000, // 30s; using ns to avoid time import here
-		OnSpeakChunk:  chunkCb,
-		AllowedTools:  nil,
+		MaxIterations:      4,
+		Timeout:            30 * 1_000_000_000, // 30s; using ns to avoid time import here
+		OnSpeakChunk:       chunkCb,
+		AllowedTools:       nil,
+		AllowedEvidenceIDs: allowedEvidenceIDs,
+		// v2.13 (deferred D24): 把 service 注入的发言级幻觉观察者透传给 runner,
+		// 让 ValidateAgainstHallucination 的硬拒可被 metric 观测。
+		OnHallucination: o.hallucinationObserver,
 		// v0.5+: Agent Gateway 白盒子集 — 把 session / agent 注入到
 		// ReActRunner 的 ctx，让每次 think/reflect/speak 调用都能进
 		// llm_calls 表。

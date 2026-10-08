@@ -1,7 +1,7 @@
 # 决策庭（DecisionCourt）API 接口设计文档
 
 > **版本**：v0.9.1
-> **状态**：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点；v0.6 增补 `GET /api/v1/courtrooms/:uuid/belief-diffs` + WS `belief.diff` / `belief.convergence` 事件；v0.7 整合文档结构 + ADR 提炼；v0.8 新增 `GET /metrics` 端点（白盒化）+ HTTP `X-Request-ID` 头 / `trace_id` 字段（端到端 trace 串联）；v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭"——新增 `GET /api/v1/courtrooms/:uuid/memory` 端点 / `reopen_trial` action / `verdict → evidence` 状态机边 / WS `ping/pong` 心跳 / WebSocket 自动重连退避（详情见 [`archive/refresh-and-reopen-fix-v0.8.3.md`](./archive/refresh-and-reopen-fix-v0.8.3.md)）；**v0.9 新增 Idempotency-Key header 端到端支持（ADR 0012 PR2）+ per-call LLM timeout 90s（ADR 0013）+ 启动扫描恢复 active session（ADR 0012 PR5）+ 用户级 429 Trial 限流（ADR 0014）**；**v2.11 新增 `GET /api/v1/courtrooms/:uuid/events`（decision_events 读端点，deferred D12）+ 统一四层限流响应契约 §5.2（per-IP 层补 `Retry-After`，deferred D11；L1/L0 阈值可配，deferred D10）**。
+> **状态**：v0.5 增补 4 个 private MessageType（strategy_note / opponent_weakness / self_correction / evidence_eval）+ MemoryAuditPanel REST 端点；v0.6 增补 `GET /api/v1/courtrooms/:uuid/belief-diffs` + WS `belief.diff` / `belief.convergence` 事件；v0.7 整合文档结构 + ADR 提炼；v0.8 新增 `GET /metrics` 端点（白盒化）+ HTTP `X-Request-ID` 头 / `trace_id` 字段（端到端 trace 串联）；v0.8.3 修复"刷新丢数据 + 判决书回退无法继续开庭"——新增 `GET /api/v1/courtrooms/:uuid/memory` 端点 / `reopen_trial` action / `verdict → evidence` 状态机边 / WS `ping/pong` 心跳 / WebSocket 自动重连退避（详情见 [`archive/refresh-and-reopen-fix-v0.8.3.md`](./archive/refresh-and-reopen-fix-v0.8.3.md)）；**v0.9 新增 Idempotency-Key header 端到端支持（ADR 0012 PR2）+ per-call LLM timeout 90s（ADR 0013）+ 启动扫描恢复 active session（ADR 0012 PR5）+ 用户级 429 Trial 限流（ADR 0014）**；**v2.11 新增 `GET /api/v1/courtrooms/:uuid/events`（decision_events 读端点，deferred D12）+ 统一四层限流响应契约 §5.2（per-IP 层补 `Retry-After`，deferred D11；L1/L0 阈值可配，deferred D10）**；**v2.13 修复 deferred D20/D21/D22/D23/D24：`reopen_trial` 闭环（status 复位 + `evidence` 可 `continue_cross_exam`，§3.3）、`/auth/anon` 改 ON CONFLICT 原子 upsert（消除并发 duplicate key 噪音）、新增发言幻觉 metric `speak_hallucination_total`（§9.1）**。
 > **目标**：定义决策庭前后端交互的 RESTful API 和 WebSocket 事件协议。
 > **设计演进（已归档）**：[`docs/archive/memory-a2a-redesign-v1.2.md`](./archive/memory-a2a-redesign-v1.2.md)
 > **实施记录**：[`archive/refresh-and-reopen-fix-v0.8.3.md`](./archive/refresh-and-reopen-fix-v0.8.3.md)（v0.8.3 5 个根因 + 修复方案 + 测试矩阵）
@@ -414,7 +414,7 @@ POST /api/v1/courtrooms/:session_uuid/actions
 | `answer_question` | 回答 Agent 主动提问 | `{"question_id": "q_001", "answer": "月收入 3 万"}` |
 | `pause` | 暂停庭审 | `{}` |
 | `resume` | 恢复庭审 | `{}` |
-| `reopen_trial`（v0.8.3）| 判决书"补充证据重开"按钮：仅在 `verdict` / `appeal` 阶段有效，把 phase 转回 `evidence`（保持当前 round），beliefs/evidences/messages 不重置 | `{}` |
+| `reopen_trial`（v0.8.3）| 判决书"补充证据重开"按钮：仅在 `verdict` / `appeal` 阶段有效，把 phase 转回 `evidence`（保持当前 round），beliefs/evidences/messages 不重置。**v2.13（deferred D22）补齐**：同时把 session `status` 复位为 `active`（否则重开后 `direct_verdict` 命中 `finishTrial` 的 completed 幂等守卫 → 静默 no-op），并且回到 `evidence` 后可发 `continue_cross_exam` 进入第 N+1 轮（此前该 action 只允许 `cross_exam` 阶段，导致"重开后回不去继续辩论"）。**v2.13（deferred D25）**：重开后的再次 `direct_verdict` 会**覆盖**本场已有的判决书（`verdicts.session_id` 是唯一索引 → 一场庭审恒一份判决书；旧的被新判决覆盖，`GET /verdict` 返回新判决书） | `{}` |
 
 > **v0.2 修订**：`dispatch_investigator` 不再作为用户 action。它是控辩方 LLM 通过 `agent.cot_step(tool_call, tool=investigator_search)` 内部决策触发的，由后端 `courtroom.Service.DispatchInvestigator` 处理，**不**走 `/actions` REST 端点。
 
@@ -1628,6 +1628,9 @@ Host: localhost:8080
       "a2a_message_throughput_total": [
         {"labels": {"event_type": "agent.speak"}, "value": 256},
         {"labels": {"event_type": "phase.changed"}, "value": 32}
+      ],
+      "speak_hallucination_total": [
+        {"labels": {"mode": "evidence_ref_empty_with_citation"}, "value": 3}
       ]
     },
     "gauges": {

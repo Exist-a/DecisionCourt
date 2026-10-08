@@ -128,7 +128,7 @@ func newLockTestService(t *testing.T) (*Service, *gorm.DB, *[]Event, *stubSearch
 		)`,
 		`CREATE TABLE verdicts (
 			id TEXT PRIMARY KEY,
-			session_id TEXT NOT NULL,
+			session_id TEXT NOT NULL UNIQUE,
 			content TEXT,
 			summary TEXT,
 			trial_summary TEXT,

@@ -22,6 +22,20 @@ interface EvidenceBoardProps {
   onSubmit: (content: string, type: EvidenceType) => void;
   // v1.0.2 候选 4: 传 sessionId 用于拉 rebuttal chip 计数 (PRD §4.3.3)
   sessionId: string;
+  // v2.13: 已提交但尚未落库的证据（后端按 session 串行处理，发言期间提交会排队）
+  pendingEvidences?: PendingEvidence[];
+}
+
+/**
+ * v2.13 待确认证据。
+ * 根因：`SubmitEvidence` 要拿 session 互斥锁（ADR 0012 决策 1），律师发言轮次
+ * 持同一把锁 → 发言途中归档会排到该轮结束才落库。此前 UI 毫无反馈，看起来像
+ * "点了没反应"。这里做乐观插入 + 「排队中」角标，落地后自动换成正式条目。
+ */
+export interface PendingEvidence {
+  id: string;
+  content: string;
+  type: EvidenceType;
 }
 
 const evidenceTypeLabels: Record<EvidenceType, string> = {
@@ -45,7 +59,7 @@ const sourceColors: Record<string, { tab: string; ink: string }> = {
   clarification_answer: { tab: "#A89F8E", ink: "#5C564F" },
 };
 
-export function EvidenceBoard({ evidences, onSubmit, sessionId }: EvidenceBoardProps) {
+export function EvidenceBoard({ evidences, onSubmit, sessionId, pendingEvidences = [] }: EvidenceBoardProps) {
   const [content, setContent] = useState("");
   const [type, setType] = useState<EvidenceType>("fact");
   const [expanded, setExpanded] = useState(false);
@@ -77,6 +91,38 @@ export function EvidenceBoard({ evidences, onSubmit, sessionId }: EvidenceBoardP
             Evidence File
           </span>
         </div>
+
+        {/* v2.13: 待确认证据（乐观插入 + 「排队中」角标）—— 见 PendingEvidence 注释 */}
+        {pendingEvidences.length > 0 && (
+          <div
+            className="grid grid-cols-2 gap-3 pb-3 md:grid-cols-3"
+            data-testid="pending-evidence-list"
+          >
+            {pendingEvidences.map((p) => (
+              <div
+                key={p.id}
+                className="relative rounded-sm border border-dashed border-inkSoft bg-paperDeep px-3 py-2 opacity-70"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-display text-sm font-semibold text-inkFaint">
+                    待归档
+                  </span>
+                  <span
+                    className="text-[10px] uppercase tracking-wider text-inkSoft font-data px-1.5 py-0.5 border border-rule rounded-sm flex items-center gap-1"
+                    title="已提交，正等待本轮发言结束（后端按 session 串行处理）"
+                    data-testid="pending-evidence-chip"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-seal animate-pulse" />
+                    排队中
+                  </span>
+                </div>
+                <p className="text-xs text-inkSoft leading-relaxed line-clamp-3 text-display">
+                  {p.content}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
 
         {evidences.length === 0 ? (
           <div className="text-center py-6 text-sm text-inkFaint border border-dashed border-rule rounded-sm">

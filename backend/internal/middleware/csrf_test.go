@@ -287,3 +287,117 @@ func TestCSRF_RejectsWrongPartCount(t *testing.T) {
 		t.Errorf("wrong part count: expected 403, got %d", w.Code)
 	}
 }
+
+// ── v2.13 (deferred D26) 回归护栏：GET 必须能刷新"已失效"的 token ──
+//
+// 背景：token 的 ±2h 时效窗口**短于** cookie 的 24h MaxAge，所以"cookie 还在、
+// token 已过期"是常态。原实现只在 cookie **缺失**时签发新 token → 过期 token
+// 永不刷新 → 长驻浏览器（cookie 存活 > 2h）的所有写请求永久 403。
+// 现场实测：cookie 时间戳比当前早 3.7h，点「立案」→ 403 CSRF_TOKEN_EXPIRED；
+// 清 cookie 后同一按钮 200。
+
+// csrfRawSetCookie 返回响应里 XSRF-TOKEN 的转义原始值（= 浏览器 document.cookie
+// 看到的值）。没有则返回 ""。
+func csrfRawSetCookie(w *httptest.ResponseRecorder) string {
+	for _, line := range w.Result().Header.Values("Set-Cookie") {
+		if strings.HasPrefix(line, "XSRF-TOKEN=") {
+			return strings.TrimPrefix(strings.Split(line, ";")[0], "XSRF-TOKEN=")
+		}
+	}
+	return ""
+}
+
+// csrfTokenAsBrowserSees 模拟前端 readCookie 的 `decodeURIComponent(value)`。
+// gin 写 cookie 用 url.QueryEscape、读用 url.QueryUnescape（对称），前端
+// decodeURIComponent 对 `%XX` 的还原与之一致（转义后的值里不会有裸 `+`）。
+func csrfTokenAsBrowserSees(t *testing.T, escaped string) string {
+	t.Helper()
+	d, err := url.QueryUnescape(escaped)
+	if err != nil {
+		t.Fatalf("QueryUnescape(%q): %v", escaped, err)
+	}
+	return d
+}
+
+// TestCSRF_GetRefreshesExpiredToken 过期 token 的 GET 必须补发新 token，
+// 且补发的 token 能立刻用于写请求（D26 的验收路径）。
+func TestCSRF_GetRefreshesExpiredToken(t *testing.T) {
+	t.Parallel()
+	secret := []byte("test-secret-32-chars-xxxxxxxxx")
+	cfg := DefaultCSRFConfig(secret)
+	r := newTestServer(cfg)
+
+	expired := makeToken(secret, "user-123", time.Now().Unix()-3*3600, newNonce())
+	if csrfTokenValid(cfg, expired) {
+		t.Fatal("前置条件失败：构造出的 token 应当是失效的")
+	}
+
+	w := performReq(r, "GET", "/api/v1/protected", expired, "")
+	if w.Code != 200 {
+		t.Fatalf("GET 应放行, got %d", w.Code)
+	}
+	refreshedRaw := csrfRawSetCookie(w)
+	if refreshedRaw == "" {
+		t.Fatal("过期 token 的 GET 必须补发 XSRF-TOKEN（否则写路径永久 403）")
+	}
+	refreshed := csrfTokenAsBrowserSees(t, refreshedRaw)
+	if refreshed == expired {
+		t.Error("补发的 token 必须与过期 token 不同")
+	}
+	if !csrfTokenValid(cfg, refreshed) {
+		t.Error("补发的 token 本身必须是有效 token")
+	}
+
+	// D26 验收：拿补发的新 token 立刻发写请求应当成功。
+	// 浏览器行为：cookie 发转义原值，header 发 decode 后的值。
+	w2 := performReq(r, "POST", "/api/v1/protected", refreshedRaw, refreshed)
+	if w2.Code != 200 {
+		t.Errorf("用补发的 token POST 应 200, got %d (body=%s)", w2.Code, w2.Body.String())
+	}
+}
+
+// TestCSRF_GetKeepsValidToken 有效 token 不应被无谓轮换（避免每个 GET 都换 cookie）。
+func TestCSRF_GetKeepsValidToken(t *testing.T) {
+	t.Parallel()
+	secret := []byte("test-secret-32-chars-xxxxxxxxx")
+	r := newTestServer(DefaultCSRFConfig(secret))
+
+	// 模拟"浏览器里已有一个有效 token"：cookie 存转义值，服务端读时 unescape。
+	fresh := makeToken(secret, "user-123", time.Now().Unix(), newNonce())
+	w := performReq(r, "GET", "/api/v1/protected", url.QueryEscape(fresh), "")
+	if raw := csrfRawSetCookie(w); raw != "" {
+		t.Errorf("有效 token 不应被重签, got new value %q", raw)
+	}
+}
+
+// TestCSRF_GetRefreshesMalformedToken 格式错的 token 同样要重签
+// （否则前端永远拿不到可用 token，写路径一样卡死）。
+func TestCSRF_GetRefreshesMalformedToken(t *testing.T) {
+	t.Parallel()
+	r := newTestServer(DefaultCSRFConfig([]byte("test-secret-32-chars-xxxxxxxxx")))
+
+	w := performReq(r, "GET", "/api/v1/protected", "not-a-base64-token%21%21", "")
+	if csrfRawSetCookie(w) == "" {
+		t.Fatal("格式错的 token 应被重签")
+	}
+}
+
+// TestCSRF_GetRefreshesForgedToken 签名不符（例如 JWT_SECRET 轮换过）也要重签。
+func TestCSRF_GetRefreshesForgedToken(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultCSRFConfig([]byte("test-secret-32-chars-xxxxxxxxx"))
+	r := newTestServer(cfg)
+
+	forged := makeToken([]byte("another-secret-32-chars-yyyyyyy"), "user-123", time.Now().Unix(), newNonce())
+	if csrfTokenValid(cfg, forged) {
+		t.Fatal("前置条件失败：异密钥签出的 token 不应被视为有效")
+	}
+	w := performReq(r, "GET", "/api/v1/protected", url.QueryEscape(forged), "")
+	raw := csrfRawSetCookie(w)
+	if raw == "" {
+		t.Fatal("签名不符的 token 应被重签")
+	}
+	if !csrfTokenValid(cfg, csrfTokenAsBrowserSees(t, raw)) {
+		t.Error("补发的 token 必须是有效 token")
+	}
+}

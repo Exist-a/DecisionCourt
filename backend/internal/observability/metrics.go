@@ -103,6 +103,12 @@ const (
 	// 判决书正文引用的 evidence_id 中，能在本次庭审记录里找到源头的比例
 	// （0.0 ~ 1.0）。1.0 = 无凭空引用；偏低说明压缩丢了证据链或 LLM 幻觉。
 	MetricVerdictEvidenceAccuracy = "verdict_evidence_accuracy"
+
+	// v2.13 (deferred D24): 发言级幻觉度量。
+	// ValidateAgainstHallucination 对 speak 输出的硬拒次数（按 mode 分 label）。
+	// 之前质量度量只覆盖判决书（MetricVerdictEvidenceAccuracy），发言阶段的
+	// 幻觉率只能翻日志 —— 想量化"压缩是否伤到发言质量"时无从观察。
+	MetricSpeakHallucinationTotal = "speak_hallucination_total"
 )
 
 // memMetrics 是线程安全的内存实现。

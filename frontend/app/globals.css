@@ -275,26 +275,34 @@
 
 /* ============= v0.5+ Verdict 页面打印样式 ============= */
 /* 用户点击"导出 PDF"时 window.print() 触发，整页按纸张尺寸重排。 */
-/* 设计目标：A4 单栏打印，背景白色，隐藏交互元素。 */
+/* v2.13 重写：从"省墨黑白"改为"与屏幕一致"。
+   起因：用户导出 PDF 反馈「不仅是黑白的，而且有些边框什么的都没有」。实拍 PDF
+   核对后确认两个系统性原因：
+     A) 旧规则（原第 2/4/5/6 条）主动把配色刷成白底黑字、把 .bg-prosecution /
+        .bg-defense 刷成 transparent → 设计里的色条与分隔线直接消失（"边框没了"）。
+     B) 旧 @page 留了 1.5cm/1cm 边距 → 打印视口内容宽 ≈ 718px < Tailwind md 断点
+        (768px) → **所有 md:/lg: 工具类失效** → 多列 grid 塌成单列（判决页顶部
+        「控方 | ⚖ | 辩方」在 PDF 里变成上下堆叠），部分依赖断点的分隔线也不渲染。
+   修法：① print-color-adjust: exact 让背景/配色原样打印；② 删掉全部"改配色"
+   规则；③ @page 边距压到 0，使内容宽 = A4 全宽(210mm≈794px) > 768px，md: 断点
+   重新生效（视觉留白由页面自身 container 的 padding 提供）。 */
 @media print {
-  /* 1. 隐藏交互/装饰元素 */
+  /* 1. 保真：强制打印背景色/配色。
+     print-color-adjust 是**可继承**属性，设在 html/body 上即可，不必逐元素铺开。 */
+  html,
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 2. 只隐藏交互元素。装饰（如判决书印章 .seal-stamp）保留，维持观感一致。 */
   .print\:hidden,
-  button,
-  .seal-stamp {
+  button {
     display: none !important;
   }
 
-  /* 2. 强制白底 + 黑色文字（覆盖 paper 暖色调，方便打印省墨） */
-  body,
-  .paper-overlay,
-  .bg-paper,
-  .bg-paperDeep,
-  .bg-white {
-    background: #ffffff !important;
-    color: #000000 !important;
-  }
-
-  /* 3. 移除动画 + 阴影 + 圆角（打印不需要） */
+  /* 3. 停动画 + 去阴影。阴影对打印没有意义，而且它是**逐元素光栅化**的主要
+     开销 —— 也是点「导出 PDF」后页面卡顿的主因之一。边框仍在，结构不丢。 */
   *,
   *::before,
   *::after {
@@ -304,61 +312,54 @@
     text-shadow: none !important;
   }
 
-  /* 4. 卡片：去掉背景色和边框宽度，只保留主分割线 */
-  .shadow-paper,
-  .shadow-paper-lg,
-  .border-rule {
-    box-shadow: none !important;
-    border-color: #999999 !important;
+  /* 4. 纸张纹理（.paper-overlay 的全页 repeating-linear-gradient）是纯屏幕装饰，
+     打印时会把整页反复光栅化，既慢又没有价值，直接不渲染。 */
+  .paper-overlay::before {
+    display: none !important;
   }
 
-  /* 5. 颜色: 控/辩/审三色用深色印刷（玫红/蓝/琥珀 → 黑/深灰/深灰） */
-  .text-prosecution,
-  .text-prosecution-ink,
-  .bg-prosecution,
-  .border-prosecution {
-    color: #000000 !important;
-    background: transparent !important;
-    border-color: #000000 !important;
-  }
-  .text-defense,
-  .text-defense-ink,
-  .bg-defense,
-  .border-defense {
-    color: #333333 !important;
-    background: transparent !important;
-    border-color: #333333 !important;
-  }
-  .text-judge,
-  .text-gold,
-  .bg-judge,
-  .border-judge {
-    color: #555555 !important;
-    background: transparent !important;
-    border-color: #555555 !important;
-  }
-
-  /* 6. 评分条：黑色实心 */
-  .bg-prosecution,
-  .bg-defense {
-    background: #000000 !important;
-  }
-
-  /* 7. 关键：每个 section 自然分页 */
-  section {
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-
-  /* 8. 庭审流程容器：不要限制 max-height，让所有 transcript 都能打印 */
+  /* 5. 庭审流程容器：不要限制 max-height，让所有 transcript 都能打印 */
   .max-h-\[480px\] {
     max-height: none !important;
     overflow: visible !important;
   }
 
-  /* 9. 页边距 */
+  /* 6. 分页控制：让「一个个方框」尽量整块不劈开，且标题不留孤行。
+     - section：判决页每个 box 都包在 <section> 里，这条是主力
+     - h1~h6：标题不允许落在页尾（否则标题和它下面的内容被分到两页）
+     - orphans/widows：正文至少留 2 行同页，避免单行孤悬
+     - img/table/pre：整体不可分割 */
+  section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  p,
+  li,
+  blockquote {
+    orphans: 2;
+    widows: 2;
+  }
+  img,
+  table,
+  pre {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 7. 页边距压到 0 —— 见文件头说明 B)：margin 一留，内容宽就掉到 md 断点
+     (768px) 以下，所有 md:/lg: 工具类失效、多列布局塌成单列。 */
   @page {
-    margin: 1.5cm 1cm;
+    size: A4;
+    margin: 0;
   }
 }
 

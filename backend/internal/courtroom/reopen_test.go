@@ -208,3 +208,20 @@ func TestReopenTrial_ViaProcessUserAction(t *testing.T) {
 	require.NoError(t, svc.db.Where("session_uuid = ?", session.SessionUUID).First(&fresh).Error)
 	require.Equal(t, model.PhaseEvidence, fresh.CurrentPhase)
 }
+// v2.13 (deferred D22 现象 1)：判决落库后 status=completed，reopen 必须把它
+// 复位为 active —— 否则 finishTrial 的幂等守卫
+// (`fresh.Status == StatusCompleted → return nil`) 会让重开后的「直接判决」
+// 变成静默 no-op（用户视角=点了没反应）。
+func TestReopenTrial_ResetsStatusToActive(t *testing.T) {
+	svc, _, _ := newReopenTestService(t)
+	session := seedSession(t, svc.db, model.PhaseVerdict, 2)
+	// 模拟 finishTrial 判决落库后的真实状态（phase=verdict 且 status=completed）。
+	require.NoError(t, svc.db.Model(&session).Update("status", model.StatusCompleted).Error)
+
+	require.NoError(t, svc.reopenTrial(context.Background(), session))
+
+	var fresh model.CourtSession
+	require.NoError(t, svc.db.Where("session_uuid = ?", session.SessionUUID).First(&fresh).Error)
+	require.Equal(t, model.PhaseEvidence, fresh.CurrentPhase)
+	require.Equal(t, model.StatusActive, fresh.Status, "reopen 必须把 status 复位为 active")
+}

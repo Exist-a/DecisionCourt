@@ -246,16 +246,30 @@ func TestReActRunner_ContextCancelStopsLoop(t *testing.T) {
 }
 
 // T7: 不在白名单中的 tool 名 → runner 返回错误（防止 LLM 幻觉调出未注册的工具）
-func TestReActRunner_UnknownToolRejected(t *testing.T) {
+// T7 (v2.13 行为变更): 未注册的 tool 不再终止整轮,而是作为"可恢复观察"
+// 喂回消息流 —— 模型下一轮可自纠(换合法 tool 或直接 speak)。
+//
+// 原实现直接 return error;一次偶发畸形输出(deepseek 实测吐
+// action="tool_call" 但 tool 为空 → `tool "" not registered`)就让整个
+// cross_exam round 中断、辩方不再发言、trial 卡死。
+func TestReActRunner_UnknownToolIsRecoverableObservation(t *testing.T) {
 	allowed := &stubTool{name: "investigator_search", observation: "ok"}
 	r, _ := newTestRunner(t, []string{
 		toolOutputJSON("幻觉调一个不存在的工具", "delete_database", map[string]interface{}{"table": "users"}),
+		speakOutputJSON("发现工具不可用,改为直接发言", "改用现有证据陈述", "pro_a", 0.8),
 	}, []Tool{allowed}, nil, RunnerConfig{})
 
-	_, _, err := r.Run(context.Background(), nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "delete_database")
-	require.Contains(t, err.Error(), "not registered")
+	speaker, steps, err := r.Run(context.Background(), nil)
+	require.NoError(t, err, "未注册工具不应终止整轮")
+	require.Equal(t, "改用现有证据陈述", speaker.Content)
+
+	// 第一步必须留下可见的失败观察,不能被静默吞掉。
+	require.Len(t, steps, 2)
+	require.Equal(t, "delete_database", steps[0].ToolName)
+	require.Contains(t, steps[0].Observation, "not registered")
+	require.Equal(t, "tool_not_registered", steps[0].Error)
+	require.Equal(t, "speak", steps[1].Action)
+	require.Empty(t, allowed.Calls(), "未注册工具绝不能被执行")
 }
 
 // T8: 步进回调每次都被调用，且 Steps 数组按顺序

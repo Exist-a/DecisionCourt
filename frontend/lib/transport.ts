@@ -92,6 +92,27 @@ const DEFAULT_BATCH_INTERVAL_MS = 5_000;
 const DEFAULT_MAX_QUEUE_SIZE = 100;
 const DEFAULT_MAX_PAYLOAD_BYTES = 32 * 1024; // 32KB
 
+// v2.13 fix: CSRF double-submit 的 header 名 + cookie 名，与 lib/api.ts 一致。
+// 后端 CSRF 中间件（middleware/csrf.go）对所有 POST 要求 X-XSRF-TOKEN == XSRF-TOKEN
+// cookie，而埋点走的是自己的 fetch（不走 fetchJson 的自动注入）—— 所以这里要自己补。
+// 此前缺失导致所有 fe.* 埋点 403（自 v2.5 引入 CSRF 起，静默失败约 3 周）。
+const CSRF_COOKIE_NAME = "XSRF-TOKEN";
+const CSRF_HEADER_NAME = "X-XSRF-TOKEN";
+
+// readCookie 读 document.cookie（SSR 安全）。与 lib/api.ts:readCookie 同实现，
+// 此处内联避免 transport ↔ api 的循环依赖。
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const target = `${name}=`;
+  for (const part of document.cookie.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(target)) {
+      return decodeURIComponent(trimmed.slice(target.length));
+    }
+  }
+  return null;
+}
+
 // ============== Transport 实例 ==============
 
 export interface Transport {
@@ -290,6 +311,12 @@ export function defaultDeps(batchIntervalMs: number = DEFAULT_BATCH_INTERVAL_MS)
       const authHeaders: Record<string, string> = { ...headers };
       if (token) {
         authHeaders["Authorization"] = `Bearer ${token}`;
+      }
+      // v2.13 fix: 补 CSRF double-submit header。与 lib/api.ts:fetchJson 对齐 ——
+      // 缺它时后端 CSRF 中间件对 POST 回 403 CSRF_TOKEN_MISMATCH，所有 fe.* 埋点丢失。
+      const csrfToken = readCookie(CSRF_COOKIE_NAME);
+      if (csrfToken) {
+        authHeaders[CSRF_HEADER_NAME] = csrfToken;
       }
 
       const res = await fetch(url, {

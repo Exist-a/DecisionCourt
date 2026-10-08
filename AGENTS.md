@@ -361,7 +361,9 @@ curl http://localhost:8180/api/v1/health/llm | jq
 # 期望无 key: {"configured":false,...}
 
 # 4. v2.1 F5: metrics 翻动（需先建 1 个 trial）
-curl http://localhost:8180/api/v1/metrics | jq '.counters, .gauges'
+# 注意: 端点是 /metrics（顶层,白盒化时公开），不是 /api/v1/metrics（后者 404）。
+# 2026-10-08 v2.13 docker 验证实测修正。
+curl http://localhost:8180/metrics | jq '.counters, .gauges'
 # 期望: agent_gateway_llm_total_tokens_per_call 在 500-2000
 
 # 5. 前端验证（用 web-gui-tester 或手动）

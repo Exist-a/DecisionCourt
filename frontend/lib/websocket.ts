@@ -105,8 +105,12 @@ export class CourtWebSocket {
           return;
         }
         this.dispatch(event);
-      } catch {
-        // ignore invalid messages
+      } catch (err) {
+        // v2.13: 不再静默。这里吞掉的既有"非法 JSON",也有**事件处理器抛出的异常**
+        // (例如 applySpeakChunk 的 flushSync 在 React 渲染中被调用会 throw)。
+        // 静默会让处理链中途断掉且控制台没有任何线索 —— 正是本项目一直在治的
+        // "静默错误黑洞",也是本次流式气泡"卡住但无报错"难以定位的原因。
+        console.error("[WebSocket] onmessage handler failed:", err);
       }
     };
     this.realSocket.onerror = (err) => {

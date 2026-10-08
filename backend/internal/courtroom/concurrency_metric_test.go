@@ -124,11 +124,14 @@ func TestService_RecordConcurrencyMetric_Gauges(t *testing.T) {
 		t.Errorf("after 2 acquires: expected current gauge = 2, got %f", v)
 	}
 
-	// 3. cancel1 → release 1 slot → current=1 (cancel1 释放后 Stats 返回 1)
-	//    wrappedCancel 不调 recordConcurrencyMetric (release 时机复杂, cancel call
-	//    不一定对应 trial 结束)。这是设计选择: gauge 反映"已观察到的上限",
-	//    实时 current 由 Stats() 查询。
+	// 3. cancel1 → release 1 slot → current gauge 应回落为 1。
+	//    v2.13 (deferred D20): wrappedCancel 释放 slot 后也刷新 gauge
+	//    (此前只在 acquire 分支写 → gauge 停在最后一次 acquire 的值)。
 	cancel1()
+	snap = metrics.Snapshot()
+	if v := gaugeValue(t, snap, observability.MetricGlobalConcurrencyCurrent); v != 1 {
+		t.Errorf("after release: expected current gauge to drop to 1, got %f", v)
+	}
 
 	// 4. 第 3 次成功 → cur=2 (cancel1 已释放 1 slot)
 	_, cancel3, err := svc.withCancel(context.Background(), "session-3")
@@ -173,6 +176,54 @@ func TestService_RecordConcurrencyMetric_NilSafe(t *testing.T) {
 		t.Fatalf("withCancel with nil limiter: unexpected error %v", err)
 	}
 	cancel2()
+}
+
+// TestService_WrappedCancel_ReleasesOnce 验证 v2.13 (deferred D20) 的
+// sync.Once 守卫: 同一个 cancel 被重复调用(production 里 direct_verdict
+// 的 cancelCall + 调用方 defer cancel 可能各调一次)时, slot 只释放一次。
+//
+// 反例可观测点: 若重复调用会重复 Release, 会把"后来 acquire 到的 slot"
+// 误放 → 第三个 trial 拿到本不该有的 slot。
+func TestService_WrappedCancel_ReleasesOnce(t *testing.T) {
+	t.Parallel()
+
+	metrics := observability.NewMetrics()
+	// cap=1: slot 满时任何 acquire 都会失败, 便于断言"有没有被误放"。
+	svc := &Service{
+		activeCalls:        make(map[string]context.CancelFunc),
+		concurrencyLimiter: NewConcurrencyLimiter(1),
+		metrics:            metrics,
+	}
+
+	// 1. 占满唯一的 slot。
+	_, cancel1, err := svc.withCancel(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("1st withCancel: unexpected error %v", err)
+	}
+
+	// 2. 正常释放 → slot 空出。
+	cancel1()
+
+	// 3. 重新占满 slot (s2)。
+	_, cancel2, err := svc.withCancel(context.Background(), "s2")
+	if err != nil {
+		t.Fatalf("2nd withCancel after release: unexpected error %v", err)
+	}
+
+	// 4. 过期/重复的 cancel1() 必须 no-op —— 不能把 s2 的 slot 误放。
+	cancel1()
+
+	// 5. slot 仍被 s2 占着 → s3 必须被拒。
+	if _, _, err := svc.withCancel(context.Background(), "s3"); err != ErrConcurrencyLimitExceeded {
+		t.Fatalf("after duplicate cancel, expected ErrConcurrencyLimitExceeded, got %v", err)
+	}
+
+	// 6. 释放 s2 后 gauge 应回落为 0。
+	cancel2()
+	snap := metrics.Snapshot()
+	if v := gaugeValue(t, snap, observability.MetricGlobalConcurrencyCurrent); v != 0 {
+		t.Errorf("after all released: expected current gauge = 0, got %f", v)
+	}
 }
 
 // counterValue 工具函数: 从 MetricSnapshot 拿 counter 值（找不到返回 0）。

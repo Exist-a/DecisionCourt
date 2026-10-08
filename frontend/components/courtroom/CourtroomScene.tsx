@@ -24,7 +24,7 @@ import {
   toastWarning,
 } from "@/lib/errorBus";
 import { AgentAvatar } from "./AgentAvatar";
-import { EvidenceBoard } from "./EvidenceBoard";
+import { EvidenceBoard, type PendingEvidence } from "./EvidenceBoard";
 import { MessageHistory } from "./MessageHistory";
 import { InvestigatorPanel } from "./InvestigatorPanel";
 import { MemoryAuditPanel } from "./MemoryAuditPanel";
@@ -32,8 +32,6 @@ import { ConvergenceBadge } from "./ConvergenceBadge";
 import { BeliefTrajectoryTab } from "./BeliefTrajectoryTab";
 import { PhaseGuide } from "./PhaseGuide";
 import { HelpPopover } from "./HelpPopover";
-// v1.0.4 PR-C2: Trace 可视化 (TrialReplay Dialog)
-import { TrialReplay } from "@/components/trace/TrialReplay";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 // v0.10 前端埋点 (ADR 0020): 见 runtime.ts 注释。模块级单例,
@@ -56,7 +54,6 @@ import {
   Search as SearchIcon,
   Brain,
   Activity,
-  History,
   ArrowLeft, // v1.0-patch-2: 返回首页按钮
   Scale, // v2.1 O-2: 当事人对照行天平图标
 } from "lucide-react";
@@ -120,8 +117,6 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   const [verdictReady, setVerdictReady] = useState(false);
   const [waitingForNextRound, setWaitingForNextRound] = useState(false);
   const [nextRound, setNextRound] = useState(2);
-  // v1.0.4 PR-C2: TrialReplay 庭审回放 Dialog 开关
-  const [replayOpen, setReplayOpen] = useState(false);
   // v0.10 (ADR 0020) fe.phase_entered: 跟踪"上一次进入 phase 的时刻 + 当前 phase",
   // phase.changed 事件到达时计算 durationMs = now - lastEnteredAt。
   // useRef 不触发 re-render,避免 phase 变化外引起额外渲染。
@@ -134,12 +129,25 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     "messages" | "investigator" | "memory" | "belief"
   >("messages");
 
+  // v2.13: 已提交但尚未落库的证据（乐观插入 + 「排队中」提示）。
+  // 根因见 EvidenceBoard 的 PendingEvidence 注释 —— 发言期间归档会排到本轮结束。
+  const [pendingEvidences, setPendingEvidences] = useState<PendingEvidence[]>([]);
+  const prevEvidenceCountRef = useRef(evidences.length);
+
+  // 证据真正落库（store.evidences 数量增加）后，按 FIFO 消掉对应的「排队中」项。
+  useEffect(() => {
+    const delta = evidences.length - prevEvidenceCountRef.current;
+    prevEvidenceCountRef.current = evidences.length;
+    if (delta > 0) {
+      setPendingEvidences((prev) => (prev.length === 0 ? prev : prev.slice(delta)));
+    }
+  }, [evidences.length]);
+
   // v1.0-patch (2026-08-22): hydrate 移到 app/court/[id]/page.tsx 共享
   // hydrateCourtroomStore()。本 useEffect 只做 4 件事:
   //   1. initAnalytics (绑定 sessionUUID 到埋点单例)
   //   2. memory 降级到 localStorage 缓存 (D2-Memory 收尾,失败时 toast)
   //   3. WebSocket 连接
-  //   4. TrialReplay Dialog 开关
   //
   // 之前这里有 6 段重复的 REST hydrate (session/agents/evidences/investigations/
   // belief_diffs/memory), 与外层 hydrateCourtroomStore 双跑,
@@ -199,7 +207,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
 
   // v1.0-patch: 删除老的 load() 重复 hydrate 块 (session/agents/evidences/
   // investigations/belief_diffs/memory 都移到外层 hydrateCourtroomStore + 
-  // 上方独立 memory useEffect)。本 useEffect 只做 WS + TrialReplay。
+  // 上方独立 memory useEffect)。本 useEffect 只做 WS。
 
   // WebSocket 连接 (原 useEffect 残留, 移出 try/catch 包裹)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -256,6 +264,10 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
             }
           },
         });
+        // v2.13: 出错时兜底清掉流式气泡 —— error 事件在这里直接 return,不会走
+        // applyCourtEvent,所以 store 里没有清除机会。后端在流式途中失败(整轮
+        // 中断 / LLM 错误)时气泡会永久卡住且没有报错(用户反馈的隐性卡顿)。
+        useCourtroomStore.getState().clearStreamingContent();
         return; // 错误事件不往下走 store apply
       }
 
@@ -352,6 +364,21 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
         setWaitingForNextRound(true);
         setNextRound(1);
       }
+
+      if (event.type === "trial.reopened") {
+        // v2.13 (deferred D22 现象 2):「补充证据重开」后后端把 phase 转回
+        // evidence 并广播此事件。round 保留,下一轮 = current_round + 1。
+        // 注意: 判决页点重开后是 router.push 回本页再 hydrate,事件多半在
+        // 跳转前就发完了 —— 所以底栏按钮还额外按 current_phase === "evidence"
+        // 派生渲染(见下方 "进 入 第 N 轮" 按钮),不单靠这个事件。
+        const p = event.payload as { current_round?: number };
+        const base =
+          p.current_round ??
+          useCourtroomStore.getState().session?.current_round ??
+          0;
+        setWaitingForNextRound(true);
+        setNextRound(base + 1);
+      }
     };
 
     socket.on("*", handler);
@@ -395,6 +422,12 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
 
   const handleSubmitEvidence = (content: string, type: EvidenceType) => {
     sendAction({ action: "submit_evidence", content, type });
+    // v2.13: 乐观插入一条「排队中」占位 —— 发言期间提交会被 session 锁排到本轮
+    // 结束才落库，没有这个占位用户会以为点了没反应（见 PendingEvidence 注释）。
+    setPendingEvidences((prev) => [
+      ...prev,
+      { id: `pending-${Date.now()}-${prev.length}`, content, type },
+    ]);
     // v0.10 (ADR 0020) fe.evidence_submitted:同上,只记录类型 + 字符数。
     getAnalytics().trackEvidenceSubmitted(type, content.length);
   };
@@ -475,7 +508,9 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   return (
     <div className="h-screen bg-paper text-ink flex flex-col overflow-x-clip overflow-y-hidden">
       {/* Header — 案卷封面 */}
-      <header className="border-b border-rule bg-paperDeep shrink-0">
+      {/* v2.13: id 供 AgentAvatar 的顶层气泡浮层测量边界用 ——
+          气泡可以越出庭审现场面板，但**不允许越过这条顶栏**。 */}
+      <header id="courtroom-topbar" className="border-b border-rule bg-paperDeep shrink-0">
         <div className="container mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
           <div className="flex items-baseline gap-4">
             {/* v1.0-patch-2 (Bug-UI-1 修复): 返回首页按钮 — 替代原"庭审页只能浏览器 back" */}
@@ -516,16 +551,6 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
           </div>
           <div className="flex items-center gap-2">
             {convergenceInfo && <ConvergenceBadge info={convergenceInfo} />}
-            {/* v1.0.4 PR-C2: 庭审回放入口 */}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setReplayOpen(true)}
-              data-testid="trial-replay-button"
-            >
-              <History className="w-3.5 h-3.5 mr-1.5" />
-              庭审回放
-            </Button>
             <HelpPopover />
             {/*
               v0.8.3 按钮逻辑修正：派生判断改用 session.current_phase
@@ -659,11 +684,14 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
             保留 overflow-x-clip 防横向滚动。
             副作用:内容多时 main 区会推 EvidenceBoard 下面 — 因为证据
             数量有限 + viewport 在 900h 仍够看,不影响正常 trial。 */}
-        <div className="flex-1 flex flex-col gap-5 min-w-0 overflow-x-clip">
+        {/* v2.13 布局重做:左列(庭审现场 + 证据板)整体作为滚动容器。
+            庭审现场自身不再内滚、不再被 flex 压缩(见下方 shrink-0);内容多到
+            超出视口时,滚的是**这一列**,而不是把现场压扁。 */}
+        <div className="flex-1 flex flex-col gap-5 min-w-0 overflow-y-auto overflow-x-hidden">
           {/* Agent arena — 庭审中央
                 v2.1 O-3: 加 .scene-shell + 装饰元素 (装订线/折角/印章 mini) — 不动现有 flex/bg/border/shadow
                 加 overflow-hidden 防止装订线/印章角标准视觉溢出 panel 边界,配合外层 overflow-x-clip 保持防横向滚动 */}
-          <div className="relative flex flex-col items-center justify-start py-5 bg-white border border-rule rounded-sm shadow-paper min-w-0 scene-shell overflow-y-auto pb-12">
+          <div className="relative flex flex-col items-center justify-start py-5 bg-white border border-rule rounded-sm shadow-paper min-w-0 shrink-0 scene-shell overflow-hidden pb-12">
             {/* 案卷·印章 装饰 (v2.1 O-3):
                 - 左侧装订线 (含 3 个圆孔)
                 - 四角折角
@@ -828,6 +856,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
           {/* Evidence board */}
           <EvidenceBoard
             evidences={evidences}
+            pendingEvidences={pendingEvidences}
             onSubmit={handleSubmitEvidence}
             sessionId={sessionId}
           />
@@ -948,7 +977,11 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
                 <Plus className="w-3.5 h-3.5 mr-1" />
                 归 档 证 据
               </Button>
-              {waitingForNextRound && (
+              {/* v2.13 (deferred D22 现象 2): evidence 阶段(补充证据重开后)
+                  也要出现「进入第 N 轮」入口 —— 此前只有 WS 事件置位的
+                  waitingForNextRound 才渲染,而重开走的是判决页跳转,事件早
+                  就发过了 → 用户回到举证阶段后无按钮可点。 */}
+              {(waitingForNextRound || session.current_phase === "evidence") && (
                 <Button
                   size="sm"
                   onClick={() => {
@@ -964,7 +997,11 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
                   <Gavel className="w-3.5 h-3.5 mr-1.5" />
                   {session.current_phase === "opening"
                     ? "开 始 质 证"
-                    : `进 入 第 ${nextRound} 轮`}
+                    : `进 入 第 ${
+                        waitingForNextRound
+                          ? nextRound
+                          : (session.current_round ?? 0) + 1
+                      } 轮`}
                 </Button>
               )}
             </div>
@@ -1034,13 +1071,6 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* v1.0.4 PR-C2: 庭审回放 Dialog (放在主 Dialog 后,独立顶层,open 状态由 replayOpen 控制) */}
-      <TrialReplay
-        sessionUUID={sessionId}
-        open={replayOpen}
-        onOpenChange={setReplayOpen}
-      />
     </div>
   );
 }

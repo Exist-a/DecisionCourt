@@ -220,3 +220,83 @@ test("events with non-object payload are normalized to undefined", () => {
 
   assert.equal(t.size(), 1, "non-object payload is allowed but normalized at flush time");
 });
+
+// ============== v2.13: CSRF header 注入 ==============
+//
+// 埋点走的是自己构造的 fetch(不经过 lib/api.ts:fetchJson 的自动注入),所以必须
+// 自己补 X-XSRF-TOKEN。此前缺失 → 后端 CSRF 中间件对 POST 回 403,所有 fe.* 埋点
+// 自 v2.5 引入 CSRF 起静默丢失(约 3 周)。
+
+async function withBrowserGlobals<T>(
+  cookie: string,
+  fetchImpl: (url: string, init: RequestInit) => Promise<unknown>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const g = globalThis as unknown as {
+    window?: unknown;
+    document?: unknown;
+    fetch: typeof fetch;
+  };
+  const saved = { window: g.window, document: g.document, fetch: g.fetch };
+  g.window = {};
+  g.document = { cookie };
+  g.fetch = fetchImpl as unknown as typeof fetch;
+  try {
+    return await fn();
+  } finally {
+    g.window = saved.window;
+    g.document = saved.document;
+    g.fetch = saved.fetch;
+  }
+}
+
+test("defaultDeps fetcher injects X-XSRF-TOKEN decoded from cookie", async () => {
+  const { defaultDeps } = await import("./transport.ts");
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+
+  await withBrowserGlobals(
+    "XSRF-TOKEN=tok%2B123%3D; other=1",
+    async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200 };
+    },
+    async () => {
+      const deps = defaultDeps(5000);
+      const res = await deps.fetcher(
+        "http://localhost:8180/api/v1/courtrooms/s1/events",
+        { event_type: "fe.x" },
+        { "Content-Type": "application/json" },
+      );
+      assert.equal(res.ok, true);
+    },
+  );
+
+  const eventsCall = calls.find((c) => c.url.includes("/events"));
+  assert.ok(eventsCall, "默认 fetcher 必须真的把埋点请求发出去");
+  const headers = eventsCall.init.headers as Record<string, string>;
+  // 必须 URL-decode(与后端 Go 侧读取 cookie 时的 unescape 对齐)
+  assert.equal(headers["X-XSRF-TOKEN"], "tok+123=");
+  assert.equal(eventsCall.init.credentials, "include");
+});
+
+test("defaultDeps fetcher omits X-XSRF-TOKEN when cookie absent", async () => {
+  const { defaultDeps } = await import("./transport.ts");
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+
+  await withBrowserGlobals(
+    "other=1",
+    async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200 };
+    },
+    async () => {
+      const deps = defaultDeps(5000);
+      await deps.fetcher("http://localhost:8180/api/v1/courtrooms/s1/events", {}, {});
+    },
+  );
+
+  const eventsCall = calls.find((c) => c.url.includes("/events"));
+  assert.ok(eventsCall, "默认 fetcher 必须真的把埋点请求发出去");
+  const headers = eventsCall.init.headers as Record<string, string>;
+  assert.equal(headers["X-XSRF-TOKEN"], undefined, "无 cookie 时不应伪造 header");
+});
