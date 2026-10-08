@@ -4,6 +4,21 @@
 > **状态**：✅ 已完成（backend + frontend + tests + docs 全部同步）
 > **作者范围**：5 个根因、3 个前端 + 4 个后端 + 1 个 .env 范围外改动、~6 个新测试
 
+> **⚠️ 状态更新（2026-10-08，v2.11 D18）**：本文档描述的 **B-4「补充证据重开」当时并未真正可用**。
+>
+> 状态机与 `reopen_trial` 分支都按本文档落地了，但 `finishTrial` 结尾写的是
+> "Stay in deliberation phase" —— 判决后 session 停在 `deliberation`，而 `reopen_trial`
+> 的守卫要求 `phase ∈ {verdict, appeal}` → **真实流程里永远被拒**。`reopen_test.go`
+> 手工 seed 了 `verdict` 阶段，所以测试一直是绿的（"测了但不可达"）。
+>
+> v2.11 修复：`finishTrial` 判决落库后补上 `deliberation → verdict` 迁移
+> （state machine 本来就允许这条边）。前端也早就按 `verdict` 派生 UI
+> （`CourtroomScene`：「verdict/appeal → 查看判决书；其余 → 直接判决」），
+> 所以此前判决后的按钮显示也是错的。
+>
+> 护栏：`finish_trial_d18_test.go`（判决后阶段 = verdict + `reopen_trial` 端到端可用 +
+> deliberation 仍被拒），并同步更新 `integration_*_test.go` 里的 final-phase 断言。
+
 ---
 
 ## 1. 问题陈述

@@ -1844,7 +1844,19 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 		}
 	}
 
-	// Stay in deliberation phase; the user clicks a button to view the verdict.
+	// v2.11 (deferred D18): 判决落库后把阶段推进到 verdict。
+	//
+	// 这里原本是 "Stay in deliberation phase" —— 结果 session 永远停在
+	// deliberation，而：
+	//   1. reopen_trial（"补充证据重开"）的状态机守卫要求 phase ∈ {verdict, appeal}
+	//      → 真实流程里**永远被拒**（v0.8.3 那个功能从未可用，前端判决页的按钮
+	//      必然失败）；reopen_test.go 手工 seed 了 verdict 阶段所以一直是绿的。
+	//   2. 前端本来就按 verdict 派生 UI（CourtroomScene：「verdict/appeal → 查看
+	//      判决书；其余 → 直接判决」）→ 停在 deliberation 会让判决后的按钮显示错。
+	// state machine 本来就允许 deliberation → verdict，这一步是补上缺失的迁移。
+	if err := s.transitionPhase(&session, model.PhaseVerdict, session.CurrentRound); err != nil {
+		return err
+	}
 	session.Status = model.StatusCompleted
 	if err := s.db.Model(&session).Update("status", model.StatusCompleted).Error; err != nil {
 		return err

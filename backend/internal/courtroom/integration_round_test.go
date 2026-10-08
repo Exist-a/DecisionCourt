@@ -133,10 +133,14 @@ func TestDirectVerdictEarlyTermination(t *testing.T) {
 
 	var passed, failed []string
 
-	if state.FinalPhase == "deliberation" {
-		passed = append(passed, "final_phase_is_deliberation")
+	// v2.11 (deferred D18): finishTrial 现在把阶段推进到 verdict（此前停在
+	// deliberation）。契约随之变更：判决后 FinalPhase 应为 "verdict" ——
+	// 这样 reopen_trial（守卫要求 verdict/appeal）才可达，前端也才能按
+	// 「verdict → 查看判决书」派生按钮。
+	if state.FinalPhase == "verdict" {
+		passed = append(passed, "final_phase_is_verdict")
 	} else {
-		failed = append(failed, fmt.Sprintf("final_phase expected deliberation, got %s", state.FinalPhase))
+		failed = append(failed, fmt.Sprintf("final_phase expected verdict, got %s", state.FinalPhase))
 	}
 
 	if state.Verdict != nil {
