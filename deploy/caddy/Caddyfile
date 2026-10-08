@@ -15,11 +15,16 @@
 {$DOMAIN} {
     encode zstd gzip
 
-    # v0.10.21 PR-E (P2-C2): access_log 落地（按 100MB 滚动保留 5 份）
+    # v0.10.21 PR-E (P2-C2): access log 落地（按 100MB 滚动保留 5 份）
     # 触发: production-retrospective-2026-08-05.md §4 P2-1
     # 当前完全看不到真实 HTTP 流量（只有 frontend 后端反代，没法审计外部 IP / 4xx / 慢请求）
     # 卷挂载见 docker-compose.yml caddy 段：./logs/caddy:/data/caddy
-    access_log {
+    #
+    # v2.13 修复：这里原写作 `access_log { ... }` —— Caddy v2.11.7 不认识该指令
+    # （`caddy adapt` 报 "unrecognized directive: access_log"），容器起来后读完配置
+    # 立即静默 exit 1 并无限重启（Restarts 一直涨、日志里没有任何 error，极难排查）。
+    # Caddy v2 的站点级访问日志指令是 `log`。等价改写后 adapt 通过。
+    log {
         output file /data/caddy/access.log {
             roll_size 100mb
             roll_keep 5
