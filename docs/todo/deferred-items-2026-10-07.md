@@ -940,6 +940,65 @@ denied: unknown manifest class for application/vnd.oci.empty.v1+json
 
 **修法**：两个 build step 各加 `provenance: false` + `sbom: false`，只推普通镜像 manifest（单平台无需 index）。不采用「升 action 大版本」的绕法：Node 20 deprecation 只是 warning（GitHub 强制跑 Node 24），部署中途不引入新变量。
 
-**验证**：PyYAML 解析确认两个 step 的 `provenance` / `sbom` 均为 `False`；**真实推送结果需下一轮 Deploy 跑完确认**（本机无 ACR 凭据，无法本地复现 push）。
+**验证**：PyYAML 解析确认两个 step 的 `provenance` / `sbom` 均为 `False`。**实跑确认（2026-10-09 下一轮 Deploy）**：`795e7c5` 的两个镜像 tag 都成功落到 ACR（从服务器上用 `docker manifest inspect` 轮询确认 `be=Y fe=Y`）——修复有效。
+
+### R10（P2）`prompts/base.yaml` 没进 runtime 镜像 → 线上永久降级到 hardcoded fallback（2026-10-09）
+
+**发现路径**：新代码上线后查 backend 启动日志，每次启动都有：
+
+```
+{"level":"WARN","msg":"promptlab YAML load failed, using hardcoded fallback",
+ "path":"prompts/base.yaml","error":"open prompts/base.yaml: no such file or directory"}
+```
+
+**根因**：`backend/Dockerfile` 是多阶段构建，runtime 阶段只 `COPY --from=builder /app/server /app/server`，**没有拷 `prompts/`**；prod compose 也没有 `prompts` 的 volume（backend 只挂 `./logs/backend:/app/logs`）。于是容器里 `prompts/base.yaml` 不存在，`promptlabStore.Load()` 失败 → `ApplyFallback(agent.HardcodedBaseRules())`。
+
+**为什么值得修（不是"设计内的降级"）**：ADR 0031 §57 确实把 fallback 写成设计路径，但它针对的是「加载失败」的兜底；这里的情况是**打包漏文件导致必然失败**。更要命的是方向性：dev 栈 `bind mount ./backend:/app`，本地**一直**走 YAML，所以线上跑的恰是没被测过的那条路。YAML 与 hardcoded 在文档里声明「1:1 等价」，但**没有任何测试断言这一点**（`HardcodedBaseRules` 在 `_test.go` 里零引用）。
+
+**修法**：runtime 阶段补 `COPY --from=builder /app/prompts /app/prompts`。
+
+**附带（同批，production-retrospective §4 P1-2）**：deploy.yml 后端 build 补 `build-args: VERSION=${{ env.TAG }}`。此前镜像里 `main.version` 恒为 `dev`，"线上跑的是哪版"只能靠镜像 tag 反推。
+
+**验证（实跑）**：重新部署后启动日志变为
+`{"level":"INFO","msg":"promptlab loaded","version":"1.0.3-pr1@dev","path":"prompts/base.yaml"}`（WARN 消失），且
+`{"msg":"DecisionCourt backend listening","version":"3fc2ae83a7589378ff2236595aabce79fb4508e2"}` —— 自报版本已是镜像 tag。
+
+### 未修：Prompt Lab REST 端点从未接线（P2，需决策）
+
+**现象**：`GET https://decisioncourt.cn/api/v1/prompts/version` → **404**。
+
+**根因**：`handler.promptLab` 靠 `NewPromptLabAdapter(store, llmClient)` 注入，而**全仓（含测试）没有任何调用点** —— 该函数只有定义。`RegisterPromptLabRoutes` 开头 `if h.promptLab == nil { return }`，于是 `/api/v1/prompts/{eval,abtest,version,reload}` 四条路由**在所有环境都不注册**。v1.0.3 PR-B2 的 Prompt Lab 前端因此拿不到后端。
+
+**为什么不直接修**：这四条路由挂在带 `auth.Middleware` + `CSRF` 的 `authedGroup` 上（安全），但 `POST /prompts/eval` 与 `POST /prompts/abtest` **会真实调用 LLM**，且它们不在 `llmGroup` 里、**没有 `LLMRateLimit`**。上线首日激活一组能烧 token 的新端点属于产品/成本决策，按 AGENTS.md §2.1 先报后做。
+
+**建议**：接线时把这两条挪进 `llmGroup`（复用 LLMRateLimit），或在 `RegisterPromptLabRoutes` 内部自行挂限流。
+
+---
+
+## 上线落地记录（2026-10-09，新服务器 8.218.24.43）
+
+| 项 | 结果 |
+|---|---|
+| 镜像 | ACR tag = commit SHA；`:latest` 由部署脚本 retag |
+| 部署方式 | **手动**（等价 deploy.yml 的 deploy job：pull → retag → `compose up -d --force-recreate backend frontend` → 容器内 health）。脚本 `/tmp/dc-deploy.sh`（服务器上，未入仓） |
+| 后端版本 | `3fc2ae83a7589378ff2236595aabce79fb4508e2`（启动日志自报） |
+| 容器 | dc_backend healthy / dc_frontend up / dc_postgres healthy / dc_redis healthy / dc_caddy up |
+| HTTPS | `/health` 200 · `/api/v1/health/llm` 200 · `/metrics` 200 · `/` 200（23KB） |
+| 证书 | Let's Encrypt，2026-10-08 → 2027-01-06 |
+| 业务冒烟 | `POST /api/v1/auth/anon`（带 `user_id`）→ 200 + JWT；`GET /api/v1/courtrooms` → 200 `{"count":0}`；`XSRF-TOKEN` cookie 正常下发（`Path=/; Max-Age=86400; Secure`） |
+| 前端构建期注入 | 服务的 JS chunk 里是 `https://decisioncourt.cn` / `wss://decisioncourt.cn`（GitHub secrets 正确） |
+
+### 阻塞项：CI 的 deploy job 连不上服务器（需用户在控制台处理）
+
+**现象**：`build` job 成功（镜像已推 ACR），但 `deploy` job 不落地 —— 服务器上镜像/容器长时间无变化。
+
+**证据**：服务器 `/var/log/auth.log` 里**所有** `Accepted publickey` 的来源都是 `111.40.17.203`（用户本机 IP），**没有任何 GitHub Actions runner 网段的连接记录**。说明请求根本没到 sshd，被云侧防火墙/安全组挡在 22 端口之外（阿里云轻量/ECS 的防火墙默认只放行特定来源）。
+
+**选项（三选一，需用户决定）**：
+1. 安全组放行 22 端口给 GitHub runner 网段（`https://api.github.com/meta` 的 `actions` 字段，CIDR 列表需定期同步）；
+2. 改拉取式部署（服务器侧定时/钩子 `docker compose pull && up -d`，不依赖入站 SSH）；
+3. 维持现状：每次手动跑等价部署脚本（本次即此路径）。
+
+**未改 GitHub Secret / 服务器配置**：涉及远端写与安全边界，等用户确认。
 
 
