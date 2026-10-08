@@ -14,7 +14,9 @@ package middleware
 // 设计权衡（vs gorilla/csrf）：
 //   - **手写不引入新依赖**（gorilla/csrf 加深 v2.5 commit 范围 + 大版本绑定）
 //   - 使用 HMAC 签名而非随机 token：服务端校验时可重新计算签名，无需存表
-//   - Cookie Path=/api/v1，Domain 与 dc_session 一致（SameSite=Lax 已有 CSRF 部分防御）
+//   - Cookie Path=/（**必须**让 JS 在所有应用页面都能读到；v2.11 D19 修过
+//     一次 "/api/v1" 的错——那会让 double-submit 在浏览器里整体失效），
+//     Domain 与 dc_session 一致（SameSite=Lax 已有 CSRF 部分防御）
 //   - **豁免** GET / HEAD / OPTIONS（idempotent method 不应触发 CSRF 校验）
 //   - **豁免** /auth/anon（注册 / 首次登录，本身就要发 token）
 //   - **WS 升级** 不强制 CSRF（浏览器 WS API 不让设自定义 header；改用 Origin 白名单已实装）
@@ -47,7 +49,13 @@ type CSRFConfig struct {
 	CookieName string
 	// HeaderName 前端必须塞的 header 名。默认 "X-XSRF-TOKEN"。
 	HeaderName string
-	// CookiePath Set-Cookie Path。默认 "/api/v1"（让 JS 在 API 请求域下读得到）。
+	// CookiePath Set-Cookie Path。默认 "/"。
+	//
+	// ⚠️ v2.11 修复（D19）：这里曾是 "/api/v1"，导致 double-submit 在浏览器里
+	// **完全失效** —— `document.cookie` 只暴露"Path 是当前文档路径前缀"的 cookie，
+	// 而应用页面在 "/" / "/court/..."，所以前端 `readCookie("XSRF-TOKEN")` 恒为 null
+	// → 永远不发 `X-XSRF-TOKEN` 头 → 后端对所有 POST/PUT/DELETE 回 403。
+	// Path 不是 CSRF 的安全边界（攻击者本来就跨域读不到 cookie），放宽到 "/" 不降安全性。
 	CookiePath string
 	// MaxAge cookie 有效期。默认 24h。
 	MaxAge time.Duration
@@ -61,7 +69,7 @@ func DefaultCSRFConfig(secret []byte) CSRFConfig {
 		Secret:     secret,
 		CookieName: "XSRF-TOKEN",
 		HeaderName: "X-XSRF-TOKEN",
-		CookiePath: "/api/v1",
+		CookiePath: "/",
 		MaxAge:     24 * time.Hour,
 		SkipPaths:  []string{"/auth/anon", "/auth/login"},
 	}

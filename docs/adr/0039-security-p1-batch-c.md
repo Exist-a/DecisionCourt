@@ -176,6 +176,25 @@ ADR 0038 修了 P1-3 + P1-5 + P1-7（低风险 3 项，~1.5 天）。
 - `.github/workflows/test.yml` yaml 语法 validated by Python yaml.safe_load
 - `pnpm install --frozen-lockfile` 验证：精确版本 + lockfile 一致
 
+> **⚠️ 事后更正（2026-10-08，v2.11 D19）**：上面的清单**没有实跑浏览器**，因此漏掉了一个致命缺陷。
+>
+> **缺陷**：`DefaultCSRFConfig` 把 cookie 的 `Path` 设成了 `"/api/v1"`。而 `document.cookie`
+> 只暴露 **Path 是当前文档路径前缀** 的 cookie —— 应用页面在 `/`、`/court/...`，所以前端
+> `readCookie("XSRF-TOKEN")` **恒为 null**，永远不发 `X-XSRF-TOKEN` 头，后端对所有
+> POST/PUT/DELETE 回 `403 CSRF_TOKEN_MISMATCH`。即 **double-submit 在浏览器里从未生效，
+> 所有浏览器写路径（立案 / 开庭 / 提交证据 / 全部 action）都是 403**。
+>
+> 单测测不出来，是因为单测直接 `req.AddCookie(...)` 构造 cookie，绕过了"浏览器能不能读到"这一步；
+> `tsc --noEmit` 更测不到运行时。这与 AGENTS.md §11.2「业务功能必须起 docker 实跑」是同一类教训
+> （实测证据见 `docs/todo/deferred-items-2026-10-07.md` D19）。
+>
+> **修复**：`CookiePath` 默认改 `"/"`。Path 不是 CSRF 的安全边界 —— 攻击者本来就跨域读不到
+> cookie，放宽 Path 只是让**同源 JS** 能读到，防护强度不变（仍靠 HMAC 签名 + 时效 + cookie/header 相等）。
+>
+> **新增护栏**：`TestCSRF_CookiePathMustBeReadableFromAppPages`（把"Path 必须对 JS 可见"钉成断言）
+> + `TestCSRF_UnescapedCookieValueRoundTrip`（钉住"Go 写时转义 `=`→`%3D` / 读时 unescape /
+> 前端 `decodeURIComponent`"三者必须对得上 —— 任一端改动都会重新变成静默 403）。
+
 ---
 
 ## 8. 文档同步

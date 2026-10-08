@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,6 +87,90 @@ func TestCSRF_GetIssuesCookie(t *testing.T) {
 	}
 	if found.HttpOnly {
 		t.Error("XSRF-TOKEN 必须非 HttpOnly（前端 JS 读得到）")
+	}
+}
+
+// TestCSRF_CookiePathMustBeReadableFromAppPages v2.11 (D19) 回归护栏。
+//
+// double-submit 依赖"前端 JS 读得到 cookie"这一步。而 `document.cookie` 只暴露
+// **Path 是当前文档路径前缀**的 cookie：应用页面在 "/"、"/court/..."，所以
+// cookie 的 Path 必须是 "/"（或至少是应用页面的前缀）。
+//
+// 历史 bug：Path 曾是 "/api/v1" → 前端 readCookie 恒为 null → 不发 X-XSRF-TOKEN 头
+// → 后端对浏览器所有 POST/PUT/DELETE 回 403（立案/开庭/提交证据/action 全挂）。
+// 这个缺陷单元测试测不出来（单测直接构造 cookie），只有实跑浏览器才会暴露，
+// 所以这里把"Path 必须对 JS 可见"这件事本身钉成断言。
+func TestCSRF_CookiePathMustBeReadableFromAppPages(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultCSRFConfig([]byte("test-secret-32-chars-xxxxxxxxx"))
+	if cfg.CookiePath != "/" {
+		t.Fatalf("CookiePath 必须是 \"/\"，当前 %q —— 非根路径会让应用页面上的 "+
+			"document.cookie 读不到 token，double-submit 整体失效（D19）", cfg.CookiePath)
+	}
+
+	r := newTestServer(cfg)
+	w := performReq(r, "GET", "/api/v1/protected", "", "")
+	var found *http.Cookie
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == "XSRF-TOKEN" {
+			found = ck
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected Set-Cookie XSRF-TOKEN on GET")
+	}
+	// 只有 Path 为 "/" 时，"/" 与 "/court/xxx" 这类应用页面才能读到它。
+	if found.Path != "/" {
+		t.Errorf("Set-Cookie 的 Path 必须为 \"/\"（应用页面在 / 与 /court/... 下），got %q", found.Path)
+	}
+}
+
+// TestCSRF_UnescapedCookieValueRoundTrip v2.11 (D19) 配套护栏：
+// 前端读 cookie 后是 `decodeURIComponent(value)`，再作为 header 回传。
+//
+// 这条链路之所以能对上，是因为 Go 在 **写** Set-Cookie 时会对值做 URL 转义
+// （base64 的 `=` → `%3D`），在 **读** cookie 时又会 unescape —— 所以
+// "前端 decodeURIComponent(cookie) == 服务端读到的 cookie"。
+// 一旦有人改掉任意一端，这里就会失败，避免又变成静默 403。
+func TestCSRF_UnescapedCookieValueRoundTrip(t *testing.T) {
+	t.Parallel()
+	secret := []byte("test-secret-32-chars-xxxxxxxxx")
+	r := newTestServer(DefaultCSRFConfig(secret))
+
+	w := performReq(r, "GET", "/api/v1/protected", "", "")
+	var raw string
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == "XSRF-TOKEN" {
+			raw = ck.Value
+		}
+	}
+	if raw == "" {
+		t.Fatal("no XSRF-TOKEN cookie issued")
+	}
+
+	// 前端视角：document.cookie 拿到的是**转义后**的值，readCookie 会 unescape。
+	// httptest 的 Result().Cookies() 已经解析过，这里用 RawSetCookie 模拟原始串。
+	var escaped string
+	for _, line := range w.Result().Header.Values("Set-Cookie") {
+		if strings.HasPrefix(line, "XSRF-TOKEN=") {
+			escaped = strings.TrimSuffix(strings.TrimPrefix(strings.Split(line, ";")[0], "XSRF-TOKEN="), "")
+		}
+	}
+	if escaped == "" {
+		t.Fatal("no raw Set-Cookie for XSRF-TOKEN")
+	}
+	decoded, err := url.QueryUnescape(escaped)
+	if err != nil {
+		t.Fatalf("unescape: %v", err)
+	}
+
+	// 前端把 decodeURIComponent 后的值放进 header；服务端读 cookie 时也会 unescape。
+	// 两者必须相等 → 才能通过 secureCompare。用转义原值当 cookie 发送（浏览器行为）。
+	w2 := performReq(r, "POST", "/api/v1/protected", escaped, decoded)
+	if w2.Code != 200 {
+		t.Fatalf("前端 decode 后的 header 必须能与 cookie 对上，got %d body=%s",
+			w2.Code, w2.Body.String())
 	}
 }
 
