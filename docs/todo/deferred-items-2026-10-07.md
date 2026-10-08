@@ -924,3 +924,22 @@ img, table, pre { break-inside: avoid; }
 
 **验证**：PyYAML 重新解析 → `['backend-test', 'frontend-test', 'dep-audit', 'doc-cross-links']`；`dep-audit` 的 steps 恢复为 govulncheck / pnpm audit 两条链路；`pnpm install --frozen-lockfile` 本地实跑 exit 0（lockfile 与 package.json 同步，恢复的审计步骤不会因锁文件漂移而 fail）。
 
+### R9（P0，阻断镜像推送）阿里云 ACR 拒收 BuildKit 的 attestation index（2026-10-09）
+
+**发现路径**：R7/R8 修完 push main 后，Test 全绿、Deploy 正常触发，但 `build` job 在 push 阶段挂：
+
+```
+buildx failed with: ERROR: failed to build: failed to solve: failed to push
+***/decision-court/decision-court-backend:725921f...:
+denied: unknown manifest class for application/vnd.oci.empty.v1+json
+```
+
+**根因**：`docker/build-push-action` 用 docker-container driver 时，BuildKit 默认 `provenance: mode=min`，会额外产出 **attestation manifest**（in-toto 证明）+ 一个 media type 为 `application/vnd.oci.empty.v1+json` 的空描述符，组成一个 OCI image index 再推。**阿里云 ACR 个人版不认识这个 media type**，整次 push 被拒。
+
+**为什么现在才暴露**：旧 ECS 时期最后一次成功推镜像在 2026-07-07，之后 R4/R5 的 `next build` 失败（R7）让 build job 更早一步就挂了 —— 这个「更晚一步」的错误一直被前面的错误挡住。
+
+**修法**：两个 build step 各加 `provenance: false` + `sbom: false`，只推普通镜像 manifest（单平台无需 index）。不采用「升 action 大版本」的绕法：Node 20 deprecation 只是 warning（GitHub 强制跑 Node 24），部署中途不引入新变量。
+
+**验证**：PyYAML 解析确认两个 step 的 `provenance` / `sbom` 均为 `False`；**真实推送结果需下一轮 Deploy 跑完确认**（本机无 ACR 凭据，无法本地复现 push）。
+
+

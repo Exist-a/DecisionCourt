@@ -71,6 +71,14 @@ jobs:
             ${{ secrets.ACR_REGISTRY }}/decision-court/decision-court-backend:${{ env.TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # 阿里云 ACR（个人版）不认 OCI attestation index：BuildKit 默认
+          # provenance=mode=min 会额外产出 attestation manifest + 一个
+          # media type 为 application/vnd.oci.empty.v1+json 的空描述符，
+          # push 时被 ACR 拒收 —— "denied: unknown manifest class for
+          # application/vnd.oci.empty.v1+json"（2026-10-09 首次在新服务器
+          # 跑通 Deploy 时暴露）。关掉证明产物，只推普通镜像 manifest。
+          provenance: false
+          sbom: false
 
       - name: Build & push frontend
         uses: docker/build-push-action@v5
@@ -85,6 +93,9 @@ jobs:
             NEXT_PUBLIC_USE_MOCK=false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # 同 backend：ACR 拒收 attestation index（见上）。
+          provenance: false
+          sbom: false
 
   # ============== Deploy to ECS ==============
   deploy:
