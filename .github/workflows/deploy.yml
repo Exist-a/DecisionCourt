@@ -69,6 +69,11 @@ jobs:
           push: true
           tags: |
             ${{ secrets.ACR_REGISTRY }}/decision-court/decision-court-backend:${{ env.TAG }}
+          # 注入 main.version，让启动日志 / /health 自报版本，而不是恒为 "dev"
+          # （production-retrospective-2026-08-05.md §4 P1-2：线上跑的到底是哪版，
+          # 只能靠镜像 tag 反推，进程自己说 "dev"）
+          build-args: |
+            VERSION=${{ env.TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # 阿里云 ACR（个人版）不认 OCI attestation index：BuildKit 默认

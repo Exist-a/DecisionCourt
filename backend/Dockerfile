@@ -47,6 +47,12 @@ RUN apk add --no-cache ca-certificates tzdata && \
 WORKDIR /app
 COPY --from=builder /app/server /app/server
 
+# Prompt Lab (v1.0.3) 的 baseRules YAML。runtime 阶段只拷了 binary，
+# 导致 promptlab 在容器里找不到 prompts/base.yaml → 每次启动 WARN +
+# 永久降级到 hardcoded fallback（dev 栈 bind mount 源码，所以本地一直
+# 走 YAML —— 线上跑的恰是没被测过的那条路）。把 YAML 一起打进来。
+COPY --from=builder /app/prompts /app/prompts
+
 # v0.8.3 安全：USER 切到非 root。
 # 镜像里的 GID 1001 UID 1001 与 docker-compose.yml 的 user 字段对齐。
 USER appuser
