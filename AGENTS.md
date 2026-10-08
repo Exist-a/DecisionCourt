@@ -210,17 +210,19 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 
 **根因**：AGENTS.md 没写这条能力 → Agent 每次遇到"线上问题"都默认 user 跑命令 → 浪费用户时间。
 
-### 9.2 ECS 连接信息（user 提供，2026-07-12 起；2026-08-05 ECS 终止后作为历史参考保留）
+### 9.2 ECS 连接信息（user 提供，2026-07-12 起；2026-10-08 换新机后恢复为活跃配置）
 
-> **状态更新（2026-08-05）**：ECS `47.239.152.177` 已停止续购，到期后自动释放。本节 SSH 连接信息保留供将来部署到**自有云环境**时参考。§9.3 / §9.4 / §9.5 的 SSH 操作模板仍适用于任何 ECS 实例，仅 ECS_HOST / ECS_USER 需替换为新环境。
+> **状态更新（2026-08-05）**：ECS `47.239.152.177` 停止续购，到期后自动释放；本节一度降级为历史参考。
+>
+> **状态更新（2026-10-08 换机）**：user 购入新服务器 **`8.218.24.43`（中国香港，Ubuntu 24.04.2，Docker 29.8.2 + compose v2）**，域名 `decisioncourt.cn` 解析已改指新 IP，ACR 实例不变。新机沿用旧机的 `admin` 用户 + `/opt/DecisionCourt` 目录 + **`id_rsa` 部署密钥**（`id_ed25519` 在新机同样 Permission denied）。本节重新成为**活跃配置**，§9.3 / §9.4 / §9.5 模板全部适用。旧 IP 仅在下述文档中作为历史数据出现：`docs/archive/ecs-end-of-life-2026-08-05.md`、`docs/deployment/_archived/*`、`docs/release-notes/v0.10.*`。
 
 **存储位置**：`secrets/ecs.env`（gitignored，仓库不追踪）
 
 | 项 | 值 |
 |---|---|
-| **ECS_HOST** | `secrets/ecs.env::ECS_HOST`（user 提供，2026-07-12） |
+| **ECS_HOST** | `secrets/ecs.env::ECS_HOST`（user 提供，2026-07-12；2026-10-08 换机后为 `8.218.24.43`） |
 | **ECS_USER** | `secrets/ecs.env::ECS_USER`（v0.10.15 deploy.yml Secrets 修复后确认） |
-| **SSH_KEY** | `secrets/ecs.env::ECS_SSH_KEY_PATH`（本地路径，与 GitHub Secrets `ECS_SSH_KEY` 同源 ed25519 key） |
+| **SSH_KEY** | `secrets/ecs.env::ECS_SSH_KEY_PATH`（本地路径，与 GitHub Secrets `ECS_SSH_KEY` 同源 **id_rsa** key；2026-08-05 与 2026-10-08 两次实测 `id_ed25519` 均 Permission denied） |
 | **ECS 项目目录** | `secrets/ecs.env::ECS_PROJECT_DIR`（v0.10.12 修过大小写） |
 | **Docker Compose** | `docker compose`（v2 CLI，`docker-compose` v1 已废弃） |
 
@@ -232,7 +234,7 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 
 | 操作 | 命令模板 | 适用场景 |
 |------|----------|----------|
-| 查看容器状态 | `ssh -i $env:USERPROFILE\.ssh\id_ed25519 admin@<ECS_HOST> "cd /opt/DecisionCourt && docker compose ps"` | Deploy 失败 / 容器 crash |
+| 查看容器状态 | `ssh -i $env:USERPROFILE\.ssh\id_rsa admin@<ECS_HOST> "cd /opt/DecisionCourt && docker compose ps"` | Deploy 失败 / 容器 crash |
 | 查看 backend 日志 | `ssh ... "cd /opt/DecisionCourt && docker compose logs --tail=50 backend"` | 查 fail-fast 原因 |
 | 查看 frontend 日志 | `ssh ... "cd /opt/DecisionCourt && docker compose logs --tail=30 frontend"` | 前端异常 |
 | 查看 host .env 关键项 | `ssh ... "cd /opt/DecisionCourt && grep -E '^(JWT_SECRET\|DATABASE_URL\|LLM_API_KEY)' .env \| sed 's/=.*/=<hidden>/'"` | 确认 fail-fast 诱因 |
@@ -276,6 +278,7 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 |---|---|---|---|---|
 | 2026-07-12 | _待 user 提供_ | — | — | v0.10.18 Deploy 失败时建立本节 |
 | 2026-08-05 | `47.239.152.177` | `admin` | `~/.ssh/id_rsa` | **本节正式填充**。30 天生产沉淀 + 备份验证时发现：`id_ed25519` Permission denied，`id_rsa` 可用；同步修正 `secrets/ecs.env` + 加此行记录。配套：[`docs/archive/ecs-end-of-life-2026-08-05.md`](docs/archive/ecs-end-of-life-2026-08-05.md) + [`docs/deployment/_archived/production-retrospective-2026-08-05.md`](docs/deployment/_archived/production-retrospective-2026-08-05.md)。**2026-08-05 用户决策不续购 ECS，但 SSH_KEY 信息保留供将来部署到自有云时复用；本表无新增行** |
+| 2026-10-08 | `8.218.24.43` | `admin` | `~/.ssh/id_rsa` | **换新机**（中国香港，Ubuntu 24.04.2，Docker 29.8.2 + compose v2，2GB swap）。域名 `decisioncourt.cn` 解析改指新 IP；ACR 实例与凭据不变（`crpi-rnawo8jx69bsvlbx.cn-hongkong.personal.cr.aliyuncs.com`，用户名 `Exist-a`）。新机 bootstrap 已完成：Docker / swap / `/opt/DecisionCourt` / compose + Caddyfile + `.env` / ACR login / 5 镜像 / Let's Encrypt 证书（2026-10-08 → 2027-01-06）/ HTTPS 冒烟通过。`id_rsa` 实测可用、`id_ed25519` 仍被拒（结论同旧机）。**遗留**：ACR `:latest` 镜像构建于 2026-07-07（≈3 个月前的代码），需重新 build + push 才能上当前 main |
 
 ---
 

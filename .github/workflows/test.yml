@@ -182,6 +182,7 @@ jobs:
           if-no-files-found: warn
 
   # ============== Doc cross-links ==============
+  doc-cross-links:
     name: Doc cross-links
     runs-on: ubuntu-latest
     steps:

@@ -23,7 +23,7 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
-$ECS_HOST = "47.239.152.177"   # 你的 ECS 公网 IP
+$ECS_HOST = "8.218.24.43"      # 你的 ECS 公网 IP (2026-10-08 换机, 旧 47.239.152.177 已释放)
 
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-OK($msg)   { Write-Host "    OK $msg" -ForegroundColor Green }

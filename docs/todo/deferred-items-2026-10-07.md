@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节 |
+| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。**2026-10-09 追加 R7（`next build` 被 ESLint 死变量阻断，R4/R5 残留）+ R8（`test.yml` 缺 job key 导致依赖审计从未执行）—— 两项均为上线前的阻断级发现，见文末** |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -892,3 +892,35 @@ img, table, pre { break-inside: avoid; }
 **注意（预期行为）**：`break-inside: avoid` 只在「块本身装得下一整页」时生效；若某个 box 高于一整页，浏览器仍会拆开它 —— 这是规范行为，不是 bug。
 
 **验证**：`tsc --noEmit` 干净；括号配平 142/142；前端 HMR 重编译通过。**PDF 观感与卡顿改善仍需用户实跑确认**。
+
+### R7（P0，阻断上线）`next build` 被 ESLint unused-vars 拦住 —— 删除庭审回放后的残留（2026-10-09）
+
+**发现路径**：新服务器上线前本地跑 `pnpm run build` 预检（CI 的 `frontend-test` 与前端 Dockerfile 都跑这一步），构建在 "Linting and checking validity of types" 阶段 **Failed to compile**：
+
+```
+./app/verdict/[id]/page.tsx       51:9  'storedEvidences' is assigned a value but never used
+./components/courtroom/CourtroomScene.tsx  90:5 setAgents / 91:5 addEvidence / 96:5 setBeliefDiffs / 217:9 mounted
+./lib/courtroomHydrate.ts         69:5 addEvidence / 73:5 getStoredEvidences / 74:5 setMemoryEntries
+```
+
+**根因**：`next dev`（dev compose 用）**不跑 ESLint**，`next build` 才跑。R4 删庭审回放 + R5 布局重做时移除了这些变量的使用点，但没删声明 —— 所以「本地 dev 全绿、CI/镜像构建必挂」。这也是为什么 ACR 上的镜像停留在 2026-07-07：Deploy 的 build job 从 R4 起就不可能成功。
+
+**修法（只删死声明，不动行为）**：
+1. `verdict/[id]/page.tsx` 删掉未使用的 `storedEvidences` selector（全文件仅此一处出现）。
+2. `CourtroomScene.tsx` 从 store 解构里删掉 `setAgents` / `addEvidence` / `setBeliefDiffs`（函数体内 `setAgents` 走的是 `useCourtroomStore.getState().setAgents(...)`，另外两个零引用）；WS useEffect 里的 `mounted` 只被写、从不被读（真正的守门在同文件上方的 memory useEffect 里），连声明和 cleanup 赋值一并删除。
+3. `courtroomHydrate.ts` 从解构里删掉 `addEvidence` / `getStoredEvidences` / `setMemoryEntries`；**接口 `CourtroomHydrateActions` 上保留这三个字段**（调用方整体透传 store slice，删接口会连锁改动两个页面），加一行注释说明「体内已不调用、保留因调用方透传」。
+
+**验证**：`tsc --noEmit` 干净；`pnpm run build` 走完 compile + lint + 全部路由生成并写出 `.next/BUILD_ID`。**本机最后一步 `EPERM: symlink`（`.next/standalone` 复制）是 Windows 无 symlink 权限所致，Linux runner 无此问题**。
+
+### R8（P1）`test.yml` 的 `doc-cross-links` 缺 job key → `dep-audit` 的 steps 被整段顶掉，依赖审计从未执行（2026-10-09）
+
+**发现路径**：改 CI 前用 PyYAML 解析 `test.yml` 核对 job 列表，得到 `['backend-test', 'frontend-test', 'dep-audit']` —— 少了一个。
+
+**根因**：`# ===== Doc cross-links =====` 注释下面直接写了 4 空格缩进的 `name:` / `runs-on:` / `steps:`，**没有 job key**。YAML 把它们当成 `dep-audit` 这个映射的**重复键**（`name` / `runs-on` / `steps`），last-wins 覆盖掉了 `dep-audit` 原本的内容。实测 `dep-audit` 解析结果：`name: 'Doc cross-links'`，steps = `checkout` + `setup-python` + `Verify ADR index count`。
+
+**影响**：v2.5（P1-6）引入的 `govulncheck backend` + `pnpm audit --audit-level=high` **在 CI 里一次都没跑过**；同时「Doc cross-links」也不是独立 job。文档里「CI 已接依赖审计」的表述与实际不符。
+
+**修法**：补上缺失的 job key（`  doc-cross-links:`），两个 job 恢复独立。
+
+**验证**：PyYAML 重新解析 → `['backend-test', 'frontend-test', 'dep-audit', 'doc-cross-links']`；`dep-audit` 的 steps 恢复为 govulncheck / pnpm audit 两条链路；`pnpm install --frozen-lockfile` 本地实跑 exit 0（lockfile 与 package.json 同步，恢复的审计步骤不会因锁文件漂移而 fail）。
+

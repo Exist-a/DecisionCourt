@@ -48,7 +48,6 @@ export default function VerdictPage() {
     (s) => s.setInvestigationFindings,
   );
   const setBeliefDiffs = useCourtroomStore((s) => s.setBeliefDiffs);
-  const storedEvidences = useCourtroomStore((s) => s.evidences);
   // v0.5: pull the v0.5 episodic-memory timeline from the live courtroom
   // store. It was hydrated during the trial via a2a.message WebSocket
   // events, so the verdict page can render the full behind-the-scenes view

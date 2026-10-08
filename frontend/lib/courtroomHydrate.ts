@@ -31,6 +31,8 @@ import type {
 export interface CourtroomHydrateActions {
   setSession: (s: CourtSession) => void;
   setAgents: (a: Agent[]) => void;
+  // 以下三项 hydrate 体内已不再调用（evidences 走 setEvidences 整体替换、
+  // memory 走 applyCourtEvent），保留在接口上是因为调用方整体透传 store slice。
   addEvidence: (e: Evidence) => void;
   // v1.0-patch (2026-08-22): hydrate 时整体替换 evidence, 避免跨 session 累积。
   setEvidences: (e: Evidence[]) => void;
@@ -66,12 +68,9 @@ export async function hydrateCourtroomStore(
   const {
     setSession,
     setAgents,
-    addEvidence,
     setEvidences,
     setInvestigationFindings,
     setBeliefDiffs,
-    getStoredEvidences,
-    setMemoryEntries, // 保留以备 verdict page 整体替换使用, 当前 applyCourtEvent 路径走 store.appendMemoryEntry 已正确写入
     setMessages,
     setActiveInvestigation,
   } = actions;

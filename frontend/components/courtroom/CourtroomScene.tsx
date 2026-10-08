@@ -87,13 +87,10 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     beliefDiffs,
     convergenceInfo,
     setSession,
-    setAgents,
-    addEvidence,
     addMessage,
     setPendingUserAction,
     setVerdict,
     toggleRealCourthouseMode,
-    setBeliefDiffs,
     reset, // v1.0-patch-2: 返回首页按钮 + handleViewVerdict 都用
   } = useCourtroomStore();
 
@@ -214,7 +211,6 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   // WebSocket 连接 (原 useEffect 残留, 移出 try/catch 包裹)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    let mounted = true;
     const socket = createCourtWebSocket(sessionId, {
       // v0.10.17 silent-error-fix PR 3: WS 连接状态变化 → toast 反馈。
       // 之前只在 console.log 打印,用户看不到。
@@ -414,7 +410,6 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     socket.on("*", handler);
 
     return () => {
-      mounted = false;
       socket.off("*", handler);
       socket.disconnect();
     };
