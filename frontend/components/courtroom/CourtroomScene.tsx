@@ -11,7 +11,9 @@ import type {
   Agent,
   EvidenceType,
   MemoryEntry,
+  PhaseChangedEvent,
   UserActionRequest,
+  VerdictReadyEvent,
 } from "@/types";
 import { usePhaseUI } from "@/hooks/usePhaseUI";
 // v0.10.17 silent-error-fix PR 3: 错误反馈接入。
@@ -238,6 +240,14 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
           delay_ms: delayMs,
         });
       },
+      // v2.13: fe.ws_missed_pong —— 心跳连续丢 pong 判定半开 TCP 的那一刻。
+      // 与 fe.ws_reconnect 区分：那个是"尝试重连"，这个是"判定已死"的根因。
+      // 同样是 CRITICAL 事件，原本只有声明没有 emitter。
+      onMissedPong: (missedCount) => {
+        getAnalytics().track("fe.ws_missed_pong", {
+          missed_count: missedCount,
+        });
+      },
     });
     setWs(socket);
     wsRef.current = socket;
@@ -279,15 +289,21 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
         // v0.10 (ADR 0020) fe.phase_entered:埋"上一阶段停留时长"。
         // 这是用户行为漏斗最关键的维度——只在 phase.changed 触发,
         // 不在 phase 静止时重复触发。
-        const payload = event.payload as { phase?: string };
-        if (payload?.phase) {
+        //
+        // v2.13 fix: 后端广播的字段是 current_phase（见
+        // types/index.ts PhaseChangedEvent + courtroom/service.go:2196 broadcastEvent）。
+        // 此前这里 cast 成 { phase?: string } 并读 payload.phase —— 字段名不存在,
+        // guard 恒为 false,fe.phase_entered 从未发出过一条（DB 实查 0 条）。
+        // 改成 cast 成 PhaseChangedEvent["payload"] 后,字段名再漂移会被 tsc 拦住。
+        const payload = event.payload as PhaseChangedEvent["payload"];
+        if (payload?.current_phase) {
           const now = Date.now();
           getAnalytics().trackPhaseChange(
             lastPhaseRef.current,
-            payload.phase,
+            payload.current_phase,
             now - lastPhaseEnteredAtRef.current,
           );
-          lastPhaseRef.current = payload.phase;
+          lastPhaseRef.current = payload.current_phase;
           lastPhaseEnteredAtRef.current = now;
         }
         setWaitingForNextRound(false);
@@ -347,6 +363,20 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
 
       if (event.type === "verdict.ready") {
         setVerdictReady(true);
+        // v2.13: fe.trial_completed —— 漏斗的终点事件。
+        // transport.ts 一直把它列在 CRITICAL_EVENTS（"不容丢失、立即 flush"）里，
+        // 但全仓没有调用点，于是"完成率"这个最基本的指标始终缺数据。
+        //
+        // payload 刻意只带 verdict_id + 两个分数：summary / trial_summary 在
+        // analytics 的 PII 黑名单里（判决正文 / 庭审纪要），带上会被 PII 守卫
+        // 整条丢弃 —— 那等于换个方式继续丢事件。
+        // 重开审理（D25）后再次判决会再发一次，语义上正确：这确实又完成了一次。
+        const vp = event.payload as VerdictReadyEvent["payload"];
+        getAnalytics().track("fe.trial_completed", {
+          verdict_id: vp?.verdict_id,
+          option_a_score: vp?.option_a_score,
+          option_b_score: vp?.option_b_score,
+        });
       }
 
       if (event.type === "round.waiting_for_user") {

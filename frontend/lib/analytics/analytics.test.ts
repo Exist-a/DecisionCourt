@@ -13,6 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   createAnalytics,
+  containsPII,
   type AnalyticsDeps,
   type Transport,
 } from "./index.ts";
@@ -127,7 +128,9 @@ test("track rejects payload with nested sensitive field", () => {
   const a = createAnalytics(deps);
 
   a.track("fe.phase_entered", {
-    phase: "cross_exam",
+    // v2.13: 字段名跟随后端广播的真实 payload（current_phase），
+    // 旧写法 { phase: ... } 是已修的 fe.phase_entered 死代码留下的错误示范。
+    current_phase: "cross_exam",
     details: { content: "律师说了什么" }, // 嵌套
   });
 
@@ -192,4 +195,51 @@ test("trackEvidenceSubmitted forwards type and char_count", () => {
     type: "fact",
     char_count: 120,
   });
+});
+
+// ============== v2.13 新接线的两个事件 ==============
+//
+// fe.trial_completed / fe.ws_missed_pong 一直躺在 transport 的 CRITICAL_EVENTS
+// 里（"不容丢失、立即 flush"）却没有调用点。接线时有个坑：verdict.ready 的
+// payload 带 summary / trial_summary，两者都在 PII 黑名单里 —— 顺手全量透传
+// 会让整条事件被 PII 守卫静默丢掉，等于换个姿势继续丢数据。
+
+test("fe.trial_completed payload (verdict_id + scores) survives the PII guard", () => {
+  const { deps, transport } = makeDeps();
+  const a = createAnalytics(deps);
+
+  // 与 CourtroomScene 里 verdict.ready 分支打的字段完全一致
+  a.track("fe.trial_completed", {
+    verdict_id: "8f2c1a40-0000-4b1e-9c3d-1a2b3c4d5e6f",
+    option_a_score: 0.62,
+    option_b_score: 0.38,
+  });
+
+  assert.equal(transport.events.length, 1,
+    "must not be swallowed: the field set is deliberately PII-free");
+});
+
+test("fe.trial_completed would be dropped if verdict summary were included", () => {
+  // 反向钉住陷阱本身：这就是为什么 CourtroomScene 只挑三个字段传。
+  assert.equal(
+    containsPII({ verdict_id: "v1", summary: "判决正文" }),
+    true,
+    "summary is in the PII blacklist — including it silently kills the whole event",
+  );
+  assert.equal(
+    containsPII({ verdict_id: "v1", trial_summary: "庭审纪要" }),
+    true,
+    "trial_summary is in the PII blacklist too",
+  );
+});
+
+test("fe.ws_missed_pong payload (missed_count) survives the PII guard", () => {
+  const { deps, transport } = makeDeps();
+  const a = createAnalytics(deps);
+
+  a.track("fe.ws_missed_pong", { missed_count: 2 });
+
+  assert.equal(transport.events.length, 1);
+  assert.equal(transport.events[0].event_type, "fe.ws_missed_pong");
+  assert.deepEqual(transport.events[0].payload, { missed_count: 2 });
 });

@@ -30,6 +30,8 @@ interface RuntimeState {
 
 let state: RuntimeState | null = null;
 let currentSessionUUID = "";
+// 见 registerUnloadFlush：模块级幂等标志，避免每次切 session 重复挂监听。
+let unloadFlushRegistered = false;
 
 /**
  * initAnalytics 初始化（或重置）单例。
@@ -40,6 +42,9 @@ export function initAnalytics(sessionUUID?: string): Analytics {
   if (sessionUUID !== undefined) {
     currentSessionUUID = sessionUUID;
   }
+
+  // page unload 时把批量窗口里的事件发出去（幂等，只挂一次）。
+  registerUnloadFlush();
 
   // 不重置 state —— transport / analytics 已经是稳定的依赖图。
   // 只更新 analytics 的 sessionUUID 通过 defaultDeps 重新构建。
@@ -100,6 +105,37 @@ export function flushNow(): Promise<void> {
 }
 
 /**
+ * registerUnloadFlush 把 flushNow 挂到"页面离开"事件上（幂等，只挂一次）。
+ *
+ * 为什么需要（v2.13）：非关键事件（fe.phase_entered / fe.tab_switched /
+ * fe.evidence_submitted / fe.trial_started）走 5s 批量窗口，此前只靠
+ * setTimeout 触发 —— 用户在窗口内跳转或关页时计时器永远不会执行，这批事件
+ * 直接丢失。transport 的 fetch 已经带 keepalive:true，所以只要在离开时主动
+ * flush 一次，请求就能发完。
+ *
+ * 用 pagehide + beforeunload 两个：
+ *   - beforeunload 覆盖桌面端"关标签/刷新"的常规路径；
+ *   - pagehide 覆盖移动端 Safari 与 bfcache 场景（beforeunload 在其中不触发），
+ *     且进入 bfcache 时也应当先把事件送出去。
+ * 两边都调 flushNow 是安全的：transport 内部有 flushing 闸门，重复调用只是
+ * 拿到同一个 in-flight promise，不会重复发送。
+ *
+ * SSR safety：typeof window 检查，服务端渲染时直接返回（也保证 node:test
+ * 环境不炸）。
+ */
+export function registerUnloadFlush(): void {
+  if (unloadFlushRegistered) return;
+  if (typeof window === "undefined") return;
+  unloadFlushRegistered = true;
+
+  const fire = () => {
+    void flushNow();
+  };
+  window.addEventListener("pagehide", fire);
+  window.addEventListener("beforeunload", fire);
+}
+
+/**
  * _resetForTesting 仅供单元测试使用,重置模块状态。
  * 不能通过 setSessionUUID 单独切换：state 持有 transport 等可变状态，
  * 完整 reset 比单独字段更新更不容易出 bug。
@@ -107,6 +143,7 @@ export function flushNow(): Promise<void> {
 export function _resetForTesting(): void {
   state = null;
   currentSessionUUID = "";
+  unloadFlushRegistered = false;
 }
 
 /**

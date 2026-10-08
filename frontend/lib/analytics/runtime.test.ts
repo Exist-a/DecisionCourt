@@ -10,6 +10,7 @@ import {
   getAnalytics,
   getTransport,
   flushNow,
+  registerUnloadFlush,
   _resetForTesting,
   _currentSessionUUIDForTesting,
 } from "./runtime.ts";
@@ -77,4 +78,74 @@ test("track on freshly-init analytics does not throw under SSR-like state", () =
   assert.doesNotThrow(() => {
     a.track("fe.trial_started", { phase: "opening" });
   });
+});
+
+// ============== page unload flush (v2.13) ==============
+//
+// 背景：非关键事件走 5s 批量窗口，此前只靠 setTimeout 发出 —— 用户在窗口内
+// 跳转/关页时事件直接丢失。registerUnloadFlush 把 flushNow 挂到页面离开事件上
+// 兜住这批事件。
+
+/** 装一个只记 addEventListener 的假 window，返回卸载函数。 */
+function stubWindow(): { types: string[]; restore: () => void } {
+  const types: string[] = [];
+  const previous = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    addEventListener: (type: string) => {
+      types.push(type);
+    },
+  };
+  return {
+    types,
+    restore: () => {
+      if (previous === undefined) {
+        delete (globalThis as { window?: unknown }).window;
+      } else {
+        (globalThis as { window?: unknown }).window = previous;
+      }
+    },
+  };
+}
+
+test("registerUnloadFlush hooks pagehide + beforeunload", () => {
+  const win = stubWindow();
+  try {
+    registerUnloadFlush();
+
+    assert.deepEqual(win.types.sort(), ["beforeunload", "pagehide"],
+      "must hook both: beforeunload for desktop close/refresh, pagehide for mobile Safari / bfcache");
+  } finally {
+    win.restore();
+  }
+});
+
+test("registerUnloadFlush is idempotent (no duplicate listeners per session switch)", () => {
+  const win = stubWindow();
+  try {
+    registerUnloadFlush();
+    registerUnloadFlush();
+    registerUnloadFlush();
+
+    assert.equal(win.types.length, 2,
+      "repeated calls must not stack listeners (initAnalytics runs on every session switch)");
+  } finally {
+    win.restore();
+  }
+});
+
+test("initAnalytics registers the unload flush hook", () => {
+  const win = stubWindow();
+  try {
+    initAnalytics("sess-unload");
+
+    assert.ok(win.types.includes("pagehide"),
+      "initAnalytics must arm the unload flush so batched events survive navigation");
+  } finally {
+    win.restore();
+  }
+});
+
+test("registerUnloadFlush is a no-op without window (SSR / node)", () => {
+  // 不装 window：SSR 渲染路径与 node 测试环境都走这里，必须不抛错。
+  assert.doesNotThrow(() => registerUnloadFlush());
 });

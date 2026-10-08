@@ -33,12 +33,17 @@ export class CourtWebSocket {
   // 客户端监听重连事件，前端可显示"网络恢复中..." toast。
   private readonly onReconnectAttempt?: (attempt: number, delayMs: number) => void;
   private readonly onConnectionStateChange?: (state: "connected" | "reconnecting" | "closed") => void;
+  // v2.13: 心跳连续丢 pong（半开 TCP：服务端/中间层悄悄断了但本地 socket 没收到 close）。
+  // 这是 fe.ws_missed_pong 埋点的数据源 —— 与 onReconnectAttempt 区分开：
+  // 后者是"重连尝试"，这里是"判定连接已死"的那一刻。
+  private readonly onMissedPong?: (missedCount: number) => void;
 
   constructor(
     sessionId: string,
     options?: {
       onReconnectAttempt?: (attempt: number, delayMs: number) => void;
       onConnectionStateChange?: (state: "connected" | "reconnecting" | "closed") => void;
+      onMissedPong?: (missedCount: number) => void;
     },
   ) {
     // v0.8.3 安全(P0-1 + Q4)：URL 自动加 ?token=xxx（auth 助手负责）。
@@ -46,6 +51,7 @@ export class CourtWebSocket {
     this.url = useMock ? "" : getWSURL(sessionId);
     this.onReconnectAttempt = options?.onReconnectAttempt;
     this.onConnectionStateChange = options?.onConnectionStateChange;
+    this.onMissedPong = options?.onMissedPong;
 
     if (useMock) {
       this.socket = getMockWebSocket();
@@ -170,6 +176,11 @@ export class CourtWebSocket {
           // 发了 ping 但下一周期还没收到 pong（即使 pong 也算本周期成功）
           if (this.missedPongs >= 2) {
             console.warn("[WebSocket] no pong received — forcing reconnect");
+            // v2.13: fe.ws_missed_pong 埋点（CRITICAL，立即 flush）。
+            // 放在 close() 之前发，保证"判定连接已死"这个时刻本身被记下来 ——
+            // 否则它会被随后的 fe.ws_reconnect 掩盖，看不出根因是丢 pong 还是
+            // 客户端主动断。
+            this.onMissedPong?.(this.missedPongs);
             this.realSocket.close(); // 会触发 onclose → scheduleReconnect
           }
         } catch (err) {

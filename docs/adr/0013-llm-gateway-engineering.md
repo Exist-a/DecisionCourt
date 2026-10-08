@@ -249,6 +249,63 @@ compose / `.env.example` 都没显式设那几个子开关 → 全部保持 fals
 
 ---
 
+## 状态更新（2026-10-08，v2.13）：evidence_eval 的审计行 100% 丢失
+
+对 dev 库对账时发现：`llm_calls` 有 362 行且 `session_id` 无空值，但 `decision_events` 里
+躺着 20 条 `event_type='llm_audit_fk_violation'`（9/21 起累计），payload 全是同一个形状：
+
+```json
+{"kind":"empty_session","detail":"session_uuid is empty string",
+ "agent_type":"clerk","task_type":"evidence_eval","session_uuid":""}
+```
+
+**根因**：`evidence/service.go` 的 `evaluateEvidence` 构造 Trace 时**没传 `SessionUUID`**：
+
+```go
+agent_gateway.WithTrace(context.Background(), agent_gateway.Trace{
+    AgentType: string(model.AgentClerk),
+    TaskType:  "evidence_eval",
+})   // ← 缺 SessionUUID
+```
+
+`GORMStore.Insert` 的流程是"用 `session_uuid` 反查 `court_sessions` 主键 → 写 `llm_calls`"。
+空 session 在第一道格式校验就被拦下，走 `recordFKViolation` 兜底写一条 decision_event，
+**`llm_calls` 那一行从未写入**。
+
+所以每一次证据评估的 LLM 调用都丢审计行 —— 这与本 ADR"每次 LLM 调用都可审计"的承诺直接冲突。
+证据是 1:1 的：当天网关日志里 9 条 `evidence_eval` 调用的 `session_uuid` 全为空，
+当天 DB 里正好 9 条 FK violation。
+
+**为什么长期没被发现**：这是"兜底成功"型静默失效。LLM 调用本身成功、证据分数正常、
+用户可见行为完全正确，只有对账 `llm_calls` 行数才会暴露。而且兜底事件自身的
+`session_uuid` 也是空串 → 不属于任何 session → 在按 session 过滤的
+`GET /courtrooms/:uuid/events` 视角里**查不到**，只有在整表聚合时才看得见。
+
+**修复**：`Create` 已持有 `session`（由 `sessionID` 查出），把 `session.SessionUUID`
+（36 字符业务 key，不是内部 id —— `Insert` 要的正是这个）透传进 `evaluateEvidence`
+并写进 Trace。
+
+**验证**（docker 实跑，真实 HTTP 链路）：重启 dev 后端后，用 anon 用户对一场 9 月遗留的
+abandoned session 提交证据，网关文件日志连续两行直接对比出效果：
+
+```
+10:52:20 clerk evidence_eval session=<EMPTY>    ← 修复前（审计行被丢）
+11:42:37 clerk evidence_eval session=d373f57c   ← 修复后（落库并挂到 session）
+```
+
+DB 侧：`llm_calls` 362 → 363（新行 `task_type=evidence_eval` / `agent_type=clerk` /
+`status=success`，join 回 session 正确），`llm_audit_fk_violation` 保持 20 不变。
+
+**护栏**：新增 `internal/evidence/service_test.go`，用捕获 ctx 的 fake `llm.Client`
+断言 Trace 上带 `SessionUUID`（外加解析路径与 nil-client 降级两条回归）。
+断言必须钉在 Trace 上 —— 这个 bug 在调用结果、分数、用户可见行为上全都看不出来。
+
+**遗留**：兜底事件 `llm_audit_fk_violation` 目前没有指标 / 告警，同类"新路径漏传 session"
+仍会静默发生（`gorm_store.go` 定义了 5 种 `kind`，实查只出现过 `empty_session` 一种）。
+建议后续给 `recordFKViolation` 加 counter。
+
+---
+
 ## 实施顺序
 
 ```

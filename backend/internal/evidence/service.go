@@ -48,6 +48,7 @@ func (s *Service) Create(
 		session.Context,
 		content,
 		evType,
+		session.SessionUUID,
 	)
 
 	evidence := model.Evidence{
@@ -78,12 +79,18 @@ func (s *Service) ListBySession(sessionID uuid.UUID) ([]model.Evidence, error) {
 	return evidences, err
 }
 
+// evaluateEvidence 用 LLM 评估证据对两个选项的影响。
+//
+// sessionUUID 必须传 court_sessions.session_uuid（36 字符业务 key，不是内部 id）：
+// agent_gateway 的审计落库按它反查主键，拿不到就写不进 llm_calls。
+// 详见下方 WithTrace 处的注释。
 func (s *Service) evaluateEvidence(
 	optionA string,
 	optionB string,
 	ctxStr string,
 	content string,
 	evType string,
+	sessionUUID string,
 ) (impactA, impactB, credibility, relevance, constraintStrength float64) {
 	// Fallback to keyword-based estimation if LLM is not available.
 	if s.llmClient == nil {
@@ -124,9 +131,15 @@ func (s *Service) evaluateEvidence(
   "constraint_strength": 0.0  // 范围 [0, 1]，如果是约束条件，语气越强硬值越高；其他类型填 0
 }`, defaultString(ctxStr, "无"), optionA, optionB, evType, content)
 
+	// SessionUUID 必填：agent_gateway 的 GORMStore.Insert 会用它反查
+	// court_sessions 主键，查不到就整行审计作废（只留一条
+	// event_type="llm_audit_fk_violation" 的 decision_event）。
+	// v2.13 修复：此前这里没传 SessionUUID，于是每次证据评估都丢审计行
+	// （DB 实查：9/21 起累计 20 条 fk_violation，当天 9 次调用 9 次丢）。
 	resp, _, err := s.llmClient.Complete(agent_gateway.WithTrace(context.Background(), agent_gateway.Trace{
-		AgentType: string(model.AgentClerk),
-		TaskType:  "evidence_eval",
+		SessionUUID: sessionUUID,
+		AgentType:   string(model.AgentClerk),
+		TaskType:    "evidence_eval",
 	}), prompt, []llm.Message{}, llm.CompletionOptions{
 		Model:       "",
 		Temperature: 0.2,

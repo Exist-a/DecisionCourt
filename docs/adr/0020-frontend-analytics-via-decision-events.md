@@ -229,6 +229,66 @@ curl -X POST https://decisioncourt.cn/api/v1/courtrooms/$SESSION/events \
 
 ---
 
+## 7.5 状态更新（2026-10-08，v2.13）：3 个静默失效修复
+
+对 dev 库 `decision_events` 做实际盘点时发现：本 ADR 承诺的 8 个埋点里，
+**`fe.phase_entered` 从来没有落过一行**（`SELECT count(*) WHERE event_type='fe.phase_entered'` = 0），
+另有 2 个事件在 transport 的 `CRITICAL_EVENTS` 里声明了"不容丢失、立即 flush"却**没有任何调用点**。
+三个问题都属"静默失效"——不报错、不 warn、用户无感，只能靠对账数据发现。
+
+**修复 1：`fe.phase_entered` 字段名错配（真 bug，一行）**
+
+后端广播的 `phase.changed` payload 是 `{previous_phase, current_phase, current_round, message}`
+（见 `courtroom/service.go` broadcastEvent 与 `types/index.ts` 的 `PhaseChangedEvent`），
+但消费处 cast 成了 `{ phase?: string }` 并读 `payload.phase`：
+
+```ts
+const payload = event.payload as { phase?: string };
+if (payload?.phase) { getAnalytics().trackPhaseChange(...) }   // guard 恒为 false
+```
+
+字段名不存在 → guard 永远为 false → 整个分支静默跳过。
+`fe.phase_entered` 正是 §1.1 表里"用户在 cross_exam 阶段平均停留多久"这个问题的**唯一数据源**，
+所以这条漏斗指标实际一直缺数据。
+
+修法：cast 改成 `PhaseChangedEvent["payload"]` 后读 `current_phase`。
+关键不在于改了哪个字段，而在于**把无类型 cast 换成有类型 cast** ——
+原来的 `{ phase?: string }` 是手写的临时类型，字段名漂移编译器看不见；
+现在字段名直接绑到 `types/index.ts` 的声明上，再漂移会被 `pnpm run tsc` 拦住。
+这类"组件层读错字段"的 bug 单测覆盖不到（项目无 React 测试基建，见 §8.4），
+所以**类型**是这里唯一的自动化防线。
+
+**修复 2：`fe.ws_missed_pong` / `fe.trial_completed` 补上 emitter**
+
+两个事件此前只有声明：`fe.trial_completed` 没有任何调用点；`fe.ws_missed_pong` 的心跳
+丢包计数逻辑在 `websocket.ts` 里存在（`missedPongs >= 2` 判半开 TCP）却没有对外回调。
+补法：
+
+- `websocket.ts` 新增 `onMissedPong?: (missedCount: number) => void` 选项
+  （与既有 `onReconnectAttempt` 对称），在判定连接已死、`close()` **之前**回调 ——
+  顺序很重要，否则"判定已死"这个根因会被随后的 `fe.ws_reconnect` 掩盖。
+- `fe.trial_completed` 挂在 `verdict.ready` 上。payload 刻意只带
+  `verdict_id / option_a_score / option_b_score`：`verdict.ready` 还带 `summary` 与
+  `trial_summary`，而这两个字段在 §决策 #6 的 PII 黑名单里 —— 顺手全量透传会让整条事件
+  被 PII 守卫静默丢弃，等于换个姿势继续丢数据。此约束已用反向测试钉住。
+
+**修复 3：批量窗口内的事件在离开页面时丢失**
+
+§决策 #7 的 5s 批量窗口此前只靠 `setTimeout` 触发，而 `flushNow()` 虽然写着
+"主要用于 page unload 期间"，**全仓没有任何 unload 监听**（只在单测里被调用）。
+于是非关键事件（`fe.phase_entered` / `fe.tab_switched` / `fe.evidence_submitted` /
+`fe.trial_started`）在用户 5s 内跳转或关页时直接丢失。
+修法：`registerUnloadFlush()` 幂等挂 `pagehide` + `beforeunload` → `flushNow()`，
+由 `initAnalytics` 触发（模块级标志防重复注册）。
+transport 的 fetch 本就带 `keepalive: true`，所以只要触发一次就能发完。
+两个事件都挂是因为 `beforeunload` 在移动端 Safari / bfcache 场景不触发。
+
+**护栏**：`analytics.test.ts` 新增 3 条（trial_completed / ws_missed_pong 的 payload 过 PII 守卫，
+以及"带上 summary 就会被丢弃"的反向断言）；`runtime.test.ts` 新增 4 条
+（监听两个事件、幂等、`initAnalytics` 触发注册、无 window 时 no-op）。
+
+---
+
 ## 8. 面试讲解附录(2026-07-08 加)
 
 > **Cross-link**: 本节是 ADR 层面的"面试讲解附录",侧重讲技术决策。
