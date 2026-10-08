@@ -129,6 +129,24 @@ func concurrencyLimiterMax(c config.Config) int {
 	return c.MaxConcurrentTrials
 }
 
+// corsAllowedHeaders 是浏览器可发送的自定义请求头白名单。
+//
+// ⚠️ 必须包含前端**实际会发**的每一个自定义头 —— v2.11 D19 教训：这份列表曾漏掉
+// `X-XSRF-TOKEN`，于是浏览器对所有写请求的 CORS preflight 都失败（Failed to fetch），
+// 与 CSRF cookie Path 是同一个"浏览器写路径整体不可用"的缺陷（修了 cookie 还不够）。
+//
+// 与前端 `frontend/lib/api.ts` 的注入点一一对应：
+//   - Authorization    非浏览器 client / 迁移期兼容
+//   - X-Request-ID     白盒化 trace（v0.8）
+//   - Idempotency-Key  启动庭审去重（ADR 0012）
+//   - X-XSRF-TOKEN     CSRF double-submit（ADR 0039 / v2.5）
+//
+// 有测试钉住这份列表（cmd/server/cors_headers_test.go）。
+var corsAllowedHeaders = []string{
+	"Origin", "Content-Type", "Accept", "Authorization",
+	"X-Request-ID", "Idempotency-Key", "X-XSRF-TOKEN",
+}
+
 func main() {
 	config.Load()
 	// v2.4 (P1-7) APP_ENV fail-fast: dev/staging/prod 之外的拼写错误 → 立即退出。
@@ -366,7 +384,7 @@ func main() {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID", "Idempotency-Key"},
+		AllowHeaders:     corsAllowedHeaders,
 		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: true,
 	}))
@@ -466,7 +484,7 @@ func main() {
 			if req.Method == http.MethodOptions {
 				if origin != "" {
 					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-					w.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID, Idempotency-Key")
+					w.Header().Set("Access-Control-Allow-Headers", strings.Join(corsAllowedHeaders, ", "))
 					w.Header().Set("Access-Control-Max-Age", "86400")
 				}
 				w.WriteHeader(http.StatusNoContent)
