@@ -169,7 +169,6 @@ func keywordFallback(prompt string) (string, error) {
 ---
 
 ## 状态更新（2026-10-08，v2.11 D8）：重试器重写
-
 背景里"已有退避重试"的那个实现有两个问题，本 ADR 交付时没暴露（单副本、低并发），v2.11 一并修掉：
 
 **1. 并发不安全（数据竞争）**
@@ -213,6 +212,40 @@ import 上游 SDK。**流式依然不重试**（重试会破坏 chunk 连续性�
 ⚠️ 环境限制：本机 Windows 的 race runtime 起不来（`go test -race` 报
 `exit status 0xc0000139`，entry point not found；连 `internal/util` 这种无关包也复现），
 所以 `-race` 由 CI（`.github/workflows/test.yml` 的 `go test -count=1 -race ./...`）把关。
+
+---
+
+## 状态更新（2026-10-08，v2.11 D16 + D17）：本 ADR 的能力此前在默认部署里**根本没开**
+
+docker 实跑时发现：`AGENT_GATEWAY_ENABLED=true` 实际上**只等于开了 FileLogger**。
+压缩 / token 预算 / 限流 / 重试 / 缓存 / 熔断全部静默关闭 —— 也就是本 ADR（以及 ADR 0044）
+交付的能力在默认部署里从未运行过。
+
+**D16 根因**：`GatewayConfig.isChildDefault()` 的判据是
+`!PromptCompression && !TokenBudget && !Throttling && !Fallback && !FileLogger`，
+而 `AGENT_GATEWAY_FILE_LOGGER` 的默认值在 **v0.10.22 被改成 true**，于是
+`isChildDefault()` 永远为 false，"只写 `ENABLED=true` 就子能力全开"那条便捷路径成了死代码。
+compose / `.env.example` 都没显式设那几个子开关 → 全部保持 false。
+
+**D16 修复**：把"全开"的判定从 `GatewayConfig` 的 bool 零值启发式，移到 **config 层按 env 存在性判定**
+（`os.LookupEnv` 能区分"没配"与"显式配 false"，bool 零值不能）。规则：`AGENT_GATEWAY_ENABLED=true`
+且**没有任何 gateway 子开关被显式设置**时，把子能力全部置 true（保留 v0.9 的便捷语义，且这次是真的）；
+显式设置过的子开关以显式值为准。`isChildDefault()` 保留作为直接构造 `GatewayConfig` 时的兜底。
+
+**D17 修复**：`AGENT_GATEWAY_BUDGET_PER_SESSION` 默认 **20000 → 200000**。
+实测一场 quick 庭审（2 轮）用掉约 46k token（输入 43790 + 输出 2131），光开庭陈述就 17.7k ——
+旧默认连开场都撑不住；预算耗尽 + `RejectWhenExhausted=true` 会让判决阶段的
+`judge/final` 与 `clerk/verdict` 调用被**直接拒绝**，判决退化成兜底文案（实测
+`llm_calls.error_msg = "agent_gateway: token budget exhausted"`）。
+`RejectWhenExhausted` 维持 `true`（失控循环时拒绝比继续烧钱正确）。
+
+**副作用（有意）**：压缩/限流的触发线是按上限的**比例**算的（0.7 / 0.8），所以抬上限意味着
+压缩只在超长庭审才介入。这是设计本意 —— 短庭审没有可压的冗余，压缩的价值在长庭审的长历史。
+若要在本地复现压缩效果，把 `AGENT_GATEWAY_BUDGET_PER_SESSION` 临时调小即可
+（ADR 0044 §3.6 当时正是这么做的）。
+
+**护栏**：`TestBudgetDefault_ConfigAndGatewayAgree`（config 与 agent_gateway 两处字面量必须一致，
+且必须等于 200000）+ config 层"子开关默认全开"的 env 存在性矩阵测试。
 
 ---
 

@@ -71,6 +71,17 @@ type AgentGatewayConfig struct {
 	FileLoggerPromptsMaxBytes int    `mapstructure:"AGENT_GATEWAY_FILE_LOGGER_PROMPTS_MAX_BYTES"`
 }
 
+// DefaultBudgetPerSession 是 AGENT_GATEWAY_BUDGET_PER_SESSION 的出厂默认值。
+//
+// v2.11 (deferred D17) 从 20000 抬到 200000：实测一场 quick 庭审约 46k token
+// （光开庭陈述 17.7k），旧默认连开场都撑不住 → 预算耗尽后判决阶段的调用被拒、
+// 判决退化成兜底文案。
+//
+// ⚠️ 必须与 agent_gateway.DefaultBudgetPerSession 保持一致（同一语义、两个包各自
+// 持有字面量，因为 config 不能反向 import agent_gateway）。cmd/server 有一条
+// 跨包一致性断言测试防漂移。
+const DefaultBudgetPerSession = 200000
+
 type Config struct {
 	Port        string `mapstructure:"PORT"`
 	DatabaseURL string `mapstructure:"DATABASE_URL"`
@@ -213,7 +224,7 @@ func Load() {
 			Throttling:           envOrDefaultBool("AGENT_GATEWAY_THROTTLING", false),
 			Fallback:             envOrDefaultBool("AGENT_GATEWAY_FALLBACK", false),
 			FileLogger:           envOrDefaultBool("AGENT_GATEWAY_FILE_LOGGER", true),
-			BudgetPerSession:     envOrDefaultInt("AGENT_GATEWAY_BUDGET_PER_SESSION", 20000),
+			BudgetPerSession:     envOrDefaultInt("AGENT_GATEWAY_BUDGET_PER_SESSION", DefaultBudgetPerSession),
 			CompressionThreshold: envOrDefaultFloat("AGENT_GATEWAY_COMPRESSION_THRESHOLD", 0.7),
 			ThrottlingThreshold:  envOrDefaultFloat("AGENT_GATEWAY_THROTTLING_THRESHOLD", 0.8),
 			LogDir:               envOrDefaultString("AGENT_GATEWAY_LOG_DIR", "logs"),

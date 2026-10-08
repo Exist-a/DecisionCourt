@@ -91,8 +91,9 @@ func TestTokenBudget_DefaultThresholds(t *testing.T) {
 	if !ok {
 		t.Fatalf("default store should be *MemStore, got %T", tb.store)
 	}
-	if mem.limitTotal != 20000 {
-		t.Errorf("default limit: want 20000 got %d", mem.limitTotal)
+	// v2.11 (D17): 默认上限 20000 → 200000（实测一场 quick 庭审约 46k token）。
+	if mem.limitTotal != 200000 {
+		t.Errorf("default limit: want 200000 got %d", mem.limitTotal)
 	}
 	if mem.compressR != 0.7 {
 		t.Errorf("default compress ratio: want 0.7 got %.2f", mem.compressR)

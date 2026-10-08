@@ -118,8 +118,9 @@ func TestMemStore_EmptySession(t *testing.T) {
 // TestMemStore_Defaults: 不合规入参使用默认。
 func TestMemStore_Defaults(t *testing.T) {
 	store := NewMemStore(0, -1, 0, 0, 0)
-	if store.limitTotal != 20000 {
-		t.Errorf("limitTotal default: want 20000 got %d", store.limitTotal)
+	// v2.11 (D17): 默认上限 20000 → 200000。
+	if store.limitTotal != 200000 {
+		t.Errorf("limitTotal default: want 200000 got %d", store.limitTotal)
 	}
 	if store.compressR != 0.7 {
 		t.Errorf("compressR default: want 0.7 got %f", store.compressR)

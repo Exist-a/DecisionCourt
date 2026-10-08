@@ -87,6 +87,20 @@ type GatewayConfig struct {
 	FileLoggerPromptsMaxBytes int    `mapstructure:"AGENT_GATEWAY_FILE_LOGGER_PROMPTS_MAX_BYTES"`
 }
 
+// DefaultBudgetPerSession 是 token 预算的默认每-session 上限。
+//
+// v2.11 (deferred D17) 从 20000 抬到 200000。为什么：
+//   - 实测一场 quick 庭审（2 轮）用掉约 46k token（输入 43790 + 输出 2131），
+//     光开庭陈述就 17.7k —— 旧的 20000 连开场都撑不住。
+//   - 预算耗尽 + RejectWhenExhausted=true 会让后续调用被**直接拒绝**，实测
+//     判决阶段的 judge/clerk 调用被拒 → 判决退化成兜底文案。
+//   - 200000 ≈ 4 倍 quick 庭审余量，standard/deep 也容得下。
+//
+// 注意：压缩/限流的触发线是按这个上限的**比例**算的（CompressionThreshold 0.7 /
+// ThrottlingThreshold 0.8），所以抬上限同时意味着"压缩只在超长庭审才介入"。
+// 这是设计本意：短庭审本来没有可压的冗余（压缩的价值在长庭审的长历史）。
+const DefaultBudgetPerSession = 200000
+
 // IsPromptCompressionEnabled 返回压缩是否生效。
 func (c GatewayConfig) IsPromptCompressionEnabled() bool {
 	if !c.Enabled {
@@ -177,7 +191,7 @@ func (c GatewayConfig) isChildDefault() bool {
 func (c GatewayConfig) Normalize() GatewayConfig {
 	out := c
 	if out.BudgetPerSession <= 0 {
-		out.BudgetPerSession = 20000
+		out.BudgetPerSession = DefaultBudgetPerSession
 	}
 	if out.CompressionThreshold <= 0 || out.CompressionThreshold >= 1 {
 		out.CompressionThreshold = 0.7

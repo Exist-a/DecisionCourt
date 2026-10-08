@@ -48,14 +48,14 @@ type memUsageEntry struct {
 
 // NewMemStore 构造内存版 BudgetStore。参数全部允许缺省（取本文件内常量）。
 //
-//   limitPerSession  <= 0 → 20000
+//   limitPerSession  <= 0 → DefaultBudgetPerSession
 //   limitCostUSD      < 0 → 0（表示不限 USD）
 //   compressRatio   默认 0.7
 //   throttleRatio   默认 0.8
 //   slidingWindow   <= 0 → 5 * time.Minute
 func NewMemStore(limitPerSession int, limitCostUSD float64, compressRatio, throttleRatio float64, slidingWindow time.Duration) *MemStore {
 	if limitPerSession <= 0 {
-		limitPerSession = 20000
+		limitPerSession = DefaultBudgetPerSession
 	}
 	if limitCostUSD < 0 {
 		limitCostUSD = 0

@@ -32,7 +32,7 @@ type TokenBudget struct {
 // NewTokenBudget 保持 v0.5+ API 不变；构造一个内存实现。这是 GatewayConfig
 // 默认行为，向后兼容所有现有测试与调用方。
 //
-// limitPerSession <= 0 → 20000。
+// limitPerSession <= 0 → DefaultBudgetPerSession。
 // compressRatio / throttleRatio 为 0 或越界时取 0.7 / 0.8。
 func NewTokenBudget(limitPerSession int, compressRatio, throttleRatio float64) *TokenBudget {
 	return NewTokenBudgetWithStore(NewMemStore(
@@ -44,7 +44,7 @@ func NewTokenBudget(limitPerSession int, compressRatio, throttleRatio float64) *
 // metrics 传 nil 时所有埋点 no-op（向后兼容）。
 func NewTokenBudgetWithStore(store BudgetStore, metrics observability.Metrics) *TokenBudget {
 	if store == nil {
-		store = NewMemStore(20000, 0, 0.7, 0.8, 5*time.Minute)
+		store = NewMemStore(DefaultBudgetPerSession, 0, 0.7, 0.8, 5*time.Minute)
 	}
 	return &TokenBudget{store: store, metrics: metrics}
 }
@@ -160,7 +160,7 @@ func (tb *TokenBudget) Close() error {
 // 检查，但不暴露给业务。客户端入口是 NewTokenBudget / NewTokenBudgetWithStore。
 func limitPerSessionFor(limit int) int {
 	if limit <= 0 {
-		return 20000
+		return DefaultBudgetPerSession
 	}
 	return limit
 }
