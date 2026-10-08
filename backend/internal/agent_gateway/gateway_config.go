@@ -181,8 +181,19 @@ func (c GatewayConfig) IsRejectWhenExhaustedEnabled() bool {
 	return c.Enabled && c.RejectWhenExhausted
 }
 
-// isChildDefault 当 AGENT_GATEWAY_ENABLED=true 且没有任何子开关被显式
-// 设置为 true 时，视为全开。这样默认环境变量可以只写 ENABLED=true。
+// isChildDefault 是**直接构造 GatewayConfig 时**的兜底：所有子开关都是零值
+// （false）时视为"没配过任何子开关"→ 全开，于是 `GatewayConfig{Enabled: true}`
+// 也能得到全开的效果（测试与嵌入方常用）。
+//
+// ⚠️ v2.11 (deferred D16)：**生产路径不再依赖这个启发式**。原因是 bool 零值区分
+// 不了"没配"与"显式配 false"，而 config.Load() 会给 FILE_LOGGER 一个 true 默认值
+// → `!c.FileLogger` 恒为 false → 这个"全开"分支在真实部署里永远进不去，
+// 于是 AGENT_GATEWAY_ENABLED=true 实际只等于开了 FileLogger（压缩/预算/限流/重试/
+// 缓存/熔断全静默关闭，docker 实跑确认）。
+//
+// 现在"子开关继承总开关"由 config 层按 **env 是否存在** 逐个展开
+// （见 config.resolveGatewayChild / config.buildAgentGatewayConfig），
+// 本函数只服务于不经 config 的直接构造。
 func (c GatewayConfig) isChildDefault() bool {
 	return !c.PromptCompression && !c.TokenBudget && !c.Throttling && !c.Fallback && !c.FileLogger
 }

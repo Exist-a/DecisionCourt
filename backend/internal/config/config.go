@@ -82,6 +82,27 @@ type AgentGatewayConfig struct {
 // 跨包一致性断言测试防漂移。
 const DefaultBudgetPerSession = 200000
 
+// resolveGatewayChild 决定一个 gateway 子开关的生效值。
+//
+// v2.11 (deferred D16)：显式 env 优先，未设置则**继承总开关**。
+//
+//   - env 存在且非空 → 用显式值（用户显式关了就是关了）
+//   - env 未设置     → 返回 gatewayEnabled（总开关开则子能力开）
+//
+// 为什么放在 config 层而不是靠 GatewayConfig 的 bool 零值启发式（isChildDefault）：
+// bool 零值区分不了"没配"与"显式配 false"，而 `os.LookupEnv` 可以。旧启发式还有个
+// 致命细节 —— 它把 FileLogger 也算进判据，而 FILE_LOGGER 的默认值是 true，
+// 于是"全开"分支永远进不去（默认部署里所有子能力静默关闭，docker 实跑确认）。
+//
+// 注意：`AGENT_GATEWAY_SMART_COMPRESSION_ABSTRACTIVE_SUMMARY` **不走这里** ——
+// ADR 0044 #6 明确它是成本 opt-in，必须显式开启（见 Load 里的调用点）。
+func resolveGatewayChild(key string, gatewayEnabled bool) bool {
+	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
+		return envOrDefaultBool(key, false) // 显式值优先
+	}
+	return gatewayEnabled // 未配置 → 继承总开关
+}
+
 type Config struct {
 	Port        string `mapstructure:"PORT"`
 	DatabaseURL string `mapstructure:"DATABASE_URL"`
@@ -171,6 +192,19 @@ func Load() {
 	// v0.10.21 PR-C: 33 env 全部走 envOrDefault (含 v0.10.19 修过的 5 个关键 env,
 	// 因为现在所有 env 走同一条路径, 没必要单独 BindEnv 了)。
 	// P0-2 安全: JWT_SECRET / DATABASE_URL 不设 default, 缺失由 mustEnvs fail-fast。
+	//
+	// v2.11 (deferred D16): gateway 子开关"继承总开关"。
+	//
+	// 文档承诺的语义是「AGENT_GATEWAY_ENABLED=true 时，各子开关若未显式设置则继承
+	// Enabled（即全开）」。旧实现把这件事实交给了 GatewayConfig.isChildDefault() 的
+	// bool 零值启发式 —— 而 AGENT_GATEWAY_FILE_LOGGER 的默认值在 v0.10.22 被改成
+	// true，于是 isChildDefault() 恒为 false："全开"成了死代码，默认部署里
+	// 压缩 / 预算 / 限流 / 重试 / 缓存 / 熔断全部静默关闭（docker 实跑确认：
+	// AGENT_GATEWAY_ENABLED=true 实际只等于开了 FileLogger）。
+	//
+	// 修法：在 config 层按 **env 是否存在** 逐个展开子开关（bool 零值区分不了
+	// 「没配」与「显式 false」，env 存在性可以）。规则落在 buildAgentGatewayConfig。
+
 	AppConfig = Config{
 		Port:           envOrDefaultString("PORT", "8080"),
 		DatabaseURL:    envOrDefaultString("DATABASE_URL", ""),
@@ -216,53 +250,8 @@ func Load() {
 		// 合法值: "dev" / "staging" / "prod"，其他 → fail-fast 启动拒绝。
 		AppEnv: envOrDefaultString("APP_ENV", "dev"),
 
-		// Agent Gateway 22 个 env
-		AgentGateway: AgentGatewayConfig{
-			Enabled:              envOrDefaultBool("AGENT_GATEWAY_ENABLED", false),
-			PromptCompression:    envOrDefaultBool("AGENT_GATEWAY_PROMPT_COMPRESSION", false),
-			TokenBudget:          envOrDefaultBool("AGENT_GATEWAY_TOKEN_BUDGET", false),
-			Throttling:           envOrDefaultBool("AGENT_GATEWAY_THROTTLING", false),
-			Fallback:             envOrDefaultBool("AGENT_GATEWAY_FALLBACK", false),
-			FileLogger:           envOrDefaultBool("AGENT_GATEWAY_FILE_LOGGER", true),
-			BudgetPerSession:     envOrDefaultInt("AGENT_GATEWAY_BUDGET_PER_SESSION", DefaultBudgetPerSession),
-			CompressionThreshold: envOrDefaultFloat("AGENT_GATEWAY_COMPRESSION_THRESHOLD", 0.7),
-			ThrottlingThreshold:  envOrDefaultFloat("AGENT_GATEWAY_THROTTLING_THRESHOLD", 0.8),
-			LogDir:               envOrDefaultString("AGENT_GATEWAY_LOG_DIR", "logs"),
-
-			// Token Budget v2 — REJECT_WHEN_EXHAUSTED 默认 true (v0.10.18 改)
-			RejectWhenExhausted:    envOrDefaultBool("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", true),
-			BudgetSlidingWindowSec:  envOrDefaultInt("AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC", 300),
-
-			// v2.1 F5: 三个 ADR 0013 能力默认全开 (本地开发模式验证可用性)
-//   - SmartCompression: v2 评分压缩器 (pipeline: 评分 / 原子组 / 贪心)
-//   - CacheEnabled: in-memory LRU + TTL 响应缓存 (5min TTL, 10000 上限)
-//   - BreakerEnabled: sony/gobreaker 三态熔断 + keyword fallback
-// 回滚: .env 设 AGENT_GATEWAY_SMART_COMPRESSION=false 等即可 (无需重编译)
-SmartCompression:       envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION", true),
-			KeepRecentForcedN:      envOrDefaultInt("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3),
-			SummaryInsertThreshold: envOrDefaultInt("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 5),
-			ScoreThreshold:         envOrDefaultFloat("AGENT_GATEWAY_SCORE_THRESHOLD", 0.3),
-			// v2.10 ADR 0044 #6: abstractive 摘要默认关 (成本 opt-in)
-			SmartCompressionAbstractiveSummary: envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION_ABSTRACTIVE_SUMMARY", false),
-
-			// v0.9 三大新能力 (ADR 0013) — v2.1 F5 默认全开
-			LLMTimeoutSec:   envOrDefaultInt("AGENT_GATEWAY_LLM_TIMEOUT_SEC", 90),
-			CacheEnabled:    envOrDefaultBool("AGENT_GATEWAY_CACHE_ENABLED", true),
-			CacheTTLSec:     envOrDefaultInt("AGENT_GATEWAY_CACHE_TTL_SEC", 300),
-			CacheMaxEntries: envOrDefaultInt("AGENT_GATEWAY_CACHE_MAX_ENTRIES", 10000),
-
-			// Circuit Breaker — v2.1 F5 默认全开 (本地开发模式验证可用性)
-			BreakerEnabled:             envOrDefaultBool("AGENT_GATEWAY_BREAKER_ENABLED", true),
-			BreakerFailureRatio:        envOrDefaultFloat("AGENT_GATEWAY_BREAKER_FAILURE_RATIO", 0.5),
-			BreakerMinRequests:         envOrDefaultInt("AGENT_GATEWAY_BREAKER_MIN_REQUESTS", 10),
-			BreakerOpenTimeoutSec:      envOrDefaultInt("AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC", 30),
-			BreakerHalfOpenMaxRequests: envOrDefaultInt("AGENT_GATEWAY_BREAKER_HALF_OPEN_MAX_REQUESTS", 1),
-
-			// v2.8 PR-3 (ADR 0042): 默认 "metadata" 保留 v2.7 baseline.
-			// 设 "full" 是 opt-in, 隐私风险由用户承担 (详见 ADR 0042 §3).
-			FileLoggerPrompts:         envOrDefaultString("AGENT_GATEWAY_FILE_LOGGER_PROMPTS", "metadata"),
-			FileLoggerPromptsMaxBytes: envOrDefaultInt("AGENT_GATEWAY_FILE_LOGGER_PROMPTS_MAX_BYTES", 32*1024),
-		},
+		// Agent Gateway（子开关「显式 env 优先，否则继承总开关」见 buildAgentGatewayConfig）
+		AgentGateway: buildAgentGatewayConfig(),
 	}
 
 	// 3. mustEnvs fail-fast (P0-2 / P0-4 安全)
@@ -307,6 +296,63 @@ SmartCompression:       envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION", true
 	// 新增 env 后忘改就会静默少报 (v2.8 的 FILE_LOGGER_PROMPTS 两个 key
 	// 就是这么漏掉的)。用 len() 让两者不可能不同步。
 	loadSummary(fromEnv, len(diagnosticEnvKeys))
+}
+
+
+// buildAgentGatewayConfig 构造 gateway 子配置。
+//
+// 抽成独立函数（与 cmd/server 的 buildGatewayConfig 同理）是为了让「子开关继承
+// 总开关」这条规则**可被直接测试** —— Load() 有 fail-fast / 读 .env 等副作用，
+// 单测不方便调它；而这条规则正是 v2.11 D16 出问题的地方（默认部署里所有子能力
+// 静默关闭），必须能被钉住。
+//
+// 规则：能力型子开关走 resolveGatewayChild（显式 env 优先，未设置则继承 Enabled）；
+// 例外是 AGENT_GATEWAY_SMART_COMPRESSION_ABSTRACTIVE_SUMMARY —— ADR 0044 #6
+// 明确它是成本 opt-in，必须显式开启，不继承。
+func buildAgentGatewayConfig() AgentGatewayConfig {
+	gwEnabled := envOrDefaultBool("AGENT_GATEWAY_ENABLED", false)
+	return AgentGatewayConfig{
+		Enabled:              gwEnabled,
+		PromptCompression:    resolveGatewayChild("AGENT_GATEWAY_PROMPT_COMPRESSION", gwEnabled),
+		TokenBudget:          resolveGatewayChild("AGENT_GATEWAY_TOKEN_BUDGET", gwEnabled),
+		Throttling:           resolveGatewayChild("AGENT_GATEWAY_THROTTLING", gwEnabled),
+		Fallback:             resolveGatewayChild("AGENT_GATEWAY_FALLBACK", gwEnabled),
+		FileLogger:           resolveGatewayChild("AGENT_GATEWAY_FILE_LOGGER", gwEnabled),
+		BudgetPerSession:     envOrDefaultInt("AGENT_GATEWAY_BUDGET_PER_SESSION", DefaultBudgetPerSession),
+		CompressionThreshold: envOrDefaultFloat("AGENT_GATEWAY_COMPRESSION_THRESHOLD", 0.7),
+		ThrottlingThreshold:  envOrDefaultFloat("AGENT_GATEWAY_THROTTLING_THRESHOLD", 0.8),
+		LogDir:               envOrDefaultString("AGENT_GATEWAY_LOG_DIR", "logs"),
+
+		// Token Budget v2 — REJECT_WHEN_EXHAUSTED 默认 true (v0.10.18 改)
+		RejectWhenExhausted:    envOrDefaultBool("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", true),
+		BudgetSlidingWindowSec: envOrDefaultInt("AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC", 300),
+
+		// Prompt Compression v2 (评分 / 原子组 / 贪心打包)
+		SmartCompression:       resolveGatewayChild("AGENT_GATEWAY_SMART_COMPRESSION", gwEnabled),
+		KeepRecentForcedN:      envOrDefaultInt("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3),
+		SummaryInsertThreshold: envOrDefaultInt("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 5),
+		ScoreThreshold:         envOrDefaultFloat("AGENT_GATEWAY_SCORE_THRESHOLD", 0.3),
+		// v2.10 ADR 0044 #6: abstractive 摘要默认关 (成本 opt-in, 不继承总开关)
+		SmartCompressionAbstractiveSummary: envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION_ABSTRACTIVE_SUMMARY", false),
+
+		// v0.9 三大新能力 (ADR 0013)
+		LLMTimeoutSec:   envOrDefaultInt("AGENT_GATEWAY_LLM_TIMEOUT_SEC", 90),
+		CacheEnabled:    resolveGatewayChild("AGENT_GATEWAY_CACHE_ENABLED", gwEnabled),
+		CacheTTLSec:     envOrDefaultInt("AGENT_GATEWAY_CACHE_TTL_SEC", 300),
+		CacheMaxEntries: envOrDefaultInt("AGENT_GATEWAY_CACHE_MAX_ENTRIES", 10000),
+
+		// Circuit Breaker (sony/gobreaker 三态 + keyword fallback)
+		BreakerEnabled:             resolveGatewayChild("AGENT_GATEWAY_BREAKER_ENABLED", gwEnabled),
+		BreakerFailureRatio:        envOrDefaultFloat("AGENT_GATEWAY_BREAKER_FAILURE_RATIO", 0.5),
+		BreakerMinRequests:         envOrDefaultInt("AGENT_GATEWAY_BREAKER_MIN_REQUESTS", 10),
+		BreakerOpenTimeoutSec:      envOrDefaultInt("AGENT_GATEWAY_BREAKER_OPEN_TIMEOUT_SEC", 30),
+		BreakerHalfOpenMaxRequests: envOrDefaultInt("AGENT_GATEWAY_BREAKER_HALF_OPEN_MAX_REQUESTS", 1),
+
+		// v2.8 PR-3 (ADR 0042): 默认 "metadata" 保留 v2.7 baseline.
+		// 设 "full" 是 opt-in, 隐私风险由用户承担 (详见 ADR 0042 §3).
+		FileLoggerPrompts:         envOrDefaultString("AGENT_GATEWAY_FILE_LOGGER_PROMPTS", "metadata"),
+		FileLoggerPromptsMaxBytes: envOrDefaultInt("AGENT_GATEWAY_FILE_LOGGER_PROMPTS_MAX_BYTES", 32*1024),
+	}
 }
 
 // diagnosticEnvKeys 是 loadSummary 统计用的 env key 清单。
