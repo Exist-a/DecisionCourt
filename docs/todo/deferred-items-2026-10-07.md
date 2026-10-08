@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | 🟢 D7–D12 + D14 已实现（v2.11，7 commit，**docker 业务验证待跑**）；🔴 D13 待用户授权（方案见 `.trae/documents/d13-projection-isolation-hardening-proposal.md`） |
+| **状态** | 🟢 D7–D12 + D14 已实现（v2.11，7 commit）+ **docker 业务验证已跑完**（dev compose，2026-10-08）；🔴 D13 待用户授权（方案见 `.trae/documents/d13-projection-isolation-hardening-proposal.md`）；🔴 验证中新发现 D15–D21 待决定（含 **1 个 P0：CSRF cookie path 让浏览器写路径全 403**） |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -40,15 +40,101 @@
 | D10 | ✅ 实现 + 测试 | `5f798d7` | docker 验证待跑（config 默认值 / env 接线） |
 | D12 | ✅ 实现 + 测试 | `9f03b93` | docker 验证待跑（新路由 + 真实 DB 分页）；漏斗聚合端点（可选第二步）未做 |
 | D9 | ✅ 实现 + 测试 | `c322d1e` | docker 验证待跑（AutoMigrate 加列 + 真实写入两字段非空） |
-| D7 | ✅ 实现 + 测试 | `6033ec2` | docker 验证待跑（跑通完整庭审看 `/metrics` 的 `llm_cache_size` 回落） |
-| D8 | ✅ 实现 + 测试 | `c1e74d4` | `-race` **本地无法执行**（Windows race runtime `exit status 0xc0000139`，连无关包 `internal/util` 也复现）→ 由 CI `go test -count=1 -race ./...` 把关 |
+| D7 | ✅ 实现 + 测试 | `6033ec2` | 现场只能观测到"预算按 session 累积"（0→17686）与终态钩子触发；**清理效果无法在默认栈观测**（cache/budget 默认关 = D16；判决后同 session 无 LLM 调用入口 = D18）。清理本身由单测 + sqlite 跑真实 `finishTrial` 覆盖 |
+| D8 | ✅ 实现 + 测试 | `c1e74d4` | `-race` **本地无法执行**（Windows race runtime `exit status 0xc0000139`，连无关包 `internal/util` 也复现）→ 由 CI `go test -count=1 -race ./...` 把关。现场也观测不到重试（默认栈里 retryer 关闭 = D16） |
 | D13 | 🔴 **待授权** | — | 需先讨论（AGENTS.md §2.1）。方案已出：`.trae/documents/d13-projection-isolation-hardening-proposal.md`（含核实证据 + 5 个裁决问题） |
 
 **新增测试**：约 80 个新 top-level 测试函数（含表驱动 sub-case 更多）。要点：限流响应契约 / 配置映射反射护栏 / events 读端点 11 项 / `llm_calls` 字段写入反射护栏 / `Gateway.Release` 双端 8 项 / 重试分类 26 组 + 4xx–5xx 边界 39 例 + 32 goroutine 并发串扰 / 状态码透传 5 项。
 
 **未做（按各节「不做什么」边界）**：D12 漏斗聚合端点（可选）、D13 全部（待授权）、D9 历史回填、D7 定时 GC / TTL 过期、D8 多级退避调参。
 
-## 本轮新发现（D15 候选，未实现）
+## docker 业务验证结果（2026-10-08，dev compose）
+
+按 AGENTS.md §11.5 最小集实跑。**栈已 down，命名 volume 全部保留（未删数据）**。
+
+| 项 | 结果 | 现场证据 |
+|---|---|---|
+| D11 | ✅ | 真实 config + 真实中间件，per-IP 洪泛 429 带 `Retry-After: 1` + `retry_after_seconds` + `code:1429` |
+| D14 | ✅ | 用真二进制跑：`AGENT_GATEWAY_ENABLED` 未设 → 打出 JSON WARN + 染色 `[WARN]` banner；显式 `=false` → 0 条告警（符合"显式关不打扰"） |
+| D10 | ✅ | 容器内真实 `config.Load()`：默认 2/5/5；`env RPS=0.01 BURST=1 MAX=2` 覆盖后 config 与**限流行为**同步改变（burst=1 → 第 2 个请求 1427） |
+| D12 | ✅ | 真实 DB：`GET /events` 全量 3 条；`limit=2` → count=2/has_more=true；`offset=2` → count=1/has_more=false；`event_type_prefix=state_transition` → 3 条，`fe.`/`span.` → 0 条 |
+| D9 | ✅ | AutoMigrate 已加 `agent_type`/`request_id` 两列 + 两个索引；一场真实庭审产生 13 行 `llm_calls`，**每行 `agent_type`（prosecutor/defender/judge/clerk）与 `request_id` 均非空**（此前 agent_id 恒 NULL） |
+| D7 | 🟡 部分 | 预算按 session 累积现场可见（file log `budget_used` 0→5587→11373→17434→17686 / 20000）；判决落库（终态钩子）现场触发。**清理效果不可现场观测** —— 原因见 D16（budget/cache 默认关）与 D18（判决后无同 session LLM 入口）。清理正确性由单测 + sqlite 跑真实 `finishTrial`（断言 `Release(uuid)` 被调一次）覆盖 |
+| D8 | 🟡 部分 | 分类/并发/退避由单测覆盖（含 32 goroutine 串扰 + 结构护栏）；现场观测不到重试（默认栈 retryer 关闭 = D16），且本轮未遇到可重试的瞬时错误 |
+
+**环境适配（不是代码问题）**：本机 host:3000 被用户另一个项目（Emotion-Echo Nuxt dev server）占用，故 dev 前端临时映射到 3010（temp override 文件，未进仓库、未改 compose/.env）。host:8080 被 NI ApplicationWebServer 占用，dev 后端本就用 8180。
+
+## 本轮新发现（D15–D21，全部未实现，需你决定）
+
+> 都是"功能骨架在、闭环/默认值断在别处"的同一族问题。**均未改动代码**（除 D15 已随 D10 修 compose 透传）。
+
+### D16（P1）Agent Gateway 子能力默认全关 —— `AGENT_GATEWAY_ENABLED=true` 只等于开了 FileLogger
+
+**证据**：容器内真实 `config.Load()` + 真实 `GatewayConfig` 判定：
+`Enabled=true` 但 `IsPromptCompressionEnabled=false`、`IsTokenBudgetEnabled=false`、`IsThrottlingEnabled=false`、`IsFallbackEnabled(重试)=false`、`CacheEnabled=false`、`Breaker.Enabled=false`，只有 `IsFileLoggerEnabled=true`。
+
+**根因**：`GatewayConfig.isChildDefault()` 的判据是
+`!PromptCompression && !TokenBudget && !Throttling && !Fallback && !FileLogger` ——
+而 `AGENT_GATEWAY_FILE_LOGGER` 的默认值在 v0.10.22 被改成 **true**，于是 `isChildDefault()` 永远为 false，
+"只写 `ENABLED=true` 就子能力全开"的便捷路径成了**死代码**。dev/prod compose 都没显式设那几个子开关，
+所以压缩 / 预算 / 限流 / 重试 / 缓存 / 熔断**全部静默不生效**。
+
+**旁证**：`agent_gateway_2026-09-21.log`（v2.10 压缩验证期）63 条里 46 条 `compressed=true` ——
+那轮是**临时容器注入 env** 跑的（ADR 0044 §3.6 自己记录了这个绕过）；今天的默认栈 0 条压缩。
+
+**影响**：ADR 0013 / 0044 的压缩、预算、重试、缓存、熔断在默认部署里从未运行；简历亮点里的
+"token 降 30-50% / 缓存命中 38% / 熔断降级"在默认配置下都拿不到。**这是本轮最严重的发现。**
+
+### D17（P1）token budget 默认 20000/session + `REJECT_WHEN_EXHAUSTED=true` 会让真实庭审硬失败
+
+**证据**：临时打开 `AGENT_GATEWAY_TOKEN_BUDGET=true` 跑一场 quick 庭审 → opening 就烧掉 17.7k/20k，
+判决阶段 4 次调用全部被拒（`llm_calls.error_msg = "agent_gateway: token budget exhausted (ratio=...)"`，
+含 `judge/final` 与 `clerk/verdict`）→ 判决退化成兜底文案。
+
+**影响**：**修 D16 之前必须先修 D17**，否则"把子能力打开"会直接把庭审质量打坏。
+需要决定：抬 `BUDGET_PER_SESSION` 默认值 / 把 `REJECT_WHEN_EXHAUSTED` 改回 false（超预算降级而非拒绝）/
+维持 budget 默认关但**显式**关（而不是靠 D16 那个巧合）。
+
+### D18（P1）`reopen_trial` 不可达 + `UserAction` 恒返 200/code 0 —— 用户可见的静默失败
+
+**证据**：
+1. 全仓没有任何代码写 `verdict` 阶段（`transitionPhase` 的调用点只有 opening/cross_exam/evidence/closing/deliberation），
+   而 `finishTrial` 明确"Stay in deliberation phase" → 判决后 session 停在 `deliberation`。
+2. `ValidateAction` 的 `reopen_trial` 要求 `verdict|appeal` → 真实流程**永远拒绝**：
+   实测 `POST /actions {reopen_trial}` → 日志 `state machine rejected action "reopen_trial" in phase "deliberation"`。
+3. `handler.UserAction` 把 `ProcessUserAction` 丢进 detached goroutine，**立刻返回 `HTTP 200 + code 0`**，
+   错误只进 `slog.Error` → 前端 `res.code === 0` 判定成功 → `router.push` 回庭审页，用户看不到任何报错。
+
+**影响**：v0.8.3「补充证据重开」在真实流程里**从未可用**（`reopen_test.go` 手工 seed `verdict` 阶段所以一直绿）；
+且这是 ADR 0024 那类"静默错误黑洞"的又一实例 —— 前端为非零 code 准备的重试/toast 分支是死代码。
+
+### D19（P0）CSRF cookie `Path=/api/v1` → 浏览器所有写请求 403
+
+**证据**：`Set-Cookie: XSRF-TOKEN=...; Path=/api/v1`（非 HttpOnly，本意是让 JS 读）；
+但 `document.cookie` 只暴露"Path 是当前文档路径前缀"的 cookie，应用页面在 `/`、`/court/...` →
+**前端 `readCookie("XSRF-TOKEN")` 恒为 null** → 不发 `X-XSRF-TOKEN` 头 →
+后端 `AbortWithStatusJSON(403, CSRF_TOKEN_MISMATCH)`。实测：浏览器里 `POST /api/v1/courtrooms` → 403；
+同一请求手工补上 header（值 = `decodeURIComponent(cookie)`，与 Go 侧读取时的 unescape 对齐）→ 200。
+
+**影响**：**浏览器里立案 / 开庭 / 提交证据 / 所有 action 全部 403**，应用写路径整体不可用（读路径正常）。
+这也是我这次无法用浏览器跑完整庭审、只能改用 curl 复现"cookie+header 双提交"契约的原因。
+**修复方向（1 行）**：`DefaultCSRFConfig` 的 `CookiePath` 改 `"/"`（Path 不是 CSRF 的安全边界，攻击者本来就跨域读不到）。
+ADR 0039 §7 的验证只有单测 + `tsc`，没有浏览器实跑，所以没被发现。
+
+### D20（P3）`global_concurrency_current` gauge 只在 acquire 时更新
+
+`recordConcurrencyMetric(true)` 仅在 `withCancel` 成功获取 slot 时调用，`Release` 后不更新 →
+实测判决完成后 gauge 仍显示 1（信号量本身正常释放：若泄漏，第 2 场庭审会因为拿不到 slot 而启动失败，实际能跑通）。
+影响：仪表盘读数长期不动，会掩盖真正的泄漏。D7 的触发条件正是"看 `/metrics` 的 gauge 是否回落"，这个 gauge 不可信会误事。
+
+### D21（P3）`/auth/anon` 并发 upsert 打 duplicate key ERROR
+
+实测浏览器一次立案触发两次 `/auth/anon`：`INSERT INTO users ... SQLSTATE 23505 duplicate key (users_pkey)` →
+`user upsert failed` WARN。功能不受影响（token 照发），但日志里是 ERROR 级噪音，风控/告警会被误导。
+
+---
+
+### D15（P3）prod compose 漏传 gateway 子开关（本项已部分修复）
 
 实现 D10 时发现：**prod compose 用显式 `environment:` 列表而没有 `env_file`**（`docker-compose.yml`），
 所以只在 `.env` 里写的变量**进不了后端容器**。这正是 D10 要修的同一类静默失效，只是换了一层。
@@ -61,8 +147,10 @@
   `_FILE_LOGGER_PROMPTS` / `_FILE_LOGGER_PROMPTS_MAX_BYTES`）+ `IDEMPOTENCY_TTL_HOURS` /
   `PROMPTLAB_YAML_PATH` 都不在 prod compose 的显式列表里。
 
-**当前影响有限**：`AGENT_GATEWAY_ENABLED=true` 且没有任何子开关被显式设置时会走 `isChildDefault()`
-（子能力全开），恰好与意图一致；所以表现为"**只能开、不能在 prod 关掉某个子能力**"，而不是"功能不生效"。
+**影响（2026-10-08 更正）**：原先这里写"`isChildDefault()` 会让子能力全开，恰好与意图一致"——**错了**。
+docker 实跑（D16）证明 `isChildDefault()` 因 `FileLogger` 默认 true 而**永远为 false**，子能力其实全关。
+所以 D15 与 D16 是同一个后果的两个入口：prod compose 既没传子开关，传了 `ENABLED=true` 也不会自动全开。
+**结论：D15 的严重度应从 P3 上调到 P1，并与 D16 一起修。**
 **触发条件**：需要在不改 compose 的前提下用 `.env` 调 gateway 子能力（例如线上想单独关掉
 `SMART_COMPRESSION`）；或将来重新部署到云环境（ECS 已于 2026-08-05 终止，故现在不紧迫）。
 
