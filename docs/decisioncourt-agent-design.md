@@ -754,11 +754,29 @@ def check_novelty(output, history):
 
 除了温度、信念引擎、一致性检查外，决策庭通过 **A2A 消息边界**+**ContextView 投影**+**情节记忆池**从信息层面切断 Agent 之间的推理污染。
 
-**v0.4 三道信息隔离防线**：
+**三道信息隔离防线**（v2.11 / [ADR 0045](../adr/0045-projection-isolation-hardening.md) 硬化后）：
 
 1. **A2A Bus 路由隔离**：所有 Agent 间通信必须经过 `Bus.Send()`，自动按 `visibility` 过滤，私有消息仅 `ToAgent` 和 `FromAgent` 可见。
-2. **ContextView 投影**：`BuildContextView(selfAgent)` 在 Orchestrator 构造 LLM prompt 前调用，对对方 public 消息应用 `SanitizedPayload()` 剥离 `reasoning` 字段。
+2. **ContextView 投影**：`BuildContextView(selfAgent)` 对对方 public 消息做**正向白名单投影**（`ProjectPayloadForOpponent`）—— 只放行白名单内的键（如 `speech` 的 `content`/`stance`/`confidence`/`evidence_refs`），`reasoning` 等未登记的键**默认不进入**对方视图。
 3. **情节记忆池隔离**：通过 A2A 私有通道实现，对方既看不到 `visibility=private` 消息本身，也看不到其中存储的策略笔记。
+
+> **⚠️ 转写路径的不变量（v2.11 / ADR 0045 新增，务必遵守）**
+>
+> Agent 实际看到的**对话历史**来自 `model.Message` 转写（不是 A2A 投影），因此隔离还依赖
+> 两个**唯一出口**只渲染白名单字段：
+>
+> | 出口 | 允许过桥的字段 |
+> |---|---|
+> | `agent.renderTranscriptLine`（转写 → 提示词文本，5 个 prompt 构造器统一走它） | `ActionType` / `Content`（**绝不读 `Metadata`**） |
+> | `agent.buildLLMHistory`（转写 → 对手 LLM 看到的对话历史） | `Content` / `ActionType`（→ role）；`Metadata` 是**重新构造**的 `agent_type`/`evidence_id` 标签，不从 DB 拷贝 |
+>
+> 推理链存在 `model.Message.Metadata` 里（见 `courtroom.saveAgentMessage`）。**任何**新增的
+> "转写 → 提示词"路径都必须走这两个出口，否则会把推理链泄漏给对方。护栏见
+> `internal/agent/prompts_transcript_isolation_d13_test.go`（注入虚构敏感字段 + 等价性断言）。
+>
+> v2.11 之前这条不变量**不是显式的** —— 转写路径恰好只渲染 `Content` 属结构性巧合；
+> 同时 `BuildContextView.WorkingMemory` 与 `Message.SanitizedPayload()` 至今**没有生产消费者**
+> （旁路），不要误以为它们在守门。
 
 #### 7.4.1 为什么需要私有记忆隔离
 

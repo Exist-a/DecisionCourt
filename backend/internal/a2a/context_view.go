@@ -205,9 +205,89 @@ var ErrNotVisible = fmt.Errorf("a2a: message not visible to viewer")
 // decoded as JSON. v0.5 does not auto-repair; the row is skipped.
 var ErrMalformedPayload = fmt.Errorf("a2a: malformed payload")
 
-// sanitizeMessageRow decodes row.Payload, strips the `reasoning` key, and
-// re-encodes. If decoding fails we return ErrMalformedPayload so the caller
-// can decide whether to drop or surface the error.
+// publicPayloadWhitelist 定义"允许投影给对方 Agent"的 payload 键。
+//
+// v2.11 (deferred D13-B)：这是**正向白名单**，不是黑名单。之前的实现只 delete
+// 一个 `reasoning` 键 —— 新增任何敏感字段（planned_next_move、内部置信度、
+// 工具参数……）都必须**人工记得**加进剥离逻辑，漏了就静默泄漏（ADR 0003 已记录
+// 此弱点）。改成白名单后，未登记的键**默认不进入**对方视图：
+// 安全性从"记得删"变成"记得加"，漏登记只会让对方少看到合法信息（**可见**的降级），
+// 而不是泄漏（**不可见**的风险）。
+//
+// 新增公共事件类型、或给某个 payload 加字段时，必须在这里登记 ——
+// 有测试枚举 MessageType 常量做护栏（TestPublicPayloadWhitelist_CoversAllTypes）。
+var publicPayloadWhitelist = map[MessageType][]string{
+	// orchestrator.go 的公开发言
+	MessageTypeSpeech: {"content", "stance", "confidence", "evidence_refs"},
+	// investigation/service.go 的公开派单
+	MessageTypeDispatch: {"query", "dispatched_by"},
+	// investigation/service.go 的公开回报
+	MessageTypeReport: {"query", "dispatched_by", "finding_id", "result_count", "summary", "source"},
+}
+
+// unknownTypeFallbackKeys 是未登记的 MessageType 的兜底放行键。
+//
+// 只放行 `content`：保留"对方说了什么"的信封语义（与 sanitizeMessageRow 在
+// payload 解不开时的行为一致），同时不泄漏任何结构化字段。
+var unknownTypeFallbackKeys = []string{"content"}
+
+// AllMessageTypes 列出本包已声明的全部 MessageType 常量。
+//
+// 新增 MessageType 时**必须**加进来：TestPublicPayloadWhitelist_CoversAllTypes
+// 用它断言"每个类型都被有意识地决定过该怎么投影"（进白名单 / 走 unknown 兜底 /
+// 属于私有记忆永不被投影）。漏了会测试失败，而不是静默让新类型只放行 content。
+func AllMessageTypes() []MessageType {
+	return []MessageType{
+		MessageTypeSpeech,
+		MessageTypeEvidence,
+		MessageTypeChallenge,
+		MessageTypeInquiry,
+		MessageTypeVerdictTask,
+		MessageTypeDispatch,
+		MessageTypeReport,
+		MessageTypeStrategyNote,
+		MessageTypeOpponentWeakness,
+		MessageTypeSelfCorrection,
+		MessageTypeEvidenceEval,
+	}
+}
+
+// PrivateMemoryMessageTypes 返回 4 个"私有 episodic memory"类型。
+// 它们永远不该出现在对方视图里（可见性由 ListVisibleTo 的 SQL 保证），
+// 因此**不得**出现在 publicPayloadWhitelist 中 —— 有测试钉住这一点。
+func PrivateMemoryMessageTypes() []MessageType {
+	return []MessageType{
+		MessageTypeStrategyNote,
+		MessageTypeOpponentWeakness,
+		MessageTypeSelfCorrection,
+		MessageTypeEvidenceEval,
+	}
+}
+
+// ProjectPayloadForOpponent 把公共消息的 payload 正向投影成"对方可见"的副本。
+//
+// 只保留白名单内的键；未登记的 MessageType 只保留 unknownTypeFallbackKeys。
+// 返回新 map（不修改入参）。
+func ProjectPayloadForOpponent(msgType MessageType, payload map[string]interface{}) map[string]interface{} {
+	keys, ok := publicPayloadWhitelist[msgType]
+	if !ok {
+		keys = unknownTypeFallbackKeys
+	}
+	out := make(map[string]interface{}, len(keys))
+	for _, k := range keys {
+		if v, exists := payload[k]; exists {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// sanitizeMessageRow 把一行公共消息投影成"对方可见"的版本：解 JSON → 白名单投影
+// → 重新编码。解不开时返回 ErrMalformedPayload，让调用方决定丢弃还是暴露错误。
+//
+// v2.11 (deferred D13-B)：从"删 reasoning 一个键"改为"正向白名单投影"。
+// 注意：即使 payload 里没有任何敏感键，现在也会重新编码（因为未登记的键会被丢掉）
+// —— 这是有意的：新字段默认不进入对方视图。
 func sanitizeMessageRow(row model.A2AMessage) (model.A2AMessage, error) {
 	if row.Payload == "" {
 		return row, nil
@@ -216,12 +296,8 @@ func sanitizeMessageRow(row model.A2AMessage) (model.A2AMessage, error) {
 	if err := json.Unmarshal([]byte(row.Payload), &payload); err != nil {
 		return model.A2AMessage{}, fmt.Errorf("%w: %v", ErrMalformedPayload, err)
 	}
-	if _, hasReasoning := payload["reasoning"]; !hasReasoning {
-		// nothing to strip — keep the original JSON to avoid touching unrelated data
-		return row, nil
-	}
-	delete(payload, "reasoning")
-	rewritten, err := json.Marshal(payload)
+	projected := ProjectPayloadForOpponent(MessageType(row.MessageType), payload)
+	rewritten, err := json.Marshal(projected)
 	if err != nil {
 		return model.A2AMessage{}, fmt.Errorf("a2a: re-marshal payload: %w", err)
 	}

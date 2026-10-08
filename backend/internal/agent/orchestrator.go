@@ -825,22 +825,27 @@ func (o *Orchestrator) JudgeFinalDecision(
 	return result, nil
 }
 
-func (o *Orchestrator) speak(
-	ctx context.Context,
-	agent model.Agent,
-	systemPrompt string,
-	messages []model.Message,
-	hasEvidence bool,
-	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3: Metadata 注入
-) (Speaker, error) {
+// buildLLMHistory 把庭审转写（model.Message）转成喂给 LLM 的对话历史。
+//
+// ⚠️ 信息隔离不变量（v2.11 deferred D13-A）：这是**对手 LLM 实际看到的对话历史**
+// 的唯一构造点。只允许 `Content`（正文）与 `ActionType`（→ role）过桥；
+// `model.Message.Metadata` 里存着 `reasoning`（推理链）等字段，**绝不转发** ——
+// 下面的 Metadata 是**重新构造**的、只含 agent_type / evidence_id 的标签 map，
+// 不是从 m.Metadata 拷贝的。
+//
+// v2.10 ADR 0044 #3: 注入 agent_type + evidence_id 到 Metadata，
+// 供 Agent Gateway 评分器 (roleWeightFor) 和原子组 (BuildAtomicGroups) 使用。
+// 这两个键只是给网关压缩器用的**标签**：会随 llm.Message 进入网关（网关只读
+// Metadata 做评分/分组），不会作为对话内容进入提示词。
+//
+// 护栏见 prompts_transcript_isolation_d13_test.go（注入虚构敏感字段 + 等价性断言）。
+func buildLLMHistory(messages []model.Message, agentMap map[uuid.UUID]model.AgentType) []llm.Message {
 	var llmMessages []llm.Message
 	for _, m := range messages {
 		role := "assistant"
 		if m.ActionType == "system" {
 			role = "system"
 		}
-		// v2.10 ADR 0044 #3: 注入 agent_type + evidence_id 到 Metadata，
-		// 供 Agent Gateway 评分器 (roleWeightFor) 和原子组 (BuildAtomicGroups) 使用。
 		md := map[string]string{}
 		if m.AgentID != nil {
 			if at, ok := agentMap[*m.AgentID]; ok {
@@ -859,6 +864,18 @@ func (o *Orchestrator) speak(
 			Metadata: md,
 		})
 	}
+	return llmMessages
+}
+
+func (o *Orchestrator) speak(
+	ctx context.Context,
+	agent model.Agent,
+	systemPrompt string,
+	messages []model.Message,
+	hasEvidence bool,
+	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3: Metadata 注入
+) (Speaker, error) {
+	llmMessages := buildLLMHistory(messages, agentMap)
 
 	content, _, err := o.llmClient.Complete(traceFor(ctx, model.CourtSession{}, agent.AgentType, "speak"), systemPrompt, llmMessages, llm.CompletionOptions{
 		Model:       "",

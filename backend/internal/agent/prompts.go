@@ -281,14 +281,37 @@ func ClerkPrompt(session model.CourtSession, evidences []model.Evidence, message
 	b.WriteString(ctx)
 	b.WriteString("\n## 庭审记录\n")
 	for _, m := range messages {
-		// v2.5 (P1-4) sanitize message content（防止庭审内被攻陷的内容再次注入）
-		cleanContent, err := SanitizeUserInput(m.Content)
+		line, err := renderTranscriptLine(m, 200)
 		if err != nil {
-			return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+			return "", err
 		}
-		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 200)))
+		b.WriteString(line)
 	}
 	return b.String(), nil
+}
+
+// renderTranscriptLine 把一条庭审消息渲染成提示词里的一行。
+//
+// ⚠️ 字段白名单 —— 信息隔离不变量（v2.11 deferred D13-A）
+//
+// 只允许 `ActionType` 与 `Content` 进入提示词。`model.Message.Metadata` 里存着
+// `reasoning`（推理链）等字段（见 courtroom.saveAgentMessage），**任何情况下都
+// 不得进入对手可见的提示词** —— 这里显式不读 Metadata。
+//
+// 这是全仓唯一的"庭审转写 → 提示词"出口：改这里等于改所有 prompt 的对手可见面。
+// 之所以要把它显式化：此前"控辩双方互不可见对方推理链"有一重保险是**结构性巧合**
+// —— 转写路径恰好只渲染 Content，而不是"被设计保证不渲染推理"。现在它是显式契约，
+// 并有注入式回归测试钉住（prompts_transcript_isolation_d13_test.go：往 Metadata
+// 与 A2A payload 里塞虚构敏感字段，断言它不出现在为对手组装的提示词里）。
+//
+// maxLen 是单条内容截断长度（各 prompt 按 token 预算自选）。
+func renderTranscriptLine(m model.Message, maxLen int) (string, error) {
+	// v2.5 (P1-4) sanitize message content（防止庭审内被攻陷的内容再次注入）
+	cleanContent, err := SanitizeUserInput(m.Content)
+	if err != nil {
+		return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+	}
+	return fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, maxLen)), nil
 }
 
 // ClerkSummaryPrompt generates a brief summary of the current round.
@@ -312,13 +335,14 @@ func ClerkSummaryPrompt(session model.CourtSession, evidences []model.Evidence, 
 	b.WriteString(ctx)
 	b.WriteString(fmt.Sprintf("\n## 第 %d 轮庭审记录\n", round))
 	for _, m := range messages {
-		if m.Round == round {
-			cleanContent, err := SanitizeUserInput(m.Content)
-			if err != nil {
-				return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
-			}
-			b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 300)))
+		if m.Round != round {
+			continue
 		}
+		line, err := renderTranscriptLine(m, 300)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(line)
 	}
 	return b.String(), nil
 }
@@ -353,11 +377,11 @@ func JudgePrompt(session model.CourtSession, evidences []model.Evidence, message
 	b.WriteString(ctx)
 	b.WriteString("\n## 最近庭审记录（按时间顺序）\n")
 	for _, m := range messages {
-		cleanContent, err := SanitizeUserInput(m.Content)
+		line, err := renderTranscriptLine(m, 300)
 		if err != nil {
-			return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+			return "", err
 		}
-		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 300)))
+		b.WriteString(line)
 	}
 	return b.String(), nil
 }
@@ -411,11 +435,11 @@ func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, me
 	b.WriteString(ctx)
 	b.WriteString("\n## 庭审完整记录\n")
 	for _, m := range messages {
-		cleanContent, err := SanitizeUserInput(m.Content)
+		line, err := renderTranscriptLine(m, 300)
 		if err != nil {
-			return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+			return "", err
 		}
-		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 300)))
+		b.WriteString(line)
 	}
 	return b.String(), nil
 }
@@ -517,11 +541,11 @@ func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.
 	b.WriteString(ctx)
 	b.WriteString("\n## 庭审记录\n")
 	for _, m := range messages {
-		cleanContent, err := SanitizeUserInput(m.Content)
+		line, err := renderTranscriptLine(m, 200)
 		if err != nil {
-			return "", fmt.Errorf("sanitize message %s: %w", m.ActionType, err)
+			return "", err
 		}
-		b.WriteString(fmt.Sprintf("- [%s] %s\n", m.ActionType, truncate(cleanContent, 200)))
+		b.WriteString(line)
 	}
 	return b.String(), nil
 }

@@ -39,13 +39,13 @@ type LLMContext struct {
 ### 核心规则
 
 1. **私有消息**：`from == selfAgent` 或 `to == selfAgent` 的 `visibility=private` 消息进 `PrivateMemory`（完整 payload）
-2. **公开消息对方**：`from != selfAgent && from != orchestrator` 的 `visibility=public` 消息 → 调 `SanitizedPayload()` 剥离 `reasoning` 字段
+2. **公开消息对方**：`from != selfAgent && from != orchestrator` 的 `visibility=public` 消息 → 调 `ProjectPayloadForOpponent()` 做**正向白名单投影**（v2.11 D13-B 起；此前是 `SanitizedPayload()` 只删 `reasoning` 一个键）
 3. **公开消息自己**：自己发的 `public` 消息保留完整 payload（让自己能反思自己的推理）
 4. **orchestrator 视角**：传 `AddressOrchestrator` 作为 `selfAgent` 可看全部（仅供审计）
 
 ### 关键理由
 
-- 隔离不变量由 `SanitizedPayload()` 集中实现，所有"剥离 reasoning"路径都走同一函数
+- 隔离不变量由 `ProjectPayloadForOpponent()` 集中实现（v2.11 起），所有"投影给对方"的路径都走同一张白名单
 - Orchestrator 业务代码无感知，只需调一个 `BuildContextView()` 即可
 - 测试覆盖 10 项 + 总共 25 项 a2a 包测试
 
@@ -59,7 +59,7 @@ type LLMContext struct {
 
 ### 代价
 
-- ⚠️ `SanitizedPayload()` 当前只剥离 `reasoning` 字段 —— 未来其他敏感字段需要扩展
+- ~~⚠️ `SanitizedPayload()` 当前只剥离 `reasoning` 字段 —— 未来其他敏感字段需要扩展~~ → **v2.11 已修（[ADR 0045](./0045-projection-isolation-hardening.md)）**：改成按 `MessageType` 的**正向白名单**（`ProjectPayloadForOpponent`），未登记的键默认不进入对方视图。
 - ⚠️ 50 条 strategy_note × 200 token = 10K 上限当前用"全文注入"，未来超限需要滚动 + 摘要策略
 
 ## 关联
