@@ -606,6 +606,32 @@ func (h *Handler) UserAction(c *gin.Context) {
 		return
 	}
 
+	// v2.11 (deferred D18): 同步前置校验。
+	//
+	// 之前这里把 ProcessUserAction 丢进 detached goroutine 后立刻返回 HTTP 200 +
+	// code 0，失败只进 slog → 状态机拒绝这类**同步就能判定**的失败也报成成功：
+	// 前端按 `res.code === 0` 判定成功（还会 router.push），用户完全看不到错误。
+	// 实测 reopen_trial 在 deliberation 被拒时就是如此（判决页按钮"看起来成功了"）。
+	//
+	// 把"便宜且确定"的校验（session 存在 + 当前阶段允许该 action）提到这里同步做，
+	// 长耗时的执行（跑 LLM、推进轮次）仍然异步。
+	if h.service == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code":    1500,
+			"message": "courtroom service unavailable",
+		})
+		return
+	}
+	if err := h.service.PrecheckAction(sessionUUID, req.Action); err != nil {
+		h.writeAudit(c, "user_action."+req.Action, sessionUUID, "rejected", err.Error())
+		// 1003 = 当前阶段不允许该操作（见 decisioncourt-api-design §5）。
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1003,
+			"message": err.Error(),
+		})
+		return
+	}
+
 	// Run asynchronously with a detached context.
 	go func() {
 		if err := h.service.ProcessUserAction(context.Background(), sessionUUID, req.Action, req.Payload); err != nil {

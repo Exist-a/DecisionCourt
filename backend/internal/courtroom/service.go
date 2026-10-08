@@ -649,6 +649,26 @@ func (s *Service) SubmitEvidence(
 	return evidence, nil
 }
 
+// PrecheckAction 做"同步就能判定"的前置校验：session 存在 + 当前阶段允许该 action。
+//
+// v2.11 (deferred D18)：`api.Handler.UserAction` 把 ProcessUserAction 丢进 detached
+// goroutine 后立刻返回 HTTP 200 + code 0 —— 于是状态机拒绝这类**同步可判定**的失败
+// 也报成成功：前端按 `res.code === 0` 判定成功（还会 router.push），用户完全看不到
+// 错误，只剩后端一行 slog（实测 reopen_trial 在 deliberation 被拒时就是如此）。
+//
+// 这里把"便宜且确定"的校验提到 handler 同步做；长耗时的执行（跑 LLM、推进轮次）
+// 仍然异步。预检与执行共用同一个 state machine，所以不会出现"预检过、执行拒"的错位
+// —— 唯一的窗口是并发改动 phase（TOCTOU），执行路径仍会自己校验并记日志。
+//
+// 返回错误时 error 文本已包含当前 phase 与拒绝原因，可直接回给调用方。
+func (s *Service) PrecheckAction(sessionUUID, action string) error {
+	var session model.CourtSession
+	if err := s.db.Where("session_uuid = ?", sessionUUID).First(&session).Error; err != nil {
+		return err
+	}
+	return s.stateMachine.ValidateAction(session.CurrentPhase, action)
+}
+
 func (s *Service) ProcessUserAction(
 	ctx context.Context,
 	sessionUUID string,

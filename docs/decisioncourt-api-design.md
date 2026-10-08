@@ -431,6 +431,25 @@ POST /api/v1/courtrooms/:session_uuid/actions
 }
 ```
 
+**失败语义（v2.11 / deferred D18b 修复）**：
+
+这个端点**同步返回"便宜且确定"的校验结果**，长耗时的执行仍然异步：
+
+| 情况 | 响应 | 说明 |
+|---|---|---|
+| `action` 不在白名单 | 400 `{"code":1001,...}` | `ShouldBindJSON` 的 `oneof` 校验 |
+| 非 session owner | 403 `{"code":1403,...}` | owner check |
+| session 不存在 | 404 `{"code":1002,...}` | — |
+| **当前阶段不允许该 action** | **400 `{"code":1003,"message":"..."}`** | 状态机拒绝；`message` 带当前 phase 与原因 |
+| 校验通过 | 200 `{"code":0,...}` | 异步执行（跑 LLM / 推进轮次），进度通过 WS 推送 |
+
+> **为什么要有 1003 这一行**：v2.11 之前该端点把执行整个丢进 detached goroutine 后
+> **立刻返回 200 + `code:0`**，状态机拒绝（阶段不允许）也报成功 —— 前端按
+> `code === 0` 判定成功、还会 `router.push`，用户完全看不到失败（只剩后端一行 slog）。
+> 实测：判决页的 `reopen_trial` 按钮就是这样"看起来成功了"。现在同步预检
+> （`Service.PrecheckAction`：session 存在 + 阶段允许）在 handler 层完成，
+> 拒绝时回 400/1003；异步执行路径仍会自己校验（并发改动 phase 的窗口仍在，只记日志）。
+
 ---
 
 ### 3.4 消息与历史

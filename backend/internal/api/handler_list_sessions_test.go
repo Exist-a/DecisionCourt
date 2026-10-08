@@ -37,6 +37,12 @@ func newListTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
+	// v2.11 (D18b): sqlite :memory: 是"每连接一个库"—— 不限制连接数时，后台
+	// goroutine 的写入与测试主协程的读取可能落在不同连接上，看到不同的库。
+	// 钉成单连接让"异步写入后读回"可确定性断言。
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(1)
+	}
 	require.NoError(t, db.Exec(`CREATE TABLE court_sessions (
 		id TEXT PRIMARY KEY,
 		session_uuid TEXT NOT NULL,
