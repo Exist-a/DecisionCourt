@@ -194,6 +194,18 @@ ADR 0038 修了 P1-3 + P1-5 + P1-7（低风险 3 项，~1.5 天）。
 > **新增护栏**：`TestCSRF_CookiePathMustBeReadableFromAppPages`（把"Path 必须对 JS 可见"钉成断言）
 > + `TestCSRF_UnescapedCookieValueRoundTrip`（钉住"Go 写时转义 `=`→`%3D` / 读时 unescape /
 > 前端 `decodeURIComponent`"三者必须对得上 —— 任一端改动都会重新变成静默 403）。
+>
+> **第二半（同日修复，commit `79683d2`）**：光改 cookie Path 还不够 —— CORS 的
+> `Access-Control-Allow-Headers` **没有列出 `X-XSRF-TOKEN`**，浏览器对带该头的写请求先发
+> preflight 就会失败（前端 `fetch` 直接报 `Failed to fetch`）。两个列表（`gin cors.Config` +
+> `main.go` 手写 OPTIONS handler）都已补齐并抽成 `corsAllowedHeaders` 单一来源，
+> 护栏 `cmd/server/cors_headers_test.go` 断言它覆盖 `frontend/lib/api.ts` 实际注入的每个头。
+> 实测链路：修 Path 后仍失败 → 补 Allow-Headers 后 `POST /api/v1/courtrooms` 返回 200 并建成 session。
+>
+> **⚠️ 迁移注意**：修复前浏览器已持有 `Path=/api/v1` 的旧 cookie，而服务端只在 cookie
+> **缺失**时才签发 → 旧 cookie 会遮蔽新的 `Path=/`（且浏览器按 path 长度排序发送，
+> 旧 cookie 优先被服务端读到）。受影响浏览器需**清一次 cookie**（或等 24h TTL、用无痕窗口）
+> 才生效。实测确认：清掉旧 cookie 后 `document.cookie` 立即可读、POST 立即 200。
 
 ---
 

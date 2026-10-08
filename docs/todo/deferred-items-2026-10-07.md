@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | 🟢 D7–D12 + D14 已实现（v2.11，7 commit）+ **docker 业务验证已跑完**（dev compose，2026-10-08）；🔴 D13 待用户授权（方案见 `.trae/documents/d13-projection-isolation-hardening-proposal.md`）；🔴 验证中新发现 D15–D21 待决定（含 **1 个 P0：CSRF cookie path 让浏览器写路径全 403**） |
+| **状态** | ✅ **全部收口（v2.12，2026-10-08）**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；验证中新发现的 D15/D16/D17/D18/D19 已全部修复并再次实跑 + 浏览器真实路径验证。**仅剩 D20/D21（P3 噪音级）与 D22/D23（v0.8.3 遗留 / 集成测试腐烂）未修**，详见「v2.12 收口」一节 |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -64,11 +64,43 @@
 
 **环境适配（不是代码问题）**：本机 host:3000 被用户另一个项目（Emotion-Echo Nuxt dev server）占用，故 dev 前端临时映射到 3010（temp override 文件，未进仓库、未改 compose/.env）。host:8080 被 NI ApplicationWebServer 占用，dev 后端本就用 8180。
 
+## v2.12 收口（2026-10-08，用户授权后）
+
+用户在 2026-10-08 明确授权后，D13 与验证期发现的 D16/D17/D18/D19 已全部实现，**并再次实跑验证**。
+
+| 项 | 状态 | commit | 现场证据（dev compose + 浏览器真实路径） |
+|---|---|---|---|
+| D19（P0）CSRF/CORS 让浏览器写路径全废 | ✅ 已修（两半） | `d3c9124` + `79683d2` | 修 cookie `Path=/` + CORS 补 `X-XSRF-TOKEN` 后：浏览器 `document.cookie` 可读 token，UI 立案成功建 session，`POST /courtrooms` 200。⚠️ 修复前已持有旧 cookie 的浏览器需清一次 cookie（见 ADR 0039 迁移注意） |
+| D16（P1）网关子能力默认全关 | ✅ 已修 | `18bb55b` | 容器内真实 `config.Load()`（**无任何 env 覆盖**）：PromptCompression/TokenBudget/Throttling/Fallback/SmartCompression 全 true；Cache/Breaker 仍 false（`.env` 显式关，正确尊重） |
+| D17（P1）预算默认太小导致判决被拒 | ✅ 已修 | `7c26a3b` | 默认上限 200000；一场 quick 庭审实测烧 89838（45%），**judge/clerk 不再被拒，判决为真实 LLM 生成** |
+| D18（P1）reopen 不可达 + 失败静默 | ✅ 已修（两半） | `f3ea525` + `26790e9` | 判决后 DB `current_phase=verdict`、UI 按钮变「查 看 判 决 書」；判决页「补充证据重开」点击后无报错并回到 `evidence`（「· 举证阶段」）；`UserAction` 现在对阶段不允许的 action 回 400/1003 |
+| D13（P2）投影隔离硬化 | ✅ 已实现 | `b10b477` | [ADR 0045](../adr/0045-projection-isolation-hardening.md)：转写出口显式化（零行为变更）+ 载荷正向白名单 + 注入式/等价性测试 12 项 |
+| D15（P3→P1）prod compose 漏传子开关 | ✅ 根因已消 | `18bb55b` | D16 改成"显式 env 优先、否则继承总开关"后，**不再需要**在 compose 里逐个列出子开关（compose 已传 `AGENT_GATEWAY_ENABLED=true` 即全开）。剩余"是否在 compose 里显式列出以便阅读"属可选整洁项 |
+| D20（P3）concurrency gauge 不更新 | 🔴 未修 | — | 仍只在 acquire 时 `SetGauge`，release 后不更新 |
+| D21（P3）`/auth/anon` duplicate key 噪音 | 🔴 未修 | — | 仍是 ERROR 级日志噪音（功能不受影响） |
+
+**验证方式**：`go build` / `go vet` / `go test ./...` 22 包全绿；dev compose 实跑 + **浏览器真实路径**（填表立案 → 开庭 → 真实 LLM 开场陈述 → 直接判决 → 判决页 → 补充证据重开 → 回到举证阶段）。栈已 down，命名 volume 全部保留。
+
+### 验证中新发现（D22 / D23，未修）
+
+**D22（P2）「补充证据重开」只实现了一半**（v0.8.3 遗留，非本次引入）：
+- 后端 `reopenTrial` 只改 phase → `evidence`，**不把 status 从 `completed` 改回 `active`**；
+  而 `finishTrial` 的幂等守卫含 `fresh.Status == StatusCompleted → return nil` →
+  **重开后再点「直接判决」是静默 no-op**（实测：phase=evidence + status=completed）。
+- 前端没有 `trial.reopened` 的处理器，`waitingForNextRound` 不会被置位 → 举证阶段**没有**
+  「进入第 N 轮」按钮；且 `ValidateAction` 的 `continue_cross_exam` 只允许 `cross_exam` 阶段
+  （而 `reopenTrial` 的注释恰恰说"用户点 continue_cross_exam 进入下一轮"）→ 后端注释与守卫不一致。
+- 结论：重开能"回去"，但回不去"继续辩论"。修法需用户决策（见下）。
+
+**D23（P3）`//go:build integration` 的测试文件编译不过**：`integration_helpers_test.go:157`
+调用 `CreateSession` 少传一个参数 → 该 tag 已腐烂、CI 不跑（`go test ./...` 不覆盖）。
+本次只按 D18a 的契约变更更新了里面的 final-phase 断言，**未修**编译错误。
+
 ## 本轮新发现（D15–D21，全部未实现，需你决定）
 
 > 都是"功能骨架在、闭环/默认值断在别处"的同一族问题。**均未改动代码**（除 D15 已随 D10 修 compose 透传）。
 
-### D16（P1）Agent Gateway 子能力默认全关 —— `AGENT_GATEWAY_ENABLED=true` 只等于开了 FileLogger
+### D16（P1）Agent Gateway 子能力默认全关 —— `AGENT_GATEWAY_ENABLED=true` 只等于开了 FileLogger　→ ✅ **v2.12 已修（`18bb55b`）**
 
 **证据**：容器内真实 `config.Load()` + 真实 `GatewayConfig` 判定：
 `Enabled=true` 但 `IsPromptCompressionEnabled=false`、`IsTokenBudgetEnabled=false`、`IsThrottlingEnabled=false`、`IsFallbackEnabled(重试)=false`、`CacheEnabled=false`、`Breaker.Enabled=false`，只有 `IsFileLoggerEnabled=true`。
@@ -85,7 +117,7 @@
 **影响**：ADR 0013 / 0044 的压缩、预算、重试、缓存、熔断在默认部署里从未运行；简历亮点里的
 "token 降 30-50% / 缓存命中 38% / 熔断降级"在默认配置下都拿不到。**这是本轮最严重的发现。**
 
-### D17（P1）token budget 默认 20000/session + `REJECT_WHEN_EXHAUSTED=true` 会让真实庭审硬失败
+### D17（P1）token budget 默认 20000/session + `REJECT_WHEN_EXHAUSTED=true` 会让真实庭审硬失败　→ ✅ **v2.12 已修（`7c26a3b`，默认 200000）**
 
 **证据**：临时打开 `AGENT_GATEWAY_TOKEN_BUDGET=true` 跑一场 quick 庭审 → opening 就烧掉 17.7k/20k，
 判决阶段 4 次调用全部被拒（`llm_calls.error_msg = "agent_gateway: token budget exhausted (ratio=...)"`，
@@ -95,7 +127,7 @@
 需要决定：抬 `BUDGET_PER_SESSION` 默认值 / 把 `REJECT_WHEN_EXHAUSTED` 改回 false（超预算降级而非拒绝）/
 维持 budget 默认关但**显式**关（而不是靠 D16 那个巧合）。
 
-### D18（P1）`reopen_trial` 不可达 + `UserAction` 恒返 200/code 0 —— 用户可见的静默失败
+### D18（P1）`reopen_trial` 不可达 + `UserAction` 恒返 200/code 0 —— 用户可见的静默失败　→ ✅ **v2.12 已修（`f3ea525` + `26790e9`）；残留见 D22**
 
 **证据**：
 1. 全仓没有任何代码写 `verdict` 阶段（`transitionPhase` 的调用点只有 opening/cross_exam/evidence/closing/deliberation），
@@ -108,7 +140,7 @@
 **影响**：v0.8.3「补充证据重开」在真实流程里**从未可用**（`reopen_test.go` 手工 seed `verdict` 阶段所以一直绿）；
 且这是 ADR 0024 那类"静默错误黑洞"的又一实例 —— 前端为非零 code 准备的重试/toast 分支是死代码。
 
-### D19（P0）CSRF cookie `Path=/api/v1` → 浏览器所有写请求 403
+### D19（P0）CSRF cookie `Path=/api/v1` → 浏览器所有写请求 403　→ ✅ **v2.12 已修（`d3c9124` cookie + `79683d2` CORS）**
 
 **证据**：`Set-Cookie: XSRF-TOKEN=...; Path=/api/v1`（非 HttpOnly，本意是让 JS 读）；
 但 `document.cookie` 只暴露"Path 是当前文档路径前缀"的 cookie，应用页面在 `/`、`/court/...` →
@@ -134,7 +166,7 @@ ADR 0039 §7 的验证只有单测 + `tsc`，没有浏览器实跑，所以没�
 
 ---
 
-### D15（P3）prod compose 漏传 gateway 子开关（本项已部分修复）
+### D15（P3）prod compose 漏传 gateway 子开关　→ ✅ **根因已随 D16 消除（`18bb55b`）**
 
 实现 D10 时发现：**prod compose 用显式 `environment:` 列表而没有 `env_file`**（`docker-compose.yml`），
 所以只在 `.env` 里写的变量**进不了后端容器**。这正是 D10 要修的同一类静默失效，只是换了一层。
