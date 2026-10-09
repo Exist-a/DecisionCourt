@@ -79,6 +79,35 @@ func NewClient() (Client, error) {
 	}, nil
 }
 
+// buildChatMessages 把 (systemPrompt, messages) 组装成上游请求的消息数组。
+//
+// systemPrompt 为空时**不**发那条 system 消息。这不是省事，是必须：
+// go-openai 的 ChatCompletionMessage.Content 带 `json:"content,omitempty"`，
+// 空字符串会在序列化时整个字段被丢掉 → 上游收到 {"role":"system"}（没有 content），
+// DeepSeek 直接 422：`messages[0]: missing field 'content'`。
+//
+// 2026-10-09 实测：promptlab 的 LLM-as-judge（evalViaLLM 传 systemPrompt=""，
+// 因为它把 judge 指令整段放进 user 消息）因此**恒失败** —— Prompt Lab 的 LLM 评分
+// 与 A/B 一直是坏的（接口仍返 200，失败信息藏在 reasoning 里）。
+// 空 system 消息本身不携带任何信息，跳过它语义等价，所以修在客户端这一层，
+// 让所有"不需要 system 消息"的调用点都不必绕开这个坑。
+func buildChatMessages(systemPrompt string, messages []Message) []openai.ChatCompletionMessage {
+	out := make([]openai.ChatCompletionMessage, 0, len(messages)+1)
+	if systemPrompt != "" {
+		out = append(out, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleSystem,
+			Content: systemPrompt,
+		})
+	}
+	for _, m := range messages {
+		out = append(out, openai.ChatCompletionMessage{
+			Role:    m.Role,
+			Content: m.Content,
+		})
+	}
+	return out
+}
+
 func (c *openAIClient) Complete(
 	ctx context.Context,
 	systemPrompt string,
@@ -92,19 +121,7 @@ func (c *openAIClient) Complete(
 		opts.Temperature = 0.7
 	}
 
-	chatMessages := []openai.ChatCompletionMessage{
-		{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: systemPrompt,
-		},
-	}
-
-	for _, m := range messages {
-		chatMessages = append(chatMessages, openai.ChatCompletionMessage{
-			Role:    m.Role,
-			Content: m.Content,
-		})
-	}
+	chatMessages := buildChatMessages(systemPrompt, messages)
 
 	req := openai.ChatCompletionRequest{
 		Model:       opts.Model,
@@ -179,14 +196,7 @@ func (c *openAIClient) StreamComplete(
 		opts.Temperature = 0.7
 	}
 
-	chatMessages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
-	}
-	for _, m := range messages {
-		chatMessages = append(chatMessages, openai.ChatCompletionMessage{
-			Role: m.Role, Content: m.Content,
-		})
-	}
+	chatMessages := buildChatMessages(systemPrompt, messages)
 
 	go func() {
 		defer close(out)

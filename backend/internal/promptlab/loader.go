@@ -62,10 +62,11 @@ func loadFromFile(yamlPath string) (Version, string, error) {
 	}
 
 	v := Version{
-		Semver:     doc.Version,
-		GitSHA:     doc.GitSHA,
-		LoadedAt:   time.Now(),
-		SourcePath: yamlPath,
+		Semver:      doc.Version,
+		GitSHA:      resolveGitSHA(doc.GitSHA),
+		ContentHash: ContentHashOf(doc.BaseRules),
+		LoadedAt:    time.Now(),
+		SourcePath:  yamlPath,
 	}
 	return v, doc.BaseRules, nil
 }

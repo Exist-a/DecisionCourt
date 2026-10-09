@@ -20,23 +20,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBuildLLMCallRow_WritesAuditFields 直接钉住 D9 的两个新字段。
+// TestBuildLLMCallRow_WritesAuditFields 直接钉住 D9 的两个新字段 + R13 的 PromptVersion。
 func TestBuildLLMCallRow_WritesAuditFields(t *testing.T) {
 	sessionID := uuid.New()
 	row := buildLLMCallRow(sessionID, Record{
-		SessionUUID: "sess-1",
-		AgentType:   "prosecutor",
-		RequestID:   "req-abc123",
-		TaskType:    "opening",
-		Model:       "deepseek-v4-flash",
-		LatencyMs:   321,
-		Status:      StatusSuccess,
-		CreatedAt:   time.Now().UTC(),
+		SessionUUID:   "sess-1",
+		AgentType:     "prosecutor",
+		RequestID:     "req-abc123",
+		PromptVersion: "1.0.3-pr1@3fc2ae8#ab12cd34",
+		TaskType:      "opening",
+		Model:         "deepseek-v4-flash",
+		LatencyMs:     321,
+		Status:        StatusSuccess,
+		CreatedAt:     time.Now().UTC(),
 	})
 
 	require.Equal(t, sessionID, row.SessionID, "session_id 必须是 lookup 到的 DB 主键")
 	assert.Equal(t, "prosecutor", row.AgentType, "agent_type 必须写入(D9: 此前恒为空)")
 	assert.Equal(t, "req-abc123", row.RequestID, "request_id 必须写入(D9: 此前列不存在)")
+	assert.Equal(t, "1.0.3-pr1@3fc2ae8#ab12cd34", row.PromptVersion,
+		"prompt_version 必须写入(R13: 此前列不存在，prompt 改动无法归因)")
 	assert.Equal(t, "opening", row.TaskType)
 	assert.Equal(t, 321, row.LatencyMs)
 	assert.NotEqual(t, uuid.Nil, row.ID, "每行必须有新主键")
@@ -59,6 +62,7 @@ func TestBuildLLMCallRow_MapsEveryRecordField(t *testing.T) {
 		RequestID:        "req-1",
 		Model:            "deepseek-v4-pro",
 		Provider:         "deepseek",
+		PromptVersion:    "1.0.4-pr1@deadbee#0011aabb",
 		PromptTokens:     11,
 		CompletionTokens: 22,
 		TotalTokens:      33,
@@ -93,10 +97,10 @@ func TestBuildLLMCallRow_MapsEveryRecordField(t *testing.T) {
 		}
 	}
 
-	// 防止"跳过规则"意外吞掉全部字段：至少应覆盖到 11 个字段
-	// （AgentType / RequestID / TaskType / Model / Prompt* / Completion* /
-	//  Total* / LatencyMs / Status / ErrorMsg / CreatedAt）。
-	require.GreaterOrEqual(t, mapped, 11,
+	// 防止"跳过规则"意外吞掉全部字段：至少应覆盖到 12 个字段
+	// （AgentType / RequestID / PromptVersion / TaskType / Model / Prompt* /
+	//  Completion* / Total* / LatencyMs / Status / ErrorMsg / CreatedAt）。
+	require.GreaterOrEqual(t, mapped, 12,
 		"反射护栏覆盖的字段数异常偏少，检查名称/类型匹配是否被改坏")
 }
 
@@ -113,10 +117,10 @@ func TestBuildLLMCallRow_ZeroAgentTypeStillWritesEmptyString(t *testing.T) {
 // （删掉后写入不会报错，DB 层也只是少一列，同样静默）。
 func TestLLMCallSchemaHasAuditColumns(t *testing.T) {
 	typ := reflect.TypeOf(model.LLMCall{})
-	for _, name := range []string{"RequestID", "AgentType"} {
+	for _, name := range []string{"RequestID", "AgentType", "PromptVersion"} {
 		f, ok := typ.FieldByName(name)
 		if !ok {
-			t.Fatalf("model.LLMCall 缺少 %s —— D9 引入的审计字段被删了", name)
+			t.Fatalf("model.LLMCall 缺少 %s —— D9/R13 引入的审计字段被删了", name)
 		}
 		if tag := f.Tag.Get("gorm"); tag == "" {
 			t.Errorf("model.LLMCall.%s 缺少 gorm tag", name)

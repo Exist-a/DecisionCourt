@@ -272,6 +272,12 @@ type LLMCall struct {
 	AgentType         string    `gorm:"type:varchar(50);index"`
 	// RequestID 关联 HTTP / WS trace_id（同 decision_events.request_id），v2.11 起写入。
 	RequestID         string    `gorm:"type:varchar(36);index"`
+	// PromptVersion 是本次调用生效的 promptlab 版本归因键（R13）。
+	// 形如 "1.0.3-pr1@3fc2ae8#ab12cd34"（semver@git_sha#内容哈希），由 Recorder
+	// 从 promptlab 版本提供者取值写入。没有它就无法回答"这条调用烧的 token
+	// 用的是哪版 prompt"——改完 base.yaml 只能靠时间戳手工对齐（见
+	// docs/OBSERVABILITY.md §8.4）。
+	PromptVersion     string    `gorm:"type:varchar(120);index"`
 	TaskType          string    `gorm:"type:varchar(50)"`
 	Model             string    `gorm:"type:varchar(50)"`
 	PromptTokens      int

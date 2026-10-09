@@ -15,7 +15,8 @@
 #   - 本 compose 文件只用于生产/部署。开发请用 docker-compose.dev.yml
 #   - .env 必须在宿主机存在(里面含真实 LLM_KEY / JWT_SECRET / DB_PASSWORD / BOCHA_API_KEY)
 #   - POSTGRES_PASSWORD 必须足够长(建议 32 字符)
-version: "3.8"
+#
+# 注: 不再写 `version:` —— Compose v2 已废弃该字段(每次命令都打 warning)。
 
 services:
   postgres:
@@ -87,7 +88,11 @@ services:
     # v0.9.1: ECS 2C2G build OOM,改用预构建镜像(本机 build → ACR push)
     image: crpi-rnawo8jx69bslvbx.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decision-court-backend:latest
     container_name: dc_backend
-    user: "1001:1001" # 与 Dockerfile adduser uid:gid 对齐
+    # R12: 必须与 backend/Dockerfile 的 `adduser -u 10001` 一致。
+    # 此前写 1001:1001，而镜像里只建了 uid 10001 → 容器实际运行在镜像里
+    # 不存在的 uid 上（`docker compose exec backend id` 直接报错），且宿主机
+    # bind mount 的 logs/ 目录不归它所有 → FileLogger 与 trace 全部写不进去。
+    user: "10001:10001"
     environment:
       PORT: 8080
       # P0-3：DATABASE_URL 从 env 读,无默认值。
@@ -157,7 +162,9 @@ services:
     # v0.9.1: ECS 2C2G build OOM,改用预构建镜像(本机 build → ACR push)
     image: crpi-rnawo8jx69bslvbx.cn-hongkong.personal.cr.aliyuncs.com/decision-court/decision-court-frontend:latest
     container_name: dc_frontend
-    user: "1001:1001"
+    # R12: 同 backend —— frontend/Dockerfile 里 adduser 也是 uid 10001，
+    # 写 1001 会让容器跑在镜像里不存在的 uid 上。
+    user: "10001:10001"
     environment:
       # 容器间访问 backend(同 docker 网络)
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8080}

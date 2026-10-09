@@ -145,7 +145,9 @@ func (h *Handler) RegisterPromptLabRoutes(api *gin.RouterGroup) {
 // 响应:   { "code": 0, "data": <EvalResult> }
 // 错误:
 //   400 code=1001: 请求体格式错 / rule 非法 / output 为空
-//   500 code=1500: LLM 调用失败 (见 EvalResult.Reasoning 字段)
+//   LLM 调用失败**不改变 HTTP 状态码**（仍 200），失败原因写在 EvalResult.Reasoning
+//   字段里（"judge LLM 调用失败: ..."）—— 前端不能只看状态码判断成功。
+//   （2026-10-09 更正：此前此处写的是 "500 code=1500"，与实际行为不符。）
 func (h *Handler) PromptEval(c *gin.Context) {
 	var req struct {
 		Rule   string `json:"rule" binding:"required,max=50"`

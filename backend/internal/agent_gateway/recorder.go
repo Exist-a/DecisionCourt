@@ -15,8 +15,13 @@ import (
 //   - 写库失败仅记 log，不抛出 — 网关不应因为审计失败而中断主流程。
 //   - ErrMessage 截断到 MaxErrorMsgLen，避免单条记录被超长异常撑爆。
 type Recorder struct {
-	cfg    RecorderConfig
-	store  Store
+	cfg   RecorderConfig
+	store Store
+	// promptVersion 是 promptlab 版本归因键的提供者（R13）。nil 表示未接线，
+	// 此时 Record.PromptVersion 留空 —— 宁可为空，也不要伪造一个版本号。
+	// 用函数而不是值：promptlab 支持 YAML 热加载，版本会随文件内容变化，
+	// 写时取快照才能归因到"那一刻生效的 prompt"。
+	promptVersion func() string
 }
 
 // RecorderConfig 控制 Recorder 的开关与 provider 标记。
@@ -45,13 +50,15 @@ type Usage struct {
 
 // Record 是写入存储的最小可观测单元。
 type Record struct {
-	ID               string
-	SessionUUID      string
-	AgentType        string
-	TaskType         string
-	RequestID        string
-	Model            string
-	Provider         string
+	ID          string
+	SessionUUID string
+	AgentType   string
+	TaskType    string
+	RequestID   string
+	Model       string
+	Provider    string
+	// PromptVersion 见 model.LLMCall.PromptVersion（R13）。
+	PromptVersion    string
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
@@ -76,9 +83,40 @@ const (
 // MaxErrorMsgLen 限制单条 error_message 的字符数，避免超长异常爆库。
 const MaxErrorMsgLen = 500
 
+// MaxPromptVersionLen 与 model.LLMCall.PromptVersion 的 varchar(120) 对齐。
+const MaxPromptVersionLen = 120
+
 // NewRecorder 构造一个 Recorder；store 为 nil 时 Record() 仅打 log（不写库）。
 func NewRecorder(cfg RecorderConfig, store Store) *Recorder {
 	return &Recorder{cfg: cfg, store: store}
+}
+
+// SetPromptVersionProvider 接线"当前生效的 prompt 版本"取值函数（R13）。
+//
+// 必须在 server 开始处理请求前调用一次（装配期）。之后每次 Record 都会重新
+// 求值 —— promptlab 支持 YAML 热加载，写成值快照会归因到启动时那一版。
+func (r *Recorder) SetPromptVersionProvider(fn func() string) {
+	if r == nil {
+		return
+	}
+	r.promptVersion = fn
+}
+
+// PromptVersion 返回当前 prompt 版本归因键；未接线时返回空字符串。
+// Gateway 的文件日志复用它，保证 DB 行与 JSON Lines 的归因值一致。
+func (r *Recorder) PromptVersion() string {
+	if r == nil || r.promptVersion == nil {
+		return ""
+	}
+	return truncatePromptVersion(r.promptVersion())
+}
+
+// truncatePromptVersion 限制归因键长度，避免超长版本串撑爆 varchar(120)。
+func truncatePromptVersion(v string) string {
+	if len(v) > MaxPromptVersionLen {
+		return v[:MaxPromptVersionLen]
+	}
+	return v
 }
 
 // Record 把一次 LLM 调用的快照写库。失败仅 log，不 panic。
@@ -129,6 +167,7 @@ func (r *Recorder) buildRecord(in CallInput) Record {
 		RequestID:        in.Trace.RequestID,
 		Model:            in.Model,
 		Provider:         provider,
+		PromptVersion:    r.PromptVersion(),
 		PromptTokens:     in.Usage.PromptTokens,
 		CompletionTokens: in.Usage.CompletionTokens,
 		TotalTokens:      in.Usage.TotalTokens,

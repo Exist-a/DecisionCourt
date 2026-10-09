@@ -274,6 +274,7 @@
 | `agent_id` | UUID FK | **历史列，恒为 NULL**（见下方 v2.11 说明） |
 | `agent_type` | VARCHAR(50) | 调用 Agent 类型：`prosecutor` / `defender` / `investigator` / `clerk` / `judge`（v2.11 起写入；用户级调用为空） |
 | `request_id` | VARCHAR(36) | 关联 HTTP / WS trace_id（与 `decision_events.request_id` 同源，v2.11 起写入） |
+| `prompt_version` | VARCHAR(120) | 本次调用生效的 prompt 版本归因键，形如 `1.0.3-pr1@3fc2ae8#ab12cd34`（`semver@git_sha#内容哈希`；R13 起写入） |
 | `task_type` | VARCHAR(50) | 任务类型：`opening` / `rebuttal` / `verdict` / `question` |
 | `model` | VARCHAR(50) | 实际调用模型 |
 | `prompt_tokens` | INT | prompt token 数 |
@@ -291,6 +292,41 @@
 - `agent_id` + `created_at`
 - `agent_type` + `created_at`（v2.11）
 - `request_id`（v2.11）
+- `prompt_version`（R13）
+
+> **R13 变更：补 `prompt_version`（prompt 版本归因）**
+>
+> **缺口**：改完 `prompts/base.yaml` 之后无法回答"这次调用的结果，是改前还是改后
+> 的 prompt 产生的"——只能靠时间戳 + `loaded_at` 手工对齐，而 `semver` 要人工改
+> YAML 才变。Prompt Lab 的 A/B 因此没有数据基础（`/prompts/abtest` 只能对调用方
+> 当场传入的输出打分，无法回溯历史调用）。
+>
+> **归因键为什么是三段式**：`semver` 人工改、`git_sha` 只有重新构建才变，而
+> Prompt Lab 的招牌能力是「改 YAML → 5 秒热加载」——热加载场景下这两者都不动，
+> 单靠它们归因会失效。所以追加 **`#内容哈希`**（`base_rules` 正文的 sha256 前 8 位），
+> 改一个字就变。取值为 `promptlab.Version.String()`。
+>
+> **写入路径**：`Recorder` 持有 `promptlab` 版本提供者（`SetPromptVersionProvider`），
+> 每次落库**现取**版本——不是启动快照，否则热加载后写入的行会一直带旧版本。
+> 未接线时该列留空（不写 `"unknown"`：伪造的版本号比空值更危险，会让人把空值
+> 当成真实版本去做对比）。
+>
+> **不做**：不回填历史行（当时的版本无从考证）；不让 `semver` 随内容自动变（它是
+> 供人读的版本标签，A/B 的身份标识，保持人工维护；内容变化由哈希反映）。
+>
+> **查询示例**：
+>
+> ```sql
+> -- 改 prompt 前后各版本的 token 效率 / 失败率对比
+> SELECT prompt_version,
+>        COUNT(*)                          AS calls,
+>        AVG(total_tokens)                 AS avg_tokens,
+>        SUM((status <> 'success')::int)   AS failures
+> FROM llm_calls
+> WHERE session_id = '<court_sessions.id>'
+> GROUP BY prompt_version
+> ORDER BY MIN(created_at);
+> ```
 
 > **v2.11 变更（deferred D9）**：补 `request_id` + `agent_type` 两列。
 >

@@ -2,6 +2,7 @@ package agent_gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -20,6 +21,10 @@ type LogEntry struct {
 	TaskType              string    `json:"task_type"`
 	Model                 string    `json:"model"`
 	Provider              string    `json:"provider"`
+	// PromptVersion 是本次调用生效的 promptlab 版本归因键（R13），
+	// 与 llm_calls.prompt_version 同值 —— 让"喂进去什么"（system_prompt）
+	// 与"哪版 prompt"能对上。
+	PromptVersion         string    `json:"prompt_version,omitempty"`
 	PromptTokens          int       `json:"prompt_tokens"`
 	CompletionTokens      int       `json:"completion_tokens"`
 	TotalTokens           int       `json:"total_tokens"`
@@ -91,6 +96,39 @@ func NewFileLogger(logDir string) *FileLogger {
 		logDir = defaultLogDir
 	}
 	return &FileLogger{logDir: logDir}
+}
+
+// WritableProbeName 是启动期可写性探测使用的临时文件名。
+const WritableProbeName = ".writable-probe"
+
+// ProbeLogDir 检查日志目录是否可写（不存在则尝试创建）。
+//
+// R12 教训：`AGENT_GATEWAY_FILE_LOGGER=true` 只说明**开关是开的**，不说明
+// **数据拿得到**。线上实际是「容器 uid 与镜像里建的 uid 不一致 + 宿主机目录
+// 归 root」→ FileLogger.Write 每次必失败，而那条 WARN 只有真的发生 LLM 调用时
+// 才会打出来 —— 新部署、还没人用的机器上一个字节都不会写，于是没人发现，
+// trace 端点也一直是空的（它读同一个文件）。
+//
+// 启动期主动探一次，把「开关开了但写不进去」这个静默降级变成一条启动 ERROR。
+// 传空字符串时探测默认目录（与 NewFileLogger 的规则一致）。
+func ProbeLogDir(logDir string) error {
+	dir := logDir
+	if dir == "" {
+		dir = defaultLogDir
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create log dir %q: %w", dir, err)
+	}
+	probe := filepath.Join(dir, WritableProbeName)
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("log dir %q is not writable: %w", dir, err)
+	}
+	_ = f.Close()
+	if err := os.Remove(probe); err != nil {
+		return fmt.Errorf("log dir %q is not deletable: %w", dir, err)
+	}
+	return nil
 }
 
 // Write 追加一条日志。按日期自动切换文件。

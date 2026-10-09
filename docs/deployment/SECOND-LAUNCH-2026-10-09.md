@@ -107,10 +107,16 @@ cd /opt/DecisionCourt && docker compose up -d
 **三个容易踩的点**：
 - `.env` 里 `DATABASE_URL` 的密码必须与 `POSTGRES_PASSWORD` 一致（新 volume 按后者初始化）。
 - 本机 `secrets/ecs.env` 与 GitHub Secret `ECS_HOST` 是**两处**，换机都要改；`scripts/ecs.ps1` 也曾硬编码 IP。
-- **`logs/` 的属主**：Docker 会自动把 bind mount 的目标目录建成 `root:root`，而容器跑在 uid 1001（compose `user`）→ **FileLogger 与 trace 全部写不进去**（本次实际踩到，见 §6 遗留项 2 / R12）。起栈后顺手修一次：
+- **`logs/` 的属主**：Docker 会自动把 bind mount 的目标目录建成 `root:root`，而容器跑在
+  uid **10001**（`docker-compose.yml` 的 `user`）→ **FileLogger 与 trace 全部写不进去**
+  （本次实际踩到，见 §6 遗留项 2 / R12）。镜像现在会预建归属 appuser 的 `/app/logs`，
+  但 bind mount 的属主由**宿主机**决定，所以起栈后仍要顺手修一次：
   ```bash
-  sudo chown -R 1001:1001 /opt/DecisionCourt/logs    # 或统一到 10001 并同步改 compose 的 user
+  sudo mkdir -p /opt/DecisionCourt/logs/backend /opt/DecisionCourt/logs/caddy
+  sudo chown -R 10001:10001 /opt/DecisionCourt/logs    # 必须与 compose user / Dockerfile adduser uid 一致
   ```
+  **别用 1001**：compose 与 Dockerfile 曾在这一点上不一致（R12），现在统一到 10001。
+  起栈后可在启动日志里直接确认：出现 `agent_gateway: file logger log dir writable` 才算通。
 
 ### 3.2 发版（每次）
 
@@ -278,11 +284,47 @@ docker compose exec -T backend sh -c 'touch /app/logs/.wtest'   # 目录能不�
 
 ## 6. 遗留项
 
+> **状态更新（2026-10-09 11:00 前后）**：第 1 项（CI Deploy 的 SSH 认证）**已由用户修复并实测生效**；
+> 第 2/3/5/6 项已于 2026-10-09 修复（代码侧）；第 2 项的存量机器 chown 与第 4 项的 sshd 加固仍待执行。
+
 | # | 项 | 状态 | 修法 |
 |---|---|---|---|
-| 1 | **GitHub Secret `ECS_SSH_KEY` 不对** → CI 自动部署走不通 | ⏳ 待用户操作 | 粘贴本机 `~/.ssh/id_rsa` 到该 Secret（§4.7） |
-| 2 | **R12 FileLogger 写不进去**（uid 不匹配 + 宿主机 root 属主） | ⏳ 待授权 | `sudo chown -R 10001:10001 /opt/DecisionCourt/logs` + compose `user` 改 10001（[`OBSERVABILITY.md §8.3`](../OBSERVABILITY.md)） |
-| 3 | **R13 无 prompt 版本归因** | ⏳ 待排期 | `llm_calls` 加 `prompt_version` 列 + recorder 写入（[`OBSERVABILITY.md §8.4`](../OBSERVABILITY.md)） |
-| 4 | sshd 仍允许口令登录 + root 直登，且 22 端口对全网开放（`lastb` 已有爆破记录） | ⏳ 待授权 | `PasswordAuthentication no` + `PermitRootLogin prohibit-password`；改前先确认密钥登录可用、保留已登录会话、`sshd -t` 校验后再 reload |
-| 5 | prod compose 的 `version:` 属性已废弃（每次 compose 命令打 warning） | 低优先 | 删掉该行（纯噪音） |
-| 6 | `prompts/base.yaml` 版本号（`semver`）需手工改 YAML 才变；`/prompts/version` 的 `git_sha` 为空 | 低优先 | 构建期注入 git sha；或让 semver 随内容哈希 |
+| 1 | **GitHub Secret `ECS_SSH_KEY` 不对** → CI 自动部署走不通 | ✅ **已修（用户操作）+ 实测通过** | 见下方「§6.1 CI 部署恢复的实测证据」 |
+| 2 | **R12 FileLogger 写不进去**（uid 不匹配 + 宿主机 root 属主） | ✅ 代码已修 / ⏳ 存量机器待 chown | 代码：compose `user` 统一 10001 + Dockerfile 预建 `/app/logs` + 启动期 `ProbeLogDir` ERROR。存量机器仍需 `sudo chown -R 10001:10001 /opt/DecisionCourt/logs` + `compose up -d --force-recreate backend frontend`（[`OBSERVABILITY.md §8.3`](../OBSERVABILITY.md)） |
+| 3 | **R13 无 prompt 版本归因** | ✅ **已修（2026-10-09 收口）** | `llm_calls.prompt_version`（`semver@git_sha#内容哈希`）+ Recorder 每次现取 + git_sha 由 ldflags 注入（[`OBSERVABILITY.md §8.4`](../OBSERVABILITY.md)） |
+| 4 | sshd 仍允许口令登录 + root 直登，且 22 端口对全网开放（`lastb` 已有爆破记录） | ⏳ 待授权 | `PasswordAuthentication no` + `PermitRootLogin prohibit-password`；改前先确认密钥登录可用、保留已登录会话、`sshd -t` 校验后再 reload。**2026-10-09 云盾登录告警再次印证这条的紧迫性**（见 §6.2） |
+| 5 | prod compose 的 `version:` 属性已废弃（每次 compose 命令打 warning） | ✅ **已删（2026-10-09 收口）** | 删除该行（纯噪音） |
+| 6 | `prompts/base.yaml` 版本号（`semver`）需手工改 YAML 才变；`/prompts/version` 的 `git_sha` 为空 | ✅ **已修（2026-10-09 收口）** | `git_sha` 由 Dockerfile ldflags 注入；另加 `content_hash`（`base_rules` 正文 sha256 前 8 位）覆盖"热加载改了内容但 semver/git_sha 都不动"的场景。**semver 仍保持手工维护**（它是人读的版本标签 + A/B 身份标识，有意保留） |
+
+### 6.1 CI 部署恢复的实测证据（2026-10-09 10:05–10:06）
+
+**结论**：用户修好 `ECS_SSH_KEY` 后，CI 的 Deploy job **首次成功落地**，COMMIT `f34b88d` 已上生产。
+
+排查过程（用服务器 `auth.log` + 容器状态对齐，同一个时间窗三条证据互证）：
+
+| 时间（+08:00） | 事件 | 来源 IP |
+|---|---|---|
+| 07:22:24 | `Connection closed by authenticating user admin ... [preauth]` | `172.208.126.96`（Azure，runner） |
+| 07:34:44 | 同上（**认证失败**，§4.7 记录的那次） | `20.168.109.87`（Azure，runner） |
+| **10:05:48** | **`Accepted publickey for admin`** | `52.161.59.0`（Azure，runner） |
+| **10:06:05** | **`Accepted publickey for admin`** | `172.210.61.210`（Azure，runner） |
+| 10:06:08 / 10:06:09 | `dc_backend` / `dc_frontend` 容器**被重建** | — |
+
+两条成功记录的密钥指纹都是 `SHA256:Ny/HKBZeCc4sjvhmVBssGe4IzO+dm2FnhYAiq16Kc1w`（= 用户本机
+`id_rsa.pub`，与 §4.7 诊断时的候选密钥一致）；容器重建时间正好落在两次 SSH 之后，且 `docker images`
+里多了 tag = `f34b88d`（= 当时 main HEAD）的镜像。**判定：这是 CI 的正常部署，不是入侵。**
+
+### 6.2 云盾「登录地非常用」告警 = 上述 CI 部署（2026-10-09 10:06）
+
+同一时间收到阿里云云盾告警：`admin` 于 `2026-10-09 10:06:12` 从 `52.161.59.0`（怀俄明州）SSH 登录。
+`10:06:12` 正是上表里 `52.161.59.0` 那次会话**登出**的时刻 —— **同一次 CI 部署，不是入侵**。
+
+**但告警本身指出了一个真问题**：CI 用的部署私钥与**你个人登录用的 `id_rsa` 是同一把**，
+而 GitHub Actions 的 runner 跑在 Azure（每次 IP 都不同）→ 以后每次 CI 部署都会触发"非常用登录地"告警。
+建议（按性价比排序）：
+
+1. **给 CI 单独一把部署密钥**（ed25519），公钥追加进服务器 `~/.ssh/authorized_keys`，私钥只放
+   GitHub Secret `ECS_SSH_KEY`。这样 CI 私钥泄露 ≠ 你的个人登录被攻破，也便于单独吊销。
+2. **做第 4 项的 sshd 加固**：关掉口令登录与 root 直登 —— 22 端口对全网开放且 `lastb` 已有爆破记录，
+   这才是这次告警暴露出的真正暴露面。
+3. 在云盾控制台把 GitHub Actions 的网段加入"常用登录地"白名单，或直接对该告警标注为预期行为（治标）。

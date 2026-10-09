@@ -549,6 +549,7 @@ func (g *Gateway) writeFileLog(
 		TaskType:               tr.TaskType,
 		Model:                  model,
 		Provider:               g.recorder.cfg.Provider,
+		PromptVersion:          g.recorder.PromptVersion(),
 		PromptTokens:           usage.PromptTokens,
 		CompletionTokens:       usage.CompletionTokens,
 		TotalTokens:            usage.TotalTokens,

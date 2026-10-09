@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。<br>**2026-10-09（第二次上线）追加 R7–R13**：**R7**（`next build` 被 ESLint 死变量阻断，R4/R5 残留）、**R8**（`test.yml` 缺 job key → 依赖审计从未执行）、**R9**（ACR 拒收 BuildKit attestation index）、**R10**（`prompts/base.yaml` 未进 runtime 镜像 → 线上永久降级）、**R11**（Prompt Lab 4 条 REST 路由从未接线 → 恒 404）**五项已修并上线**；**R12**（FileLogger 因 uid 不匹配 + 宿主机 root 属主而写不进去）、**R13**（无 prompt 版本归因）**两项未修，待授权/排期**。详见文末 |
+| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。<br>**2026-10-09（第二次上线）追加 R7–R13**：**R7**（`next build` 被 ESLint 死变量阻断，R4/R5 残留）、**R8**（`test.yml` 缺 job key → 依赖审计从未执行）、**R9**（ACR 拒收 BuildKit attestation index）、**R10**（`prompts/base.yaml` 未进 runtime 镜像 → 线上永久降级）、**R11**（Prompt Lab 4 条 REST 路由从未接线 → 恒 404）**五项已修并上线**；**R12**（FileLogger 因 uid 不匹配 + 宿主机 root 属主而写不进去）、**R13**（无 prompt 版本归因）**两项已于同日修复**（2026-10-09 收口）——详见文末 R12 / R13 的「修复落地」小节；验证 R13 时又发现 **R15**（空 `systemPrompt` → 上游 422，Prompt Lab 的 LLM-as-judge 恒失败）**已修**，**R14**（无 session 的调用不进 `llm_calls`，属 D2-LLM-FK 设计取舍）与 **R16**（semver 不随内容变，属已决策语义）**未修，待决策** |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -988,7 +988,7 @@ denied: unknown manifest class for application/vnd.oci.empty.v1+json
 | 业务冒烟 | `POST /api/v1/auth/anon`（带 `user_id`）→ 200 + JWT；`GET /api/v1/courtrooms` → 200 `{"count":0}`；`XSRF-TOKEN` cookie 正常下发（`Path=/; Max-Age=86400; Secure`） |
 | 前端构建期注入 | 服务的 JS chunk 里是 `https://decisioncourt.cn` / `wss://decisioncourt.cn`（GitHub secrets 正确） |
 
-### 阻塞项：CI 的 deploy job SSH 认证失败（根因已查明，需用户改 GitHub Secret）
+### 阻塞项：CI 的 deploy job SSH 认证失败（根因已查明）→ ✅ 2026-10-09 10:05 已修复并实测通过
 
 **现象**：`build` job 成功（镜像已推 ACR），但 `deploy` job 不落地 —— 服务器上镜像/容器长时间无变化。
 
@@ -1013,7 +1013,11 @@ denied: unknown manifest class for application/vnd.oci.empty.v1+json
 
 **（可选）更干净的长期做法**：单独生成一把 ed25519 部署密钥给 CI 用（避免与个人登录密钥混用），把公钥追加进服务器 `~/.ssh/authorized_keys`，私钥存进 `ECS_SSH_KEY`。
 
-**部署期间的实际落地方式**：本次两个版本都是我手动跑等价脚本完成的（`docker pull` → `retag :latest` → `compose up -d --force-recreate backend frontend` → 容器内 health）。修好 Secret 后这条路可以退回纯 CI。
+**部署期间的实际落地方式**：本次两个版本（`3fc2ae8`、`a0edec6`）都是手动跑等价脚本完成的（`docker pull` → `retag :latest` → `compose up -d --force-recreate backend frontend` → 容器内 health）。
+
+**✅ 2026-10-09 10:05 已恢复纯 CI**：用户改好 Secret 后，`f34b88d` 的 Deploy job 首次成功落地。实证：`auth.log` 在 10:05:48 / 10:06:05 各有一条 `Accepted publickey for admin`（来源 `52.161.59.0` / `172.210.61.210`，均为 Azure = GitHub runner），密钥指纹 = 用户本机 `id_rsa.pub`；随后 10:06:08 / 10:06:09 `dc_backend` / `dc_frontend` 容器被重建，镜像 tag = `f34b88d`（当时 main HEAD）。与 07:22 / 07:34 那两次 `[preauth]` 失败对照，前后差异就是"Secret 里的私钥换成了服务器 authorized_keys 里那把"。完整时间线见 [`docs/deployment/SECOND-LAUNCH-2026-10-09.md`](../deployment/SECOND-LAUNCH-2026-10-09.md) §6.1。
+
+**⚠️ 副作用（需处理）**：CI 私钥 = 个人登录私钥同一把，runner 在 Azure 且每次 IP 不同 → 每次部署都会触发云盾"登录地非常用"告警（2026-10-09 10:06 那次已实际触发）。建议给 CI 单独生成部署密钥，并做 sshd 加固（关口令登录 / root 直登）—— 详见同文档 §6.2。
 
 **顺带发现的安全项（未改，待用户决定）**：`sshd -T` 显示 `passwordauthentication yes` + `permitrootlogin yes`，且 22 端口对全网开放，`lastb` 已有针对 `root` / `jumpserv` / `lucjan` / `develope` 的爆破记录。建议改成 `PasswordAuthentication no` + `PermitRootLogin prohibit-password`（改前先确认密钥登录可用、并保留一个已登录会话，避免锁死）。
 
@@ -1040,7 +1044,7 @@ denied: unknown manifest class for application/vnd.oci.empty.v1+json
 
 **踩坑记录（curl 手工验证 CSRF 保护端点时）**：token 里含 `%3D%3D`（URL 编码的 `==`）。服务端把 **cookie 值 URL 解码后**再比较，而 `X-XSRF-TOKEN` header 是**按原样**比较的 —— 所以手工 curl 必须「cookie 发原值（含 `%3D%3D`）+ header 发解码值（`==`）」，否则恒 `CSRF_TOKEN_MISMATCH`。浏览器端天然正确（`readCookie` 走 `decodeURIComponent`）。这一点连试 4 次才定位，别再重踩。
 
-### R12（P1，未修，待授权）FileLogger 详细日志写不进去 —— uid 不匹配 + 宿主机目录 root 属主（2026-10-09）
+### R12（P1）✅ 已修（2026-10-09 收口）FileLogger 详细日志写不进去 —— uid 不匹配 + 宿主机目录 root 属主（2026-10-09）
 
 **发现路径**：回答「有用户用的话能不能拿到提示词优化数据」时，在服务器上实测容器内可写性：
 
@@ -1061,26 +1065,144 @@ docker compose exec -T backend sh -c 'touch /app/logs/.wtest'
 
 **不是完全静默**：写失败会打 `slog.Warn("agent_gateway: fileLogger.Write failed")`（v0.10.21 PR-A 加的）。目前 0 次 LLM 调用，所以这条 WARN 还没被触发过。
 
-**修法（需授权 —— AGENTS.md §9.4 把 `chown -R` 列为需授权的操作）**：
+**修复落地（2026-10-09，用户要求"解决文档中新发现的问题"后实施）**：
+
+代码侧只动两处，根因是「两处 uid 说法不一致」+「写不进去这件事只在真有流量时才出声」：
+
+1. **统一 uid 到 10001**（与 `Dockerfile` 的 `adduser -u 10001 -S appuser` 对齐）：
+   - `docker-compose.yml` backend / frontend 的 `user: "1001:1001"` → `"10001:10001"`。
+     **frontend 也改了** —— `frontend/Dockerfile` 同样是 `adduser -u 10001`，两个服务
+     都在以镜像里不存在的 uid 运行（frontend 侥幸没事只因它只读、没有要写的挂载）。
+   - **为什么是往 10001 靠，而不是把 Dockerfile 改回 1001（有据可查，不是随手选）**：
+     `git log -S` 显示 uid 变更出自 `705bb12 security: P0-2 + P0-3 安全加固 (v0.10.18)`
+     （2026-07-12，有意的安全提交）—— 它把 **两个 Dockerfile 一起**从 1001 改成 10001、
+     并把 `docker-compose.yml` 的**头部注释**同步成 10001，**唯独漏了 backend / frontend
+     的两行 `user:` 字段**。即"10001 是意图，1001 是漏改的残留"。此处按意图收敛。
+   - `backend/Dockerfile` 注释里那句"GID 1001 UID 1001 与 docker-compose.yml 对齐"
+     本身是**错的**（与它上一行的 `adduser -u 10001` 自相矛盾），一并改正。
+   - `backend/Dockerfile` 补 `RUN mkdir -p /app/logs && chown appuser:appgroup /app/logs`：
+     显式声明"这个目录该归 appuser"；若将来改成命名卷，Docker 会用镜像里目录的属主
+     初始化卷 → 连宿主机 chown 都不需要。
+2. **启动期可写性探测**（`agent_gateway.ProbeLogDir` + `main.go` 调用）：
+   `AGENT_GATEWAY_FILE_LOGGER=true` 只说明"开关是开的"。以前那条失败 WARN 只在真的
+   发生 LLM 调用时才打出来 —— **新部署、还没人用的机器上一个字节都不会写，于是完全
+   看不到**（R12 当时正是"还没被触发过"）。现在启动即探：不可写 → 一条
+   `ERROR`，带 `dir` / `error` / 可操作 `help`（`chown -R 10001:10001 <host logs dir>`）；
+   可写 → 一条 `INFO` 作为正向证据。
+
+**仍需用户/运维执行一次（AGENTS.md §9.4：`chown -R` 属需授权操作，Agent 不代跑）**：
+
 ```bash
-# 快速修（让现有容器能写）
-sudo chown -R 1001:1001 /opt/DecisionCourt/logs
-# 推荐（统一 uid：compose 的 user 改 10001，与 Dockerfile 的 appuser 对齐，再 chown）
+# 已上线机器的存量修复（新部署不需要，见上面第 1 条镜像预建目录）
 sudo chown -R 10001:10001 /opt/DecisionCourt/logs
+cd /opt/DecisionCourt && docker compose up -d --force-recreate backend frontend   # 让新 user 生效
 ```
-**验证**：容器内 `touch /app/logs/.wtest && echo OK` 打印 OK；跑一次真实庭审后确认 `logs/backend/agent_gateway_<日期>.log` 出现。
 
-**已落文档**：`docs/OBSERVABILITY.md` §8.3（含实测命令与排查入口）。
+**验证**：容器内 `docker compose exec -T backend sh -c 'touch /app/logs/.wtest && echo OK'` 打印 OK；
+启动日志出现 `agent_gateway: file logger log dir writable`（修复前是 Permission denied）；
+跑一次真实庭审后确认 `logs/backend/agent_gateway_<日期>.log` 出现、`GET /courtrooms/:uuid/traces/*` 不再恒空。
 
-### R13（P2，未修）没有任何表记录「这次调用用的是哪版 prompt」—— prompt 优化无法按版本归因（2026-10-09）
+**测试**：`r12_file_logger_probe_test.go`（可写目录通过且不留探测文件 / 空串走默认目录 /
+同名文件占位报错 / 不可写目录报错，后两条在 Windows 上按平台跳过）。
+
+**已落文档**：`docs/OBSERVABILITY.md` §8.3、`docs/deployment/SECOND-LAUNCH-2026-10-09.md` §3.1 + §6。
+
+### R13（P2）✅ 已修（2026-10-09 收口）没有任何表记录「这次调用用的是哪版 prompt」—— prompt 优化无法按版本归因（2026-10-09）
 
 **现状**：`llm_calls` 无 prompt 版本列，`messages` / `a2a_messages` 也没有。`GET /api/v1/prompts/version` 返回 `semver` + `loaded_at`（实测 `git_sha` 为空），semver 需手工改 YAML 才变。
 
 **影响**：改完 `prompts/base.yaml` 后无法做「改版前 vs 改版后」的对比 —— 只能靠时间戳 + `loaded_at` 手工对齐，而且版本号本身不随内容变化。Prompt Lab 的 A/B 因此缺数据基础（`/prompts/abtest` 只能对调用方当场传入的输出打分，无法回溯历史调用）。
 
-**建议修法**：`llm_calls` 加 `prompt_version` 列；`agent_gateway.Recorder` 写入时带上当前 `promptlab` 版本（gateway 已持有 `Trace`，加一个字段透传即可）；`promptlab.Version.String()` 补 `git_sha`（构建期注入或读 YAML 内声明）。
+**修复落地（2026-10-09）**：
 
-**已落文档**：`docs/OBSERVABILITY.md` §8.4。
+归因键 = **`semver@git_sha#内容哈希`**（例 `1.0.3-pr1@3fc2ae8#ab12cd34`）。三段式不是凑数：
+
+| 段 | 什么时候变 | 不覆盖它就会漏掉什么 |
+|---|---|---|
+| `semver` | 人工改 YAML 的 `version:` | —— |
+| `git_sha` | 重新构建镜像 | **R13 之前该字段恒为空**，线上跑的是哪个 commit 的 prompt 只能猜 |
+| `#内容哈希` | **`base_rules` 正文改一个字** | **改 YAML 后 5 秒热加载**这一招牌能力：semver 和 git_sha 在热加载下都不动，只有哈希会变 |
+
+实现落点：
+
+1. `promptlab.Version` 新增 `ContentHash`（JSON `content_hash`），由 `loadFromFile` /
+   `ApplyFallback` 对加载到的 `base_rules` 正文取 sha256 前 8 位填充；
+   `Version.String()` 输出三段式归因键（无哈希时省略 `#` 段，兼容手工构造）。
+2. `promptlab.buildGitSHA` 由构建期 ldflags 注入；`resolveGitSHA()` 让 YAML 显式声明优先、
+   否则回落到注入值。`backend/Dockerfile` 的 build 步骤把同一份 `VERSION` 同时注入
+   `main.version` **和** `promptlab.buildGitSHA`。
+3. `model.LLMCall` 新增 `PromptVersion varchar(120) index`；`agent_gateway.Record` 新增同名字段；
+   `GORMStore.buildLLMCallRow` 映射它（D9 那套**反射护栏**同步扩到该字段 —— 漏映射会直接测试失败）。
+4. `Recorder.SetPromptVersionProvider(fn)` + `Recorder.PromptVersion()`：`main.go` 在 promptlab
+   装载后接线。**每次落库现取版本**（而不是启动快照）—— 否则热加载后写入的行会一直带旧版本，
+   归因反而是错的。
+5. 同一归因键也写进 FileLogger 的 JSON（`prompt_version`），让"喂进去什么"（`system_prompt`）
+   与"哪版 prompt"能对上。
+6. **未接线时留空，不写 `"unknown"`**：伪造的版本号比空值更危险 —— 它会让人把空值当成真实
+   版本去做对比。
+
+**测试**：`agent_gateway/r13_prompt_version_test.go`（未接线留空 / 每次现取 / 超长截断 /
+nil receiver 安全 / 端到端落库值）、`promptlab/version_test.go`（哈希稳定性与敏感性 /
+三段式输出 / git_sha 优先级 / 真实 Load 后两字段被填充 / fallback 也有哈希），
+以及 `gorm_store_d9_test.go` 反射护栏的同步扩展。
+
+**不做**：不回填历史行；不让 `semver` 随内容自动变（它是供人读的版本标签 + A/B 身份标识）。
+
+**已落文档**：`docs/OBSERVABILITY.md` §8.4、`docs/decisioncourt-db-design.md` §3.7。
+
+### R15（P1）✅ 已修（2026-10-09 收口）空 `systemPrompt` 被序列化成"没有 content 的 system 消息" → 上游 422，Prompt Lab 的 LLM-as-judge 恒失败（2026-10-09）
+
+**发现路径**：验证 R13 的写入路径时，用 R11 刚接线的 `POST /api/v1/prompts/eval` 打一发真实 LLM 调用，得到：
+
+```
+{"code":0,"data":{"rule":"stance_mention","score":0,"pass":false,
+ "reasoning":"judge LLM 调用失败: llm api error: status code 422 ...
+   message: Failed to deserialize the JSON body into the target type:
+   messages[0]: missing field `content` at line 1 column 55"}}
+```
+
+**根因**（已在模块源码里核实，不是推测）：
+
+1. `llm/client.go` 的 `Complete` / `StreamComplete` **无条件**把 `systemPrompt` 前置成一条 system 消息；
+2. `promptlab.evalViaLLM`（`eval.go:162`）传的是 `""` —— 它把 judge 指令整段塞进 user 消息，注释写着"system prompt 已经在 judgeSystemPrompt 里，这里不再叠 system"；
+3. 而 go-openai v1.41.2 的 `ChatCompletionMessage.Content` 是 **`json:"content,omitempty"`**（`chat.go:99`）→ 空字符串在序列化时**整个字段被丢掉** → 上游收到 `{"role":"system"}` → DeepSeek 422。
+
+**影响**：`stance_mention` / `evidence_id_format` 两条 LLM-as-judge 规则**从来没能成功调用过**（`length_compliance` 是确定性规则不走 LLM，所以只测它看不出来）。连带 `/prompts/abtest` 也只能跑确定性规则。更隐蔽的是**它仍然是 200**：失败信息只藏在 `reasoning` 字段里，前端看到的是"打分 0 分"，很容易被当成"内容确实不合格"。
+
+**修法**（改在客户端层，一处覆盖所有调用点）：抽出 `llm.buildChatMessages(systemPrompt, messages)`，**`systemPrompt` 为空时不发那条 system 消息**（空 system 消息不携带任何信息，跳过语义等价）。`Complete` / `StreamComplete` 都改用它。
+
+**为什么不在 promptlab 侧绕**：这个坑对任何"不需要 system 消息"的调用点都成立，修在客户端才不会再被踩。全仓排查后确认 `evalViaLLM` 是当时唯一的空 `systemPrompt` 调用点。
+
+**验证**：
+- 单测 `internal/llm/chat_messages_test.go`：单元层面断言空 system 不产生 system 消息；**端到端用 `httptest` 假上游断言真正发出的 JSON 里每条消息都有非空 `content`**（上游校验的就是这个，断言内部结构没用）；另加一例确保非空 `systemPrompt` 行为不变。
+- 实测（dev compose + 真实 DeepSeek）：修前 `stance_mention` → 422；修后同一条请求 → **200 + 真实评分**（`latency_ms=590~1438ms`，判词正确地指出"仅转述控方观点，未表达自身立场，且缺少 pro_a/pro_b/challenge/neutral..."）。
+
+**注意**：`go build` 的 `-X` 与这里的 `omitempty` 属同一族陷阱 —— **沉默的序列化/注入失败不会报错**，只能靠"断言真正发出去的东西"来钉住。
+
+### R14（P3，未修，属设计取舍）没有 session 的 LLM 调用不进 `llm_calls`，只留一条审计事件（2026-10-09）
+
+**现象**：`POST /prompts/eval` 确实走了网关（`llm_calls` 的写入路径被执行），但**没有落行**；`decision_events` 里留下一条：
+
+```
+event_type=llm_audit_fk_violation  status=fk_violation
+payload={"kind":"empty_session","session_uuid":"","model":"deepseek-chat",...}
+```
+
+**根因**（不是 bug，是有意的 D2-LLM-FK 设计）：`llm_calls.session_id` 是 `NOT NULL` 外键，而 Prompt Lab 的 eval / abtest 调用**不属于任何庭审**；`GORMStore.Insert` 主动拦截空 `session_uuid`，避免写孤儿行。
+
+**影响**：这些调用的 `prompt_version` **归因不到** —— 也正是最想归因的那批（"改了 prompt 之后评判质量有没有变"）。同时 `evidence_eval`（书记员的一次性评估）也走这条路径，实测 `decision_events` 里已有 2 条来自 2026-10-08 的同类记录。
+
+**对 R13 的边界说明**：R13 的主要目标（"改 prompt 后按版本对比庭审质量"）**不受影响** —— 庭审内的调用都带 session，会正常写入 `prompt_version`。受影响的只是"Prompt Lab 自身那次评判调用"的留痕。
+
+**可选修法**（需先决策，涉及 schema/语义）：
+1. `llm_calls.session_id` 放开为可空（`*uuid.UUID`）：改动最小，但要确认所有读路径能容忍 NULL，且 AutoMigrate 是否可靠地去掉 NOT NULL 需要实测；
+2. 给无 session 的调用用一个哨兵 session（如全零 UUID 的"系统会话"行）：不改 schema，但引入一条假数据，且 `session_id` 上的查询会出现噪音；
+3. 维持现状（只留审计事件）：接受"Prompt Lab 评判调用不进成本/归因表"。**当前按此处理**。
+
+### R16（P3，待决策）`prompt_version` / `content_hash` 随热加载变化，但 `/prompts/version` 的 `semver` 仍不动（2026-10-09）
+
+不是缺陷，是**已决策的语义**，记录以免下次误判：`semver` 是人工维护的版本标签（也是 A/B 的身份标识），**有意**不随内容自动变；"内容变没变"由 `content_hash`（sha256 前 8 位）回答。若将来希望 semver 也自动跟随，需要考虑它与 A/B `version_a`/`version_b` 标识语义的冲突。
+
 
 
 

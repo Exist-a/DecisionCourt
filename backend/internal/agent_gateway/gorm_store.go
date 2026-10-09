@@ -36,6 +36,7 @@ func NewGORMStore() *GORMStore { return &GORMStore{} }
 //   - session_uuid 是零 UUID: 同上 (kind: "zero_uuid_session")
 //   - session_uuid 是空字符串: 同上 (kind: "empty_session")
 //   - llm_calls 写入失败 (FK 错): 同上 (kind: "insert_failed", error: "...")
+//
 // 失败时一律不写 llm_calls (避免孤儿行), DecisionEvent 必写 (审计可查)。
 func (s *GORMStore) Insert(r Record) error {
 	if model.DB == nil {
@@ -88,13 +89,15 @@ func (s *GORMStore) Insert(r Record) error {
 // Record 里的业务 key SessionUUID。
 func buildLLMCallRow(sessionID uuid.UUID, r Record) model.LLMCall {
 	return model.LLMCall{
-		ID:               uuid.New(),
-		SessionID:        sessionID,
+		ID:        uuid.New(),
+		SessionID: sessionID,
 		// v2.11 (deferred D9): 补写 AgentType + RequestID。
 		// 此前只有 AgentID 列（且从不填充）→ DB 层无法按链路/Agent 关联审计，
 		// 只能翻文件日志或 decision_events 表。
-		AgentType:        r.AgentType,
-		RequestID:        r.RequestID,
+		AgentType: r.AgentType,
+		RequestID: r.RequestID,
+		// R13: prompt 版本归因键（semver@git_sha#内容哈希）。
+		PromptVersion:    r.PromptVersion,
 		TaskType:         r.TaskType,
 		Model:            r.Model,
 		PromptTokens:     r.PromptTokens,

@@ -268,9 +268,13 @@ cat backup-2026-07-06.sql | docker exec -i dc_postgres psql -U decisioncourt -d 
 
 ### 8.2 LLM 审计 `llm_calls`：✅ 通
 
-`g.recorder.Record(...)` 在 `gateway.Chat` 里是**无条件调用**（不受 `AGENT_GATEWAY_ENABLED` 总开关影响），recorder 自身的 `Enabled` 只看 `llmClient != nil`。字段：`model` / `prompt_tokens` / `completion_tokens` / `cost_usd|cny` / `latency_ms` / `agent_type` / `request_id` / `status`。
+`g.recorder.Record(...)` 在 `gateway.Chat` 里是**无条件调用**（不受 `AGENT_GATEWAY_ENABLED` 总开关影响），recorder 自身的 `Enabled` 只看 `llmClient != nil`。字段：`model` / `prompt_tokens` / `completion_tokens` / `cost_usd|cny` / `latency_ms` / `agent_type` / `request_id` / **`prompt_version`（R13）** / `status`。
 
-### 8.3 FileLogger 详细日志：❌ 当前写不进去（连带 trace 端点为空）
+### 8.3 FileLogger 详细日志：✅ 已修（2026-10-09 收口）—— 修前写不进去，连带 trace 端点为空
+
+> **状态更新（2026-10-09，R12 修复后）**：根因（uid 不匹配）已在代码里消除，且加了**启动期
+> 可写性探测**。下面是修前的实测记录，保留作为「怎么判断这类问题」的参照。
+> 存量机器仍需执行一次 `sudo chown -R 10001:10001 /opt/DecisionCourt/logs`（见文末）。
 
 `AGENT_GATEWAY_FILE_LOGGER=true`、`AGENT_GATEWAY_LOG_DIR=logs`，但**容器里 `/app/logs` 不可写**：
 
@@ -281,37 +285,69 @@ docker compose exec -T backend sh -c 'touch /app/logs/.wtest'
 
 根因是**两个问题叠加**：
 
-| 层 | 现状 | 问题 |
+| 层 | 修前 | 问题 |
 |---|---|---|
-| compose | `user: 1001:1001` | — |
-| Dockerfile | `adduser -u 10001 -S appuser` | **uid 与 compose 不一致** → 容器实际跑在 uid 1001，而镜像里根本没有这个用户（`id` 直接报错） |
-| 宿主机 | `logs/` 与 `logs/backend/` 属主 `root:root` 0755 | uid 1001 无写权限 |
+| compose | `user: 1001:1001` | 与镜像不一致（**已改成 10001**） |
+| Dockerfile | `adduser -u 10001 -S appuser` | **uid 与 compose 不一致** → 容器实际跑在 uid 1001，而镜像里根本没有这个用户（`docker compose exec backend id` 直接报错） |
+| 宿主机 | `logs/` 与 `logs/backend/` 属主 `root:root` 0755 | uid 1001 无写权限（存量机器需 chown 到 10001） |
 
 **丢的是什么**：FileLogger 的 JSON 里有 **`system_prompt` + `input_messages` + `output_content`**（按 `FileLoggerPromptsMaxBytes` 截断），外加压缩 / 节流 / 预算 / 重试明细 —— 也就是改 prompt 最需要的「喂进去什么、出来什么」。
 
 **连带影响**：`GET /api/v1/courtrooms/:uuid/traces/*` 读的就是同一个文件（`logs/agent_gateway_YYYY-MM-DD.log`，见 `trace/store.go:logFilePath`），所以 trace 端点必然是空的。
 
-**不是完全静默**：写失败会打 `slog.Warn("agent_gateway: fileLogger.Write failed")`（v0.10.21 PR-A 加的）。**排查入口就是这条 WARN** —— 看到它先查本节权限。
+**修前为什么"看不见"**：写失败确实会打 `slog.Warn("agent_gateway: fileLogger.Write failed")`，但那条 WARN **只在真的发生 LLM 调用时才出现** —— 新部署、还没人用的机器上一个字节都不会写，于是没人会发现（R12 当时的状态就是"这条 WARN 还没被触发过"）。
 
-修法（二选一，需授权）：
+**修复（2026-10-09 收口）**：
+
+1. uid 统一到 10001：`docker-compose.yml` 的 backend / frontend `user` 都改成 `10001:10001`；
+   `backend/Dockerfile` 补 `mkdir -p /app/logs && chown appuser:appgroup`。
+2. **启动期探测**：`agent_gateway.ProbeLogDir()` 在 `main.go` 启动时探一次，结果直接进启动日志 ——
+   不可写就打 `ERROR`（带 `dir` / `error` / 可操作 `help`），可写打 `INFO`。
+   **这是本节的排查入口**：先看启动日志有没有 `file logger log dir writable`。
+
+**存量机器的一次性修复（需授权，AGENTS.md §9.4 把 `chown -R` 列为需授权操作）**：
 
 ```bash
-# 快速修：让现有容器能写
-sudo chown -R 1001:1001 /opt/DecisionCourt/logs
-
-# 推荐：统一 uid（compose 的 user 改成 10001，与 Dockerfile 的 appuser 对齐）后
 sudo chown -R 10001:10001 /opt/DecisionCourt/logs
+cd /opt/DecisionCourt && docker compose up -d --force-recreate backend frontend   # 让新 user 生效
 ```
 
-验证：`docker compose exec -T backend sh -c 'touch /app/logs/.wtest && echo OK'` 打印 OK；然后跑一次真实庭审，看 `logs/backend/agent_gateway_<日期>.log` 是否出现。
+验证：`docker compose exec -T backend sh -c 'touch /app/logs/.wtest && echo OK'` 打印 OK；启动日志出现
+`agent_gateway: file logger log dir writable`；跑一次真实庭审，看 `logs/backend/agent_gateway_<日期>.log` 是否出现。
 
-### 8.4 提示词版本归因：❌ 缺口（设计层，非环境问题）
+### 8.4 提示词版本归因：✅ 已实现（2026-10-09 收口）—— 修前是设计缺口
 
-**没有任何表记录「这次发言用的是哪版 prompt」**：`llm_calls` 没有 prompt 版本列，`messages` / `a2a_messages` 也没有。`GET /api/v1/prompts/version` 返回 `semver` + `loaded_at`（实测 `git_sha` 为空），而 semver 要手工改 YAML 才变。
+> **状态更新（2026-10-09）**：`llm_calls` 已有 `prompt_version` 列，Recorder 每次落库现取版本。
+> 下面是修前的实测记录。
 
-后果：改完 `prompts/base.yaml` 之后**无法按版本归因做前后对比**，只能靠时间戳 + `loaded_at` 手工对齐。
+**修前**：没有任何表记录「这次发言用的是哪版 prompt」——`llm_calls` 没有 prompt 版本列，
+`messages` / `a2a_messages` 也没有。`GET /api/v1/prompts/version` 返回 `semver` + `loaded_at`
+（实测 `git_sha` 为空），而 semver 要手工改 YAML 才变。后果：改完 `prompts/base.yaml` 之后
+**无法按版本归因做前后对比**，只能靠时间戳 + `loaded_at` 手工对齐。
 
-建议修法：给 `llm_calls` 加 `prompt_version` 列，recorder 写入时带上当前 `promptlab` 版本 —— 这样 Prompt Lab 的 A/B 才有数据基础。
+**修复后的归因键**（`llm_calls.prompt_version`，与 FileLogger JSON 的 `prompt_version` 同值）：
+
+```
+1.0.3-pr1@3fc2ae8#ab12cd34
+   └─semver └─git_sha(7) └─base_rules 内容哈希(sha256 前 8 位)
+```
+
+三段各自覆盖一类变化 —— 这是本节的关键：**semver 要人工改、git_sha 要重新构建**，而
+prompt 调优的主要工作方式恰恰是「改 YAML → 5 秒热加载」，那两个标识在热加载下一个都不会动，
+**只有内容哈希会变**。没有哈希，"改了 prompt 之后效果怎么变了"仍然归因不到。
+
+怎么用：
+
+```sql
+-- 改 prompt 前后各版本的调用量 / token 效率 / 失败率
+SELECT prompt_version, COUNT(*) AS calls, AVG(total_tokens) AS avg_tokens
+FROM llm_calls WHERE session_id = '<court_sessions.id>'
+GROUP BY prompt_version ORDER BY MIN(created_at);
+```
+
+`GET /api/v1/prompts/version` 现在也返回 `content_hash` + 非空 `git_sha`（构建期 ldflags 注入）。
+
+**未接线时该列为空**（不写 `"unknown"`）—— 伪造的版本号比空值更危险，会让人把空值当成真实版本去做对比。
 
 ### 8.5 手工验证 CSRF 保护端点（curl）的编码坑
 

@@ -880,6 +880,72 @@ GET /api/v1/courtrooms/:session_uuid/export
 
 ---
 
+### 3.6 Prompt Lab（提示词版本与评估）
+
+> v1.0.3 PR-B2 引入，R11（2026-10-09）补接线。**此前这 4 条路由从未注册**（注入函数
+> `NewPromptLabAdapter` 无调用点 → `promptLab == nil` → 静默 return），线上恒 404。
+
+全部挂在需鉴权的 `authedGroup` 上（`auth` + `CSRF`）。其中 **`eval` / `abtest` 会真实调用 LLM**，
+因此与 `/courtrooms/:uuid/{evidences,actions}` 一样过 `LLMRateLimit`（按 user 维度限流）；
+`version` / `reload` 不调 LLM，不挂限流。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/prompts/version` | 当前生效的 promptlab 版本 |
+| POST | `/api/v1/prompts/reload` | 立即重新加载 YAML（正常靠 5s mtime 轮询） |
+| POST | `/api/v1/prompts/eval` | 用一条内置规则给一段发言打分 |
+| POST | `/api/v1/prompts/abtest` | 对两组版本标识跑 A/B 评估 |
+
+#### 3.6.1 `GET /api/v1/prompts/version`
+
+```json
+{
+  "code": 0,
+  "data": {
+    "semver": "1.0.3-pr1",
+    "git_sha": "3fc2ae83a7589378ff2236595aabce79fb4508e2",
+    "content_hash": "4ba89d0c",
+    "loaded_at": "2026-10-09T02:26:28Z",
+    "source_path": "prompts/base.yaml"
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `semver` | YAML 的 `version:` 字段，**人工维护**（也是 A/B 的身份标识，不随内容自动变） |
+| `git_sha` | 构建期由 Dockerfile 的 `-X .../promptlab.buildGitSHA=$VERSION` 注入；本地 dev build 为空字符串 |
+| `content_hash` | **`base_rules` 正文的 sha256 前 8 位**（2026-10-09 新增）。改一个字就变 —— 热加载改了内容而 semver/git_sha 都不动时，只有它能反映"prompt 真的变了" |
+| `loaded_at` | 本次加载时间（热加载会刷新） |
+| `source_path` | 加载的 YAML 路径；fallback 时为空 |
+
+> **与 `llm_calls.prompt_version` 的关系**：该列为 `semver@git_sha#content_hash`
+> （例 `1.0.3-pr1@3fc2ae8#ab12cd34`），即上面三项拼成的归因键，由后端每次落库时现取。
+> 详见 `docs/decisioncourt-db-design.md` §3.7 与 `docs/OBSERVABILITY.md` §8.4。
+
+#### 3.6.2 `POST /api/v1/prompts/eval`
+
+请求体：
+
+```json
+{ "rule": "stance_mention", "output": "待评分的一段发言" }
+```
+
+- `rule` 取值：`length_compliance`（确定性，按 UTF-8 rune 数 ≤ 300，**不调 LLM**）、
+  `evidence_id_format`、`stance_mention`（后两条走 LLM-as-judge，温度 0.2 + JSON mode）。
+- 响应 `{ "code": 0, "data": { "rule": ..., "score": 0~1, "pass": bool, "reasoning": "...", "latency_ms": N } }`。
+- **注意**：LLM 调用失败时仍返回 **200**，失败原因写在 `reasoning` 里（`"judge LLM 调用失败: ..."`），
+  前端不能只看 HTTP 状态码判断成功。`pass` 由后端按 `score > 阈值` 重算，不信任 LLM 自报的该字段。
+
+#### 3.6.3 `POST /api/v1/prompts/abtest`
+
+请求体：`{ "version_a", "version_b", "rule", "trial_outputs": ["...", ...] }`（`trial_outputs` 有长度上限）。
+任一条 Eval 失败即整体 500（`code=1500`）。
+
+#### 3.6.4 `POST /api/v1/prompts/reload`
+
+无请求体，立即重新读取 YAML 并返回新的版本信息；加载失败时保留旧版本并报错。
+
 ---
 
 ## 4. WebSocket 事件协议

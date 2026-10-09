@@ -226,6 +226,23 @@ func main() {
 	gatewayCfg := buildGatewayConfig(config.AppConfig.AgentGateway)
 	gatewayClient := agent_gateway.NewWithConfig(llmClient, recorder, defaultModel, gatewayCfg, metrics)
 
+	// R12: 启动期探测 FileLogger 目录可写性。
+	// 开关打开 ≠ 数据拿得到 —— 线上曾是「容器 uid 与镜像里的 uid 不一致 +
+	// 宿主机 logs/ 归 root」导致每次 Write 都失败，而那条 WARN 只有真发生 LLM
+	// 调用时才出现（还没人用的新机器上永远看不到），连带的 trace 端点也恒空。
+	// 这里在启动日志里就把"详细日志/trace 将来会是空的"喊出来，并给出可操作提示。
+	if gatewayCfg.IsFileLoggerEnabled() {
+		if err := agent_gateway.ProbeLogDir(gatewayCfg.LogDir); err != nil {
+			slog.Error("agent_gateway: file logger log dir is NOT writable — detailed LLM logs and trace endpoints will be empty",
+				"dir", gatewayCfg.LogDir,
+				"error", err,
+				"help", "align the container uid with the mounted dir owner, e.g. `chown -R 10001:10001 <host logs dir>` (compose user must match the Dockerfile adduser uid); see docs/OBSERVABILITY.md §8.3",
+			)
+		} else {
+			slog.Info("agent_gateway: file logger log dir writable", "dir", gatewayCfg.LogDir)
+		}
+	}
+
 	// v0.8 白盒化：把 metrics + GormEventRecorder 注入到 gatewayClient 装饰器层，
 	// 让所有 LLM 调用的指标自动归集到 metrics，业务级 span 自动写入 decision_events。
 	// 业务级 span 端到端关联靠 Trace{RequestID,SessionUUID,AgentType} 沿 ctx 传递。
@@ -261,6 +278,14 @@ func main() {
 		slog.Info("promptlab loaded", "version", v.String(), "path", promptlabYAML)
 	}
 	agent.SetDefaultStore(promptlabStore)
+
+	// R13: 把 prompt 版本归因接到审计写入器上。每次 llm_calls 落库都现取一次
+	// 版本（不是启动快照），所以热加载换了 prompt 内容后，新行自动带新归因键
+	// （semver@git_sha#内容哈希）。此前 llm_calls 没有任何 prompt 版本列 ——
+	// 改完 prompts/base.yaml 后无法按版本做前后对比（见 docs/OBSERVABILITY.md §8.4）。
+	recorder.SetPromptVersionProvider(func() string {
+		return promptlabStore.Version().String()
+	})
 
 	// v1.0.3 PR-B1: 后台 5s ticker 检测 YAML mtime 变化 → 自动 reload。
 	// 第一次成功 Load 后启动; 失败时仍启动, 让 fallback 在 YAML 文件被补回来后

@@ -30,10 +30,19 @@ COPY . .
 
 # PR-B: version ldflags — 注入 main.version，避免启动日志撒谎 24 天
 # （详见 production-retrospective-2026-08-05.md §4 P1-2）
+# R13: 同一份 VERSION 也注入 promptlab.buildGitSHA —— 否则
+# GET /api/v1/prompts/version 的 git_sha 恒为空，"线上跑的是哪个 commit 的
+# prompt"只能靠猜，prompt 优化也就无法按版本归因。
+# ⚠️ -X 的包路径写错是**静默失败**（实测：链接器 exit 0，不报错，变量仍为空）。
+#    改这行后务必实测一次 —— 最省事的办法是部署后看一眼
+#    `curl -s https://<域名>/api/v1/prompts/version | jq .data.git_sha`，
+#    它应当等于镜像 tag（构建镜像时用 `--build-arg VERSION=$(git rev-parse HEAD)` 验证过，
+#    2026-10-09 本地 build 得到 `version=verify1234` / `git_sha=verify1234`）。
 # 默认 "dev" 用于 `docker build` 不传 --build-arg VERSION 的场景（本地调试）。
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build \
-        -ldflags "-X main.version=${VERSION}" \
+        -ldflags "-X main.version=${VERSION} \
+                  -X github.com/decisioncourt/backend/internal/promptlab.buildGitSHA=${VERSION}" \
         -o /app/server ./cmd/server
 
 # ============= runtime stage =============
@@ -53,8 +62,16 @@ COPY --from=builder /app/server /app/server
 # 走 YAML —— 线上跑的恰是没被测过的那条路）。把 YAML 一起打进来。
 COPY --from=builder /app/prompts /app/prompts
 
+# R12: 预建日志目录并归 appuser 所有。
+# prod compose 把宿主机的 ./logs/backend 挂到 /app/logs；那个目录的属主是
+# **宿主机** 决定的，镜像改不了（Docker 自动创建时会建成 root:root）。
+# 在镜像里预建 /app/logs 有两个作用：① 明确声明"这个目录该归 appuser"；
+# ② 若将来改成命名卷，Docker 会用镜像里目录的属主初始化卷 → 无需宿主机 chown。
+RUN mkdir -p /app/logs && chown appuser:appgroup /app/logs
+
 # v0.8.3 安全：USER 切到非 root。
-# 镜像里的 GID 1001 UID 1001 与 docker-compose.yml 的 user 字段对齐。
+# 镜像里的 UID/GID 是 10001（见上方 adduser -u 10001）；docker-compose.yml 的
+# `user:` 必须与之一致，否则容器会以镜像里不存在的 uid 运行（见 R12）。
 USER appuser
 
 EXPOSE 8080

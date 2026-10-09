@@ -107,10 +107,11 @@ func (s *Store) ApplyFallback(fallbackRules string) {
 	defer s.mu.Unlock()
 
 	s.version = Version{
-		Semver:     "fallback",
-		GitSHA:     "",
-		LoadedAt:   time.Now(),
-		SourcePath: "",
+		Semver:      "fallback",
+		GitSHA:      resolveGitSHA(""),
+		ContentHash: ContentHashOf(fallbackRules),
+		LoadedAt:    time.Now(),
+		SourcePath:  "",
 	}
 	s.rules = fallbackRules
 	s.fallbackSet = true
