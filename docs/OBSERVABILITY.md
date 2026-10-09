@@ -78,7 +78,7 @@ sudo du -sh /var/lib/docker/containers/*/
 后端启动时初始化了一个内存中的 metrics registry，**`/metrics` 端点以 JSON 返回**。
 
 ```bash
-# 本机直接查（需 SSH 进 ECS 或通过 Caddy 反代）
+# 本机直接查（需 SSH 进服务器，或通过 Caddy 反代；连接信息见 AGENTS.md §9）
 curl -s http://localhost:8080/metrics | jq .
 
 # 或通过域名
@@ -200,7 +200,7 @@ docker inspect dc_backend --format '{{.State.Health.Status}}'
 # 资源占用
 docker stats dc_backend dc_frontend dc_postgres dc_redis dc_caddy --no-stream
 
-# 看 ECS 磁盘空间（防止日志/DB 把磁盘吃满）
+# 看磁盘空间（防止日志/DB 把磁盘吃满）
 df -h /
 ```
 
@@ -246,7 +246,88 @@ cat backup-2026-07-06.sql | docker exec -i dc_postgres psql -U decisioncourt -d 
 
 ---
 
-## 8. 不在本文档范围
+## 8. 数据可得性实测（2026-10-09，第二次上线当天）
+
+> 起因：上线后问「现在有用户用，我们能不能拿到前端埋点数据和提示词优化数据」。
+> 下面每条都是**在生产上实测**的结论，不是读代码推测。**动过权限 / 镜像 / compose 后请重跑本节命令** —— 结论会随环境变化。
+
+### 8.1 前端埋点：✅ 通（写 + 读都实测过）
+
+| 环节 | 证据 |
+|---|---|
+| 写入 | `POST /api/v1/courtrooms/:uuid/events` → `{"code":0,"data":{"recorded":true}}` HTTP 200 |
+| 落库 | `decision_events` 表；前端事件 `event_type` 以 `fe.` 开头（后端 span 是 `span.` / `state_`），同一个字段可一起查 |
+| 读取 | `GET /api/v1/courtrooms/:uuid/events`（v2.11 D12 补的读端点，支持 `limit`/`offset` + `event_type_prefix`） |
+| 实测 | 建会话 → 写一条 `fe.deploy_verify` → 读回 payload 完整（`{"source":"curl-check"}`、`duration_ms=42`） |
+
+三个前提，缺一条就看不到数据：
+
+1. **必须有真实庭审** —— 事件按 session 归属，`checkSessionAccess` 是 **owner-only**（防他人灌垃圾事件）。拿假 UUID 会 404。
+2. **CSRF 必须过** —— v2.13 之前前端漏发 `X-XSRF-TOKEN`，`fe.*` 全部 403（静默丢了三周）。手工 curl 复现时的编码坑见 §8.5。
+3. **前端得真的跑** —— `fe.*` 由浏览器 `track()` 发出，纯后端调用不产生。
+
+### 8.2 LLM 审计 `llm_calls`：✅ 通
+
+`g.recorder.Record(...)` 在 `gateway.Chat` 里是**无条件调用**（不受 `AGENT_GATEWAY_ENABLED` 总开关影响），recorder 自身的 `Enabled` 只看 `llmClient != nil`。字段：`model` / `prompt_tokens` / `completion_tokens` / `cost_usd|cny` / `latency_ms` / `agent_type` / `request_id` / `status`。
+
+### 8.3 FileLogger 详细日志：❌ 当前写不进去（连带 trace 端点为空）
+
+`AGENT_GATEWAY_FILE_LOGGER=true`、`AGENT_GATEWAY_LOG_DIR=logs`，但**容器里 `/app/logs` 不可写**：
+
+```bash
+docker compose exec -T backend sh -c 'touch /app/logs/.wtest'
+# → touch: /app/logs/.wtest: Permission denied
+```
+
+根因是**两个问题叠加**：
+
+| 层 | 现状 | 问题 |
+|---|---|---|
+| compose | `user: 1001:1001` | — |
+| Dockerfile | `adduser -u 10001 -S appuser` | **uid 与 compose 不一致** → 容器实际跑在 uid 1001，而镜像里根本没有这个用户（`id` 直接报错） |
+| 宿主机 | `logs/` 与 `logs/backend/` 属主 `root:root` 0755 | uid 1001 无写权限 |
+
+**丢的是什么**：FileLogger 的 JSON 里有 **`system_prompt` + `input_messages` + `output_content`**（按 `FileLoggerPromptsMaxBytes` 截断），外加压缩 / 节流 / 预算 / 重试明细 —— 也就是改 prompt 最需要的「喂进去什么、出来什么」。
+
+**连带影响**：`GET /api/v1/courtrooms/:uuid/traces/*` 读的就是同一个文件（`logs/agent_gateway_YYYY-MM-DD.log`，见 `trace/store.go:logFilePath`），所以 trace 端点必然是空的。
+
+**不是完全静默**：写失败会打 `slog.Warn("agent_gateway: fileLogger.Write failed")`（v0.10.21 PR-A 加的）。**排查入口就是这条 WARN** —— 看到它先查本节权限。
+
+修法（二选一，需授权）：
+
+```bash
+# 快速修：让现有容器能写
+sudo chown -R 1001:1001 /opt/DecisionCourt/logs
+
+# 推荐：统一 uid（compose 的 user 改成 10001，与 Dockerfile 的 appuser 对齐）后
+sudo chown -R 10001:10001 /opt/DecisionCourt/logs
+```
+
+验证：`docker compose exec -T backend sh -c 'touch /app/logs/.wtest && echo OK'` 打印 OK；然后跑一次真实庭审，看 `logs/backend/agent_gateway_<日期>.log` 是否出现。
+
+### 8.4 提示词版本归因：❌ 缺口（设计层，非环境问题）
+
+**没有任何表记录「这次发言用的是哪版 prompt」**：`llm_calls` 没有 prompt 版本列，`messages` / `a2a_messages` 也没有。`GET /api/v1/prompts/version` 返回 `semver` + `loaded_at`（实测 `git_sha` 为空），而 semver 要手工改 YAML 才变。
+
+后果：改完 `prompts/base.yaml` 之后**无法按版本归因做前后对比**，只能靠时间戳 + `loaded_at` 手工对齐。
+
+建议修法：给 `llm_calls` 加 `prompt_version` 列，recorder 写入时带上当前 `promptlab` 版本 —— 这样 Prompt Lab 的 A/B 才有数据基础。
+
+### 8.5 手工验证 CSRF 保护端点（curl）的编码坑
+
+token 里含 `%3D%3D`（URL 编码的 `==`）。服务端对 **cookie 值做 URL 解码**、对 `X-XSRF-TOKEN` **按原样比较**：
+
+```bash
+RAW=$(awk '$6=="XSRF-TOKEN"{print $7}' /tmp/cj.txt | tail -1)   # cookie 用原值（含 %3D%3D）
+DEC=$(printf '%s' "$RAW" | sed 's/%3D/=/g')                     # header 用解码值（==）
+curl -X POST "$B/prompts/eval" -b "dc_session=$SESS; XSRF-TOKEN=$RAW" -H "X-XSRF-TOKEN: $DEC" ...
+```
+
+不这么做恒 `CSRF_TOKEN_MISMATCH`（连试 4 次才定位）。浏览器端天然正确 —— `readCookie` 走 `decodeURIComponent`。
+
+---
+
+## 9. 不在本文档范围
 
 - **Prometheus + Grafana**：重，MVP 不需要。需要再说。
 - **ELK / Loki**：同上加。
@@ -254,6 +335,6 @@ cat backup-2026-07-06.sql | docker exec -i dc_postgres psql -U decisioncourt -d 
 
 ---
 
-## 9. 改完之后
+## 10. 改完之后
 
-任何"看不到"的痛点 → 先看 §1（logs）→ 再看 §3（DB）→ 还不够再说。
+任何"看不到"的痛点 → 先看 §1（logs）→ 再看 §3（DB）→ 还不够再看 §8（数据可得性）→ 再说。

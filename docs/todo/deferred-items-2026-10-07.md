@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。**2026-10-09 追加 R7（`next build` 被 ESLint 死变量阻断，R4/R5 残留）+ R8（`test.yml` 缺 job key 导致依赖审计从未执行）—— 两项均为上线前的阻断级发现，见文末** |
+| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。<br>**2026-10-09（第二次上线）追加 R7–R13**：**R7**（`next build` 被 ESLint 死变量阻断，R4/R5 残留）、**R8**（`test.yml` 缺 job key → 依赖审计从未执行）、**R9**（ACR 拒收 BuildKit attestation index）、**R10**（`prompts/base.yaml` 未进 runtime 镜像 → 线上永久降级）、**R11**（Prompt Lab 4 条 REST 路由从未接线 → 恒 404）**五项已修并上线**；**R12**（FileLogger 因 uid 不匹配 + 宿主机 root 属主而写不进去）、**R13**（无 prompt 版本归因）**两项未修，待授权/排期**。详见文末 |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -1039,6 +1039,48 @@ denied: unknown manifest class for application/vnd.oci.empty.v1+json
 - 启动日志无 `promptLab is nil` ERROR；`promptlab loaded version=1.0.3-pr1@dev path=prompts/base.yaml`
 
 **踩坑记录（curl 手工验证 CSRF 保护端点时）**：token 里含 `%3D%3D`（URL 编码的 `==`）。服务端把 **cookie 值 URL 解码后**再比较，而 `X-XSRF-TOKEN` header 是**按原样**比较的 —— 所以手工 curl 必须「cookie 发原值（含 `%3D%3D`）+ header 发解码值（`==`）」，否则恒 `CSRF_TOKEN_MISMATCH`。浏览器端天然正确（`readCookie` 走 `decodeURIComponent`）。这一点连试 4 次才定位，别再重踩。
+
+### R12（P1，未修，待授权）FileLogger 详细日志写不进去 —— uid 不匹配 + 宿主机目录 root 属主（2026-10-09）
+
+**发现路径**：回答「有用户用的话能不能拿到提示词优化数据」时，在服务器上实测容器内可写性：
+
+```
+docker compose exec -T backend sh -c 'touch /app/logs/.wtest'
+→ touch: /app/logs/.wtest: Permission denied
+```
+
+**根因（两个问题叠加）**：
+
+| 层 | 现状 | 问题 |
+|---|---|---|
+| `docker-compose.yml` | `user: 1001:1001` | — |
+| `backend/Dockerfile` | `adduser -u 10001 -S appuser` | **uid 与 compose 不一致** → 容器实际以 uid 1001 运行，而镜像里没有这个用户（`docker compose exec backend id` 直接失败）。Dockerfile 的注释还写着「GID 1001 UID 1001 与 docker-compose.yml 的 user 字段对齐」——注释与代码不符 |
+| 宿主机 | `/opt/DecisionCourt/logs`、`logs/backend` 属主 `root:root` 0755 | uid 1001 无写权限 |
+
+**影响**：`AGENT_GATEWAY_FILE_LOGGER=true` 形同虚设 —— 丢的是 FileLogger JSON 里的 **`system_prompt` + `input_messages` + `output_content`** + 压缩/节流/预算/重试明细，即「改 prompt 最需要的原始数据」。**连带** `GET /courtrooms/:uuid/traces/*` 读同一文件（`trace/store.go:logFilePath`），trace 端点也必然是空的。
+
+**不是完全静默**：写失败会打 `slog.Warn("agent_gateway: fileLogger.Write failed")`（v0.10.21 PR-A 加的）。目前 0 次 LLM 调用，所以这条 WARN 还没被触发过。
+
+**修法（需授权 —— AGENTS.md §9.4 把 `chown -R` 列为需授权的操作）**：
+```bash
+# 快速修（让现有容器能写）
+sudo chown -R 1001:1001 /opt/DecisionCourt/logs
+# 推荐（统一 uid：compose 的 user 改 10001，与 Dockerfile 的 appuser 对齐，再 chown）
+sudo chown -R 10001:10001 /opt/DecisionCourt/logs
+```
+**验证**：容器内 `touch /app/logs/.wtest && echo OK` 打印 OK；跑一次真实庭审后确认 `logs/backend/agent_gateway_<日期>.log` 出现。
+
+**已落文档**：`docs/OBSERVABILITY.md` §8.3（含实测命令与排查入口）。
+
+### R13（P2，未修）没有任何表记录「这次调用用的是哪版 prompt」—— prompt 优化无法按版本归因（2026-10-09）
+
+**现状**：`llm_calls` 无 prompt 版本列，`messages` / `a2a_messages` 也没有。`GET /api/v1/prompts/version` 返回 `semver` + `loaded_at`（实测 `git_sha` 为空），semver 需手工改 YAML 才变。
+
+**影响**：改完 `prompts/base.yaml` 后无法做「改版前 vs 改版后」的对比 —— 只能靠时间戳 + `loaded_at` 手工对齐，而且版本号本身不随内容变化。Prompt Lab 的 A/B 因此缺数据基础（`/prompts/abtest` 只能对调用方当场传入的输出打分，无法回溯历史调用）。
+
+**建议修法**：`llm_calls` 加 `prompt_version` 列；`agent_gateway.Recorder` 写入时带上当前 `promptlab` 版本（gateway 已持有 `Trace`，加一个字段透传即可）；`promptlab.Version.String()` 补 `git_sha`（构建期注入或读 YAML 内声明）。
+
+**已落文档**：`docs/OBSERVABILITY.md` §8.4。
 
 
 

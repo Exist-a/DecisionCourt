@@ -123,6 +123,12 @@
 - `archive/ecs-end-of-life-2026-08-05.md` — ECS `47.239.152.177` 基础设施终止记录（项目继续个人长期维护）
 - `archive/security-audit-2026-07-03.md` — v0.8.3 OWASP Top 10 安全审计报告（所有 20 项 P0/P1/P2/P3 已修复）
 
+**当前生效的部署类文档**（不在 archive）：
+
+- [`deployment/SECOND-LAUNCH-2026-10-09.md`](./deployment/SECOND-LAUNCH-2026-10-09.md) — **第二次上线记录**：环境画像 / 可照抄流程 / 验收 checklist / 9 条踩坑经验 / 遗留项
+- [`deployment/CHECKLIST.md`](./deployment/CHECKLIST.md) — 部署规划决策清单（第一次上线前铺开的全部决策点）
+- [`OBSERVABILITY.md`](./OBSERVABILITY.md) — 运维速查（日志 / metrics / DB / trace / **§8 数据可得性实测**）
+
 ---
 
 ## 5. 实装状态矩阵（截至 2026-08-20 v1.0.0）
@@ -209,6 +215,12 @@
 ---
 
 ## 6. v0.9.1 部署就绪总览（2026-07-04 同步）
+
+> **⚠️ 状态更新（2026-10-09）**：本节是**第一次上线**（2026-07-12，旧 ECS `47.239.152.177`，已释放）的准备快照，环境描述（Ubuntu 22.04 / 旧 ECS）已过时。
+> **当前生产环境** = 新服务器 `8.218.24.43`（阿里云香港，Ubuntu 24.04.2）。第二次上线的过程 + 踩坑经验 + 可照抄流程见
+> [`deployment/SECOND-LAUNCH-2026-10-09.md`](./deployment/SECOND-LAUNCH-2026-10-09.md)；
+> 数据可得性（埋点 / LLM 审计 / 详细日志 / prompt 版本归因）实测结论见 [`OBSERVABILITY.md`](./OBSERVABILITY.md) §8；
+> 部署规划决策清单见 [`deployment/CHECKLIST.md`](./deployment/CHECKLIST.md)。
 
 v0.9 全部决策已落地,代码 + 测试 + 文档三向对齐,准备部署到阿里云单 ECS(2C2G + 香港免备案)。
 
