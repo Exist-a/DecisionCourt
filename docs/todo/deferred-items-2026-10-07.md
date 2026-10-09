@@ -1032,5 +1032,13 @@ denied: unknown manifest class for application/vnd.oci.empty.v1+json
 
 **验证**：`go vet ./...` + `go build ./...` 干净；`go test ./...` 23/23 包 ok；promptlab 相关 6 条测试全绿（含新增 2 条）。
 
+**线上实测（部署 `a0edec6` 后，2026-10-09）**：
+- `GET /api/v1/prompts/version` 无鉴权 → **401**（此前恒 **404**；401 说明路由已注册、鉴权在管）
+- 带 anon 会话 → **200** `{"semver":"1.0.3-pr1","source_path":"prompts/base.yaml"}`
+- `POST /api/v1/prompts/eval` → **200** `{"rule":"length_compliance","score":1,"pass":true,"reasoning":"length=18/300 chars"}`
+- 启动日志无 `promptLab is nil` ERROR；`promptlab loaded version=1.0.3-pr1@dev path=prompts/base.yaml`
+
+**踩坑记录（curl 手工验证 CSRF 保护端点时）**：token 里含 `%3D%3D`（URL 编码的 `==`）。服务端把 **cookie 值 URL 解码后**再比较，而 `X-XSRF-TOKEN` header 是**按原样**比较的 —— 所以手工 curl 必须「cookie 发原值（含 `%3D%3D`）+ header 发解码值（`==`）」，否则恒 `CSRF_TOKEN_MISMATCH`。浏览器端天然正确（`readCookie` 走 `decodeURIComponent`）。这一点连试 4 次才定位，别再重踩。
+
 
 
