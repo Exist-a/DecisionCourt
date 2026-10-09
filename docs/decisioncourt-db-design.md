@@ -270,7 +270,7 @@
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `id` | UUID PK | 自增主键 |
-| `session_id` | UUID FK | 所属庭审 |
+| `session_id` | UUID FK | 所属庭审。**可为 NULL**（R14）：Prompt Lab 的 eval / abtest 这类调用本来就不属于任何庭审（用显式 `Sessionless` 标记区分，见下方 R14 说明） |
 | `agent_id` | UUID FK | **历史列，恒为 NULL**（见下方 v2.11 说明） |
 | `agent_type` | VARCHAR(50) | 调用 Agent 类型：`prosecutor` / `defender` / `investigator` / `clerk` / `judge`（v2.11 起写入；用户级调用为空） |
 | `request_id` | VARCHAR(36) | 关联 HTTP / WS trace_id（与 `decision_events.request_id` 同源，v2.11 起写入） |
@@ -327,6 +327,25 @@
 > GROUP BY prompt_version
 > ORDER BY MIN(created_at);
 > ```
+>
+> **R14 变更：`session_id` 放开为可空（配合显式 `Sessionless` 标记）**
+>
+> **问题**：Prompt Lab 的 `POST /prompts/eval` / `/prompts/abtest` 会真实调用 LLM，但它们
+> **不属于任何庭审** → `session_uuid` 为空 → 被 `GORMStore.Insert` 当成"漏填 session 的 bug"
+> 拦下（只写一条 `llm_audit_fk_violation` 审计事件）。结果是：这些调用**既看不到成本，
+> 也无法按 prompt 版本归因** —— 而这恰恰是 Prompt Lab 最需要的数据。
+>
+> **做法**：`session_id` 为空有两种成因，必须区分而不是一律放行 ——
+>
+> | 成因 | 处理 |
+> |---|---|
+> | **有意**（Prompt Lab，`Trace.Sessionless = true`） | 照常落库，`session_id` 为 NULL |
+> | **漏填**（bug） | **仍然拦下** + 写 `llm_audit_fk_violation` 审计事件 |
+>
+> 所以空值合法化**不是**把 D2-LLM-FK 那道护栏拆掉：只有**显式声明**无会话的调用才放行。
+> 代价是 `session_id` 上的查询要意识到 NULL 的存在（例如按 session 聚合时自然排除它们）。
+>
+> **迁移**：AutoMigrate 会 `ALTER COLUMN session_id DROP NOT NULL`（2026-10-09 在**已存在的旧表**上实测：`is_nullable` 由 `NO` 变 `YES`）。不回填历史行。
 
 > **v2.11 变更（deferred D9）**：补 `request_id` + `agent_type` 两列。
 >

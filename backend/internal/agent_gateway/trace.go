@@ -21,6 +21,16 @@ type Trace struct {
 	AgentType   string
 	TaskType    string
 	RequestID   string
+	// Sessionless（R14）显式声明"这次调用本来就没有庭审会话"，例如 Prompt Lab 的
+	// eval / abtest —— 它们评的是 prompt 质量，不属于任何一场庭审。
+	//
+	// 为什么需要这个显式标记，而不是简单地把空 session_uuid 也写库：审计表上
+	// `session_id` 是外键，空值既可能是**有意**（Prompt Lab），也可能是**漏填**的 bug。
+	// 以前一律当 bug 拦下（只写 llm_audit_fk_violation 审计事件），代价是无 session
+	// 的调用永远进不了 llm_calls —— 看不到成本、也无法按 prompt 版本归因。
+	// 现在把两者区分开：声明了 Sessionless 的照写（session_id 为 NULL），
+	// 没声明却为空的**仍然被拦**，那道"漏填 session"的护栏继续有效。
+	Sessionless bool
 }
 
 type traceKey struct{}

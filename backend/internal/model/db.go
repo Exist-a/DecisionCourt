@@ -265,8 +265,13 @@ func (e *EvidenceAdoptionJSONB) Scan(value interface{}) error {
 // 为此引入"类型 → UUID"的解析不划算（还会多一次查库）。AgentID 列保留不动
 // （历史行 + AutoMigrate 兼容），新写入走 AgentType。
 type LLMCall struct {
-	ID                uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	SessionID         uuid.UUID `gorm:"type:uuid;index;not null"`
+	ID        uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	// SessionID 可为 NULL（R14）：Prompt Lab 的 eval / abtest 这类调用
+	// **本来就不属于任何庭审**，此前因为外键非空只能被丢弃，导致它们既进不了
+	// 成本统计、也无法按 prompt 版本归因。现在这类调用显式声明 Sessionless
+	// 后以 NULL 落库；而真正"忘传 session_uuid"的 bug 仍会被 agent_gateway
+	// 的审计护栏拦下（见 gorm_store.go 的 recordFKViolation）。
+	SessionID         *uuid.UUID `gorm:"type:uuid;index"`
 	AgentID           *uuid.UUID `gorm:"type:uuid;index"`
 	// AgentType 见上方说明：可读的 Agent 类型，v2.11 起由 GORMStore 写入。
 	AgentType         string    `gorm:"type:varchar(50);index"`

@@ -58,7 +58,10 @@ type Record struct {
 	Model       string
 	Provider    string
 	// PromptVersion 见 model.LLMCall.PromptVersion（R13）。
-	PromptVersion    string
+	PromptVersion string
+	// Sessionless 见 Trace.Sessionless（R14）：显式无会话的调用照常落库
+	// （session_id 为 NULL），而不是被当成"漏填 session 的 bug"拦掉。
+	Sessionless      bool
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
@@ -168,6 +171,7 @@ func (r *Recorder) buildRecord(in CallInput) Record {
 		Model:            in.Model,
 		Provider:         provider,
 		PromptVersion:    r.PromptVersion(),
+		Sessionless:      in.Trace.Sessionless,
 		PromptTokens:     in.Usage.PromptTokens,
 		CompletionTokens: in.Usage.CompletionTokens,
 		TotalTokens:      in.Usage.TotalTokens,

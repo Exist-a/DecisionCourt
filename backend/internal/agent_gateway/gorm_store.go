@@ -46,6 +46,16 @@ func (s *GORMStore) Insert(r Record) error {
 		return nil
 	}
 
+	// 0. R14: 显式声明"无庭审会话"的调用（Prompt Lab 的 eval / abtest）直接落库，
+	//    session_id 为 NULL。与下面那条护栏的区别是本项**声明了意图**。
+	if r.Sessionless {
+		if err := model.DB.Create(buildLLMCallRowPtr(nil, r)).Error; err != nil {
+			s.recordFKViolation(r, "insert_failed", err.Error())
+			return err
+		}
+		return nil
+	}
+
 	// 1. 主动校验 session_uuid 格式
 	if r.SessionUUID == "" {
 		s.recordFKViolation(r, "empty_session", "session_uuid is empty string")
@@ -70,7 +80,7 @@ func (s *GORMStore) Insert(r Record) error {
 	}
 
 	// 3. Insert
-	if err := model.DB.Create(buildLLMCallRowPtr(session.ID, r)).Error; err != nil {
+	if err := model.DB.Create(buildLLMCallRowPtr(&session.ID, r)).Error; err != nil {
 		// D2-LLM-FK: insert 失败 (未来加硬 FK 约束时此处会触发), 写 audit
 		s.recordFKViolation(r, "insert_failed", err.Error())
 		return err
@@ -86,8 +96,9 @@ func (s *GORMStore) Insert(r Record) error {
 // agent_id 列建了、映射时被跳过，于是长期恒为 NULL 而无人发现。
 //
 // sessionID 是 court_sessions.id（DB 主键），由调用方 lookup 得到，不是
-// Record 里的业务 key SessionUUID。
-func buildLLMCallRow(sessionID uuid.UUID, r Record) model.LLMCall {
+// Record 里的业务 key SessionUUID。**可为 nil** —— R14 之后显式无会话的调用
+// （Prompt Lab eval/abtest）就以 NULL 落库。
+func buildLLMCallRow(sessionID *uuid.UUID, r Record) model.LLMCall {
 	return model.LLMCall{
 		ID:        uuid.New(),
 		SessionID: sessionID,
@@ -110,7 +121,9 @@ func buildLLMCallRow(sessionID uuid.UUID, r Record) model.LLMCall {
 	}
 }
 
-func buildLLMCallRowPtr(sessionID uuid.UUID, r Record) *model.LLMCall {
+// buildLLMCallRowPtr 是 buildLLMCallRow 的指针包装（GORM Create 需要指针）。
+// sessionID 可为 nil（R14：显式无会话的调用）。
+func buildLLMCallRowPtr(sessionID *uuid.UUID, r Record) *model.LLMCall {
 	row := buildLLMCallRow(sessionID, r)
 	return &row
 }

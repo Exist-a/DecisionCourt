@@ -23,7 +23,7 @@ import (
 // TestBuildLLMCallRow_WritesAuditFields 直接钉住 D9 的两个新字段 + R13 的 PromptVersion。
 func TestBuildLLMCallRow_WritesAuditFields(t *testing.T) {
 	sessionID := uuid.New()
-	row := buildLLMCallRow(sessionID, Record{
+	row := buildLLMCallRow(&sessionID, Record{
 		SessionUUID:   "sess-1",
 		AgentType:     "prosecutor",
 		RequestID:     "req-abc123",
@@ -35,7 +35,8 @@ func TestBuildLLMCallRow_WritesAuditFields(t *testing.T) {
 		CreatedAt:     time.Now().UTC(),
 	})
 
-	require.Equal(t, sessionID, row.SessionID, "session_id 必须是 lookup 到的 DB 主键")
+	require.NotNil(t, row.SessionID)
+	require.Equal(t, sessionID, *row.SessionID, "session_id 必须是 lookup 到的 DB 主键")
 	assert.Equal(t, "prosecutor", row.AgentType, "agent_type 必须写入(D9: 此前恒为空)")
 	assert.Equal(t, "req-abc123", row.RequestID, "request_id 必须写入(D9: 此前列不存在)")
 	assert.Equal(t, "1.0.3-pr1@3fc2ae8#ab12cd34", row.PromptVersion,
@@ -52,7 +53,7 @@ func TestBuildLLMCallRow_WritesAuditFields(t *testing.T) {
 //   - AgentID / CostUSD / CostCNY：LLMCall 独有，Record 没有对应来源
 //     （AgentID 是 UUID 外键，调用点只有类型字符串 —— 见 D9 决策：存 AgentType）
 //   - ID / SessionID：类型不同或名字不同（Record.ID 是 string 行键，
-//     LLMCall.SessionID 来自 lookup 的 DB 主键）
+//     LLMCall.SessionID 来自 lookup 的 DB 主键；R14 起是 *uuid.UUID 可空）
 func TestBuildLLMCallRow_MapsEveryRecordField(t *testing.T) {
 	src := Record{
 		ID:               "row-1",
@@ -63,6 +64,7 @@ func TestBuildLLMCallRow_MapsEveryRecordField(t *testing.T) {
 		Model:            "deepseek-v4-pro",
 		Provider:         "deepseek",
 		PromptVersion:    "1.0.4-pr1@deadbee#0011aabb",
+		Sessionless:      true,
 		PromptTokens:     11,
 		CompletionTokens: 22,
 		TotalTokens:      33,
@@ -71,7 +73,8 @@ func TestBuildLLMCallRow_MapsEveryRecordField(t *testing.T) {
 		ErrorMsg:         "boom",
 		CreatedAt:        time.Now().UTC(),
 	}
-	row := buildLLMCallRow(uuid.New(), src)
+	sid := uuid.New()
+	row := buildLLMCallRow(&sid, src)
 
 	rt := reflect.TypeOf(src)
 	rv := reflect.ValueOf(row)
@@ -108,9 +111,24 @@ func TestBuildLLMCallRow_MapsEveryRecordField(t *testing.T) {
 // agent_type 允许为空（用户级 / 非 agent 调用），但"字段被映射"这件事
 // 由上面的反射护栏保证 —— 空值是合法数据，不是漏映射。
 func TestBuildLLMCallRow_ZeroAgentTypeStillWritesEmptyString(t *testing.T) {
-	row := buildLLMCallRow(uuid.New(), Record{TaskType: "user_action"})
+	sid := uuid.New()
+	row := buildLLMCallRow(&sid, Record{TaskType: "user_action"})
 	assert.Equal(t, "", row.AgentType, "无 agent 的调用 agent_type 为空是合法的")
 	assert.Nil(t, row.AgentID, "AgentID 保持不写(有意决策，见 D9)")
+}
+
+// TestBuildLLMCallRow_NilSessionForSessionlessCall R14: 显式无会话的调用
+// 以 NULL session_id 落库（而不是被丢掉）。
+func TestBuildLLMCallRow_NilSessionForSessionlessCall(t *testing.T) {
+	row := buildLLMCallRow(nil, Record{
+		Sessionless: true,
+		AgentType:   "promptlab",
+		TaskType:    "prompt_eval",
+		Status:      StatusSuccess,
+	})
+	assert.Nil(t, row.SessionID, "Sessionless 调用必须允许 session_id 为 NULL")
+	assert.Equal(t, "promptlab", row.AgentType, "其余审计字段照常写入")
+	assert.Equal(t, "prompt_eval", row.TaskType)
 }
 
 // TestLLMCallSchemaHasAuditColumns 钉住模型层的列定义，防止有人把字段删掉

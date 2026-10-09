@@ -127,9 +127,9 @@ jobs:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
-          # 只同步 compose。服务器上的 .env 不在仓库里，不会被碰（§8 红线）。
-          # Caddyfile 仍然人工同步 + 需要 recreate caddy 才生效，见文档遗留项。
-          source: "docker-compose.yml"
+          # 只同步 compose 与 Caddyfile。服务器上的 .env 不在仓库里，不会被碰（§8 红线）。
+          # Caddyfile 的"改了要生效"由下面 deploy 脚本按内容哈希决定是否 recreate caddy。
+          source: "docker-compose.yml,deploy/caddy/Caddyfile"
           target: "/opt/DecisionCourt/"
           overwrite: true
 
@@ -182,6 +182,25 @@ jobs:
             echo "==> Backend health check (容器内 wget)"
             sleep 8
             docker compose exec -T backend wget -qO- http://127.0.0.1:8080/health || (echo "health 失败" && docker compose logs --tail=30 backend && exit 1)
+
+            # Caddyfile：改了必须 recreate caddy 才生效（compose 只重建 backend/frontend）。
+            # 但不能每次部署都重建 —— 那会让边缘代理白闪一下。用内容哈希决定：
+            # 哈希存 deploy/caddy/.caddyfile.sha256，只有真变了才重建。
+            CADDY_FILE=deploy/caddy/Caddyfile
+            CADDY_STAMP=deploy/caddy/.caddyfile.sha256
+            if [ -f "$CADDY_FILE" ]; then
+              NEW_SHA=$(sha256sum "$CADDY_FILE" | awk '{print $1}')
+              OLD_SHA=$(cat "$CADDY_STAMP" 2>/dev/null || echo "")
+              if [ "$NEW_SHA" != "$OLD_SHA" ]; then
+                echo "==> Caddyfile 有变化 (${OLD_SHA:-none} -> $NEW_SHA)，重建 caddy"
+                docker compose up -d --force-recreate caddy
+                printf '%s\n' "$NEW_SHA" > "$CADDY_STAMP"
+                sleep 3
+                docker compose ps caddy
+              else
+                echo "==> Caddyfile 未变化，跳过 caddy"
+              fi
+            fi
 
             echo ""
             echo "============================================================"

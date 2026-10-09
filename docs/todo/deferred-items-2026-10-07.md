@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。<br>**2026-10-09（第二次上线）追加 R7–R13**：**R7**（`next build` 被 ESLint 死变量阻断，R4/R5 残留）、**R8**（`test.yml` 缺 job key → 依赖审计从未执行）、**R9**（ACR 拒收 BuildKit attestation index）、**R10**（`prompts/base.yaml` 未进 runtime 镜像 → 线上永久降级）、**R11**（Prompt Lab 4 条 REST 路由从未接线 → 恒 404）**五项已修并上线**；**R12**（FileLogger 因 uid 不匹配 + 宿主机 root 属主而写不进去）、**R13**（无 prompt 版本归因）**两项已修复并上线**（commit `edf232e`）——详见文末 R12 / R13 的「修复落地」小节；修复验证期间又发现并解决 **R15**（空 `systemPrompt` → 上游 422，Prompt Lab 的 LLM-as-judge 恒失败）与 **R17**（`deploy.yml` 从不同步 `docker-compose.yml` → compose 变更静默不生效，R12 因此白修一个部署周期）；**R14**（无 session 的调用不进 `llm_calls`，属 D2-LLM-FK 设计取舍）与 **R16**（semver 不随内容变，属已决策语义）**未修，待决策** |
+| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。<br>**2026-10-09（第二次上线）追加 R7–R13**：**R7**（`next build` 被 ESLint 死变量阻断，R4/R5 残留）、**R8**（`test.yml` 缺 job key → 依赖审计从未执行）、**R9**（ACR 拒收 BuildKit attestation index）、**R10**（`prompts/base.yaml` 未进 runtime 镜像 → 线上永久降级）、**R11**（Prompt Lab 4 条 REST 路由从未接线 → 恒 404）**五项已修并上线**；**R12**（FileLogger 因 uid 不匹配 + 宿主机 root 属主而写不进去）、**R13**（无 prompt 版本归因）**两项已修复并上线**（commit `edf232e`）——详见文末 R12 / R13 的「修复落地」小节；修复验证期间又发现并解决 **R15**（空 `systemPrompt` → 上游 422，Prompt Lab 的 LLM-as-judge 恒失败）与 **R17**（`deploy.yml` 从不同步 `docker-compose.yml` → compose 变更静默不生效，R12 因此白修一个部署周期）；**R14**（无 session 的调用不进 `llm_calls`）已按用户拍板的「显式无会话标记」方案修复并验证；仅 **R16**（semver 不随内容变，属已决策语义）属记录性条目，无需改动 |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -1179,7 +1179,7 @@ nil receiver 安全 / 端到端落库值）、`promptlab/version_test.go`（哈�
 
 **注意**：`go build` 的 `-X` 与这里的 `omitempty` 属同一族陷阱 —— **沉默的序列化/注入失败不会报错**，只能靠"断言真正发出去的东西"来钉住。
 
-### R14（P3，未修，属设计取舍）没有 session 的 LLM 调用不进 `llm_calls`，只留一条审计事件（2026-10-09）
+### R14（P3）✅ 已修（2026-10-09，用户拍板"加显式无会话标记"）没有 session 的 LLM 调用不进 `llm_calls`，只留一条审计事件
 
 **现象**：`POST /prompts/eval` 确实走了网关（`llm_calls` 的写入路径被执行），但**没有落行**；`decision_events` 里留下一条：
 
@@ -1192,12 +1192,45 @@ payload={"kind":"empty_session","session_uuid":"","model":"deepseek-chat",...}
 
 **影响**：这些调用的 `prompt_version` **归因不到** —— 也正是最想归因的那批（"改了 prompt 之后评判质量有没有变"）。同时 `evidence_eval`（书记员的一次性评估）也走这条路径，实测 `decision_events` 里已有 2 条来自 2026-10-08 的同类记录。
 
-**对 R13 的边界说明**：R13 的主要目标（"改 prompt 后按版本对比庭审质量"）**不受影响** —— 庭审内的调用都带 session，会正常写入 `prompt_version`。受影响的只是"Prompt Lab 自身那次评判调用"的留痕。
+**修法（本轮实施：方案 1「显式无会话标记」）**
 
-**可选修法**（需先决策，涉及 schema/语义）：
-1. `llm_calls.session_id` 放开为可空（`*uuid.UUID`）：改动最小，但要确认所有读路径能容忍 NULL，且 AutoMigrate 是否可靠地去掉 NOT NULL 需要实测；
-2. 给无 session 的调用用一个哨兵 session（如全零 UUID 的"系统会话"行）：不改 schema，但引入一条假数据，且 `session_id` 上的查询会出现噪音；
-3. 维持现状（只留审计事件）：接受"Prompt Lab 评判调用不进成本/归因表"。**当前按此处理**。
+关键判断：`session_id` 为空有**两种**成因 —— **有意**（Prompt Lab 不属于任何庭审）与**漏填**（bug）。
+所以不能简单地"允许空值"（那会把 D2-LLM-FK 那道护栏一起拆掉，以后谁忘了传 `session_uuid` 都会静默写进去）。
+做法是把两者**区分开**：
+
+| 层 | 改动 |
+|---|---|
+| `model.LLMCall` | `SessionID uuid.UUID` → `*uuid.UUID`，去掉 `not null`（空值合法化） |
+| `agent_gateway.Trace` / `Record` | 新增 `Sessionless bool`；`Recorder.buildRecord` 透传 |
+| `GORMStore.Insert` | `r.Sessionless` → **直接落库**（`session_id` 为 NULL，跳过 lookup）；**否则原逻辑一字不改** —— 空 / 非法 / 查不到仍写 `llm_audit_fk_violation` 审计事件并丢弃 |
+| `api.promptLabAdapter` | `Eval` / `RunABTest` 用 `agent_gateway.WithTrace(ctx, Trace{Sessionless: true, AgentType: "promptlab", TaskType: "prompt_eval"/"prompt_abtest"})` 显式声明。顺带把此前恒为空的 `agent_type` / `task_type` / `request_id` 一并带上 |
+
+**迁移验证（关键风险点：GORM 会不会真的去掉 NOT NULL）**——用**已存在的旧表**做实测，不是新库：
+
+```
+AutoMigrate 之前：llm_calls.session_id  is_nullable=NO     （旧代码建的）
+跑新代码之后：    llm_calls.session_id  is_nullable=YES    ← GORM AutoMigrate 会 ALTER DROP NOT NULL
+```
+
+**端到端验证（dev compose + 真实 LLM）**：`POST /prompts/eval {rule: stance_mention}` → 200，`llm_calls` 落行：
+
+```
+task_type=prompt_eval | agent_type=promptlab | session_id=NULL | request_id 非空
+prompt_version=1.0.3-pr1@dev#4ba89d0c | status=success
+```
+
+同时确认护栏仍在：非 sessionless 的空 `session_uuid` 调用照样只写 `llm_audit_fk_violation`、不进主表。
+
+**测试**：`r14_sessionless_test.go`（标记穿透到 Record 与 Store / **默认必须为 false** —— 这条是护栏的另一半，若默认被写成 true，漏填 session 就会被静默放行）、`gorm_store_d9_test.go` 增 `TestBuildLLMCallRow_NilSessionForSessionlessCall`。
+
+**不做**：不回填历史行（当时的归属无从考证）。
+
+**为什么没选另外两个方案**（记录取舍，避免下次重复讨论）：
+
+- ❌ **哨兵"系统会话"行**（造一条固定 UUID 的假 `court_sessions`）：不用改 schema，但往业务表里塞假数据，`session_id` 上的统计/外键查询永久带噪音，且"系统会话"这个概念的维护成本会扩散到庭审相关代码。
+- ❌ **单纯把 `session_id` 放开为可空**（不加显式标记）：就是把 D2-LLM-FK 那道护栏拆掉 —— 以后任何"忘了传 `session_uuid`"的 bug 都会静默写进 `llm_calls`，而不是变成可查的审计事件。**这正是本项目反复踩的"静默失败"家族**，不能拿它换便利。
+
+**对 R13 的边界说明**：R13 的主要目标（"改 prompt 后按版本对比庭审质量"）**不受影响** —— 庭审内的调用都带 session，会正常写入 `prompt_version`。受影响的只是"Prompt Lab 自身那次评判调用"的留痕。
 
 ### R16（P3，待决策）`prompt_version` / `content_hash` 随热加载变化，但 `/prompts/version` 的 `semver` 仍不动（2026-10-09）
 

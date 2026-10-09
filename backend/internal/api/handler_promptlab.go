@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/promptlab"
 	"github.com/gin-gonic/gin"
@@ -51,11 +52,29 @@ type promptLabAdapter struct {
 	llmClient llm.Client
 }
 
+// promptLabTrace（R14）标记 Prompt Lab 自己的 LLM 调用：它们是**故意没有庭审会话**的。
+//
+// 以前这类调用因 session_uuid 为空被 GORMStore 当成"漏填 session 的 bug"拦下，
+// 只留一条 llm_audit_fk_violation 审计事件 → 既看不到成本，也无法按 prompt 版本
+// 归因（而这恰是 Prompt Lab 最需要的数据）。现在显式声明意图：照写 llm_calls
+// （session_id 为 NULL）；真正忘传 session_uuid 的调用**仍被护栏拦下**。
+//
+// 顺带把 agent_type / task_type / request_id 也带上 —— 此前这些列在 eval 调用上恒为空。
+func promptLabTrace(taskType string) agent_gateway.Trace {
+	return agent_gateway.Trace{
+		Sessionless: true,
+		AgentType:   "promptlab",
+		TaskType:    taskType,
+	}
+}
+
 func (a *promptLabAdapter) Eval(ctx context.Context, rule promptlab.EvalRule, output string) (promptlab.EvalResult, error) {
+	ctx = agent_gateway.WithTrace(ctx, promptLabTrace("prompt_eval"))
 	return promptlab.Eval(ctx, a.llmClient, rule, output)
 }
 
 func (a *promptLabAdapter) RunABTest(ctx context.Context, versionA, versionB string, rule promptlab.EvalRule, trialOutputs []string) (*promptlab.ABTestResult, error) {
+	ctx = agent_gateway.WithTrace(ctx, promptLabTrace("prompt_abtest"))
 	return promptlab.RunABTest(ctx, a.llmClient, versionA, versionB, rule, trialOutputs)
 }
 

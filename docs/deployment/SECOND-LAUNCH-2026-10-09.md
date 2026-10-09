@@ -126,7 +126,7 @@ cd /opt/DecisionCourt && docker compose up -d
 **正常路径（设计上）**：`git push origin main` → Test 工作流 → Deploy 工作流（build 镜像推 ACR → **同步 `docker-compose.yml` 到服务器** → SSH 进服务器 pull + retag `:latest` + `compose up -d --force-recreate backend frontend`）。
 
 > **R17（2026-10-09 修）**：同步 compose 这一步**以前没有**，deploy 只对服务器上那份陈旧副本跑 `compose up` —— 于是"改了 compose"（如 R12 的 `user: 10001`）会**静默不生效**：镜像换了、容器还是按旧配置起。已在 deploy job 加 `actions/checkout` + `appleboy/scp-action`，并把 `grep -n 'user: "'` 打进 CI 日志以便肉眼确认。
-> **⚠️ Caddyfile 仍未自动同步**：它改了也不会 reload（deploy 只重建 backend/frontend）。改反代配置要做完 scp 后手动 `docker compose up -d --force-recreate caddy`。
+> **⚠️ Caddyfile 的生效条件**：它已由 CI 自动同步，但 Caddy 只在**进程启动时**读一次配置 —— 所以 deploy 脚本会比对内容哈希，变了才 `--force-recreate caddy`（幂等，不会每次部署都重启代理）。首次运行因为还没有 baseline 哈希，会重建一次 caddy。
 
 **本次实际路径（Deploy 的 SSH 失败，改手动）**：等 build 把镜像推到 ACR 后，在服务器上跑等价脚本。脚本内容（本次放在服务器 `/tmp/dc-deploy.sh`，未入仓，此处留档）：
 
@@ -302,7 +302,7 @@ docker compose exec -T backend sh -c 'touch /app/logs/.wtest'   # 目录能不�
 | 5 | prod compose 的 `version:` 属性已废弃（每次 compose 命令打 warning） | ✅ **已删** | 删除该行（纯噪音） |
 | 6 | `prompts/base.yaml` 版本号（`semver`）需手工改 YAML 才变；`/prompts/version` 的 `git_sha` 为空 | ✅ **已修** | `git_sha` 由 Dockerfile ldflags 注入；另加 `content_hash` 覆盖"热加载改了内容但 semver/git_sha 都不动"的场景。**semver 仍保持手工维护**（它是人读的版本标签 + A/B 身份标识，有意保留） |
 | 7 | **R17 `deploy.yml` 从不同步 `docker-compose.yml`** → compose 变更静默不生效 | ✅ **已修** | deploy job 补 `actions/checkout` + `appleboy/scp-action`（只同步 compose，不碰 `.env`），并把 `user:` 行打进 CI 日志（见 §3.2） |
-| 8 | **Caddyfile 仍靠人工 scp，且改了不会 reload** | ⏳ 待办（低优先） | 反代配置很少变；改了要 `scp` + `docker compose up -d --force-recreate caddy`。要彻底自动化就把它也加进 deploy 的 scp + 重建列表 |
+| 8 | **Caddyfile 靠人工 scp，且改了不会 reload** | ✅ **已修** | 已纳入同一个 scp 步骤；deploy 脚本按**内容哈希**（`deploy/caddy/.caddyfile.sha256`）判断，只有在真变了的时候才 `compose up -d --force-recreate caddy` —— 避免每次部署都让边缘代理白闪一下 |
 
 ### 6.1 CI 部署恢复的实测证据（2026-10-09 10:05–10:06）
 
