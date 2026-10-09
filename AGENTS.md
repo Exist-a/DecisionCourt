@@ -241,6 +241,17 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 
 **为什么 gitignored**：`secrets/` 已在 `.gitignore`（§8.1 提到的"Local secrets backups"分类）。ECS IP 不算高敏，但公开给攻击者多一个扫描目标。
 
+**两把密钥，别搞混（2026-10-09 起）**：
+
+| 用途 | 密钥 | 位置 | 备注 |
+|---|---|---|---|
+| **Agent / 用户本人** SSH 运维（§9.3 表格里的所有命令） | RSA `~/.ssh/id_rsa` | 本机 `~/.ssh/` | 一直用它，**不要改** |
+| **CI 自动部署**（GitHub Actions 的 Deploy job） | ed25519 专用密钥（指纹 `SHA256:TzanMH4hPwznSU1Sag75QDpLs5WjkFA0tX0zYBcDoAQ`） | 私钥 `C:\Users\LENVOV\ci-deploy-decisioncourt`（**仓库外，未入仓**）；公钥已追加进服务器 `authorized_keys` | 走 GitHub Secret `ECS_SSH_KEY` |
+
+- **为什么拆开**：此前 CI 与个人登录共用 `id_rsa`，而 GitHub runner 跑在 Azure、每次 IP 不同 → **每次部署都触发云盾"登录地非常用"告警**，且 CI 私钥泄露等于个人登录被攻破。背景与迁移步骤见 [`docs/deployment/SECOND-LAUNCH-2026-10-09.md`](docs/deployment/SECOND-LAUNCH-2026-10-09.md) §6.2.1。
+- ⏳ **待用户完成**：把上面那个私钥文件的内容贴进 GitHub Secret `ECS_SSH_KEY`（贴之前 CI 用旧 `id_rsa`，也正常工作）。
+- **红线**：这个私钥**不得**写入仓库任何文件、不得回显到对话/文档/工单。轮换方式 = 重新生成一对 + 公钥追加进 `authorized_keys` + 旧行删除，**不需要改代码或 CI 配置**。
+
 ### 9.3 允许 Agent 直接执行的 SSH 操作
 
 | 操作 | 命令模板 | 适用场景 |
@@ -278,7 +289,7 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 |------|----------|
 | `Permission denied (publickey)` | SSH_KEY 路径错 / key 失效 / known_hosts 不一致 |
 | CI Deploy 的 SSH 步骤失败，但服务器 `auth.log` 里**看不到** runner 的失败记录 | **不要据此判断"没连上"**。默认日志级别下"提供的公钥不在 `authorized_keys`"只记 debug，`auth.log` 只剩 `Connection closed by authenticating user <u> <ip> [preauth]`。先查 GitHub runner 网段（`172.208.x` / `20.168.x` 是 Azure，runner 跑在上面）有没有这条 `[preauth]`：有 = 连上了、**是密钥不对**（改 GitHub Secret `ECS_SSH_KEY`）；完全没有 = 才考虑网络/安全组。鉴别"密钥内容错"vs"RSA 算法被拒"：`sshd -T \| grep pubkeyacceptedalgorithms`（Ubuntu 24.04 无 `ssh-rsa` 但有 `rsa-sha2-*`），或用 Go `x/crypto/ssh` 拿候选私钥直连实测（GitHub action 同款库）。2026-10-09 实测：runner 两次都连上了，真因是 Secret 里的私钥不在新机 `authorized_keys` 里 |
-| `Connection timed out` | ECS 安全组未放行本地 IP / ECS 没开机 |
+| `Connection timed out` / `Connection reset by ... port 22` | 两个成因，先分清：① ECS 安全组未放行本地 IP / ECS 没开机（**连其他端口也不通**）；② **自己的重连太快** —— sshd 的 `maxstartups 10:30:100` 会在未认证并发连接过多时**随机丢弃**新连接。2026-10-09 实测：连续快速重试（脚本 for 循环里隔几秒重连）会连续几条 reset/timeout，**停 30–60 秒后单次重连即成功**。所以排查时别用密集重试循环，退避后再试；`https://域名/health` 通 = 服务器活着、只是 22 端口这条链路被丢 |
 | `Host key verification failed` | `ssh-keyscan -t ed25519 <ECS_HOST>` 更新 known_hosts |
 | `bash: command not found` | ECS 上没装该命令（如 `jq` / `htop`）|
 

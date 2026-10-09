@@ -1268,11 +1268,18 @@ prompt_version=1.0.3-pr1@dev#4ba89d0c | status=success
 
 **顺带修正一处认知**：`docs/deployment/SECOND-LAUNCH-2026-10-09.md` §3.1 一直写着"compose 与 Caddyfile 与仓库同源，**改完要同步**（人工 scp）"—— 这条纪律本身没错，但它把一件**机器该做的事交给了人**，于是漏了。compose 现已自动化；**Caddyfile 仍未自动同步、且改了也不会 reload**（见该文档 §6 遗留项）。
 
-### 上线记录（2026-10-09，`edf232e`）
+### 上线记录（2026-10-09，三次提交）
+
+| commit | 内容 | 验证 |
+|---|---|---|
+| `edf232e` | R12 + R13 + R15（23 文件 +1000/−112） | 见下表 |
+| `d1a02d4` | R17（deploy 同步 compose）+ 文档 | 服务器 compose 文件 mtime `11:35:26 → 11:48:38` → 同步步骤确实执行（同 inode、同内容，只有 mtime 变）。**这是"流水线改动要看它留下的痕迹"的范例** |
+| `82d9b93` | R14 + Caddyfile 纳入 CI 同步 | 见下表 |
+
+**`edf232e`**：
 
 | 项 | 结果 |
 |---|---|
-| 提交 | `edf232e`（R12 + R13 + R15，23 文件 +1000/−112） |
 | CI | `build` 推镜像成功（约 4 分钟）→ `deploy` 落地 |
 | 服务器编排 | 人工 scp 修正后的 `docker-compose.yml`（先备份到 `/tmp/docker-compose.yml.bak-20261009`），再 `up -d --force-recreate backend frontend` |
 | 容器 uid | `dc_backend User=10001:10001`、`dc_frontend User=10001:10001` ✅ |
@@ -1280,6 +1287,19 @@ prompt_version=1.0.3-pr1@dev#4ba89d0c | status=success
 | R13 | 启动日志 `promptlab loaded version=1.0.3-pr1@edf232e#4ba89d0c`；`GET /api/v1/prompts/version` → `git_sha=edf232e49…` + `content_hash=4ba89d0c` ✅ |
 | HTTPS | `/health` 200 · `/api/v1/health/llm` 200 · `/metrics` 200 · `/` 200（23436 B，**frontend 换 uid 后正常**）✅ |
 | 宿主机 | `logs/`、`logs/backend`、`logs/caddy` 属主改 `10001:10001`；实测 `docker run --user 10001:10001 -v .../logs/backend:/app/logs` 内 `touch` 成功 |
+
+**`82d9b93`（R14 + Caddyfile 自动化）**：
+
+| 项 | 结果 |
+|---|---|
+| Caddyfile 同步 | 服务器 `deploy/caddy/Caddyfile` mtime 更新为部署时刻；哈希戳 `deploy/caddy/.caddyfile.sha256` = `672827f8…`（此前不存在 → 首次必走重建分支） |
+| caddy 重建 + 边缘仍通 | `dc_caddy` `StartedAt=05:09:59Z`（= 13:09:59 +08）；重建后 `/health` `/api/v1/health/llm` `/metrics` `/` 全 **200**，TLS 证书 `CN=decisioncourt.cn` 有效至 2027-01-06 |
+| R14 迁移（生产库） | `llm_calls.session_id` 的 `is_nullable` 由 `NO` → **`YES`** |
+| R14 落库（生产） | `POST /prompts/eval` → `llm_calls` 出现 `task_type=prompt_eval` / `agent_type=promptlab` / **`session_id` 为空** / `request_id` 非空 / `prompt_version=1.0.3-pr1@82d9b93#4ba89d0c` / `status=success` |
+| 后端版本 | 启动日志 `version=82d9b93b97e1755f29be8938fba606a1b05aa9e6`（= 镜像 tag） |
+
+**方法论（补一条）**：验证"流水线类改动"要看**它留下的痕迹**（文件 mtime / 戳文件 / 容器启动时间），
+而不是看 CI 是否全绿 —— CI 全绿恰恰是 R17 那类故障的伪装（镜像更新了、编排没更新，一切看起来正常）。
 
 
 

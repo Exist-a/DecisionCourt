@@ -123,7 +123,13 @@ cd /opt/DecisionCourt && docker compose up -d
 
 ### 3.2 发版（每次）
 
-**正常路径（设计上）**：`git push origin main` → Test 工作流 → Deploy 工作流（build 镜像推 ACR → **同步 `docker-compose.yml` 到服务器** → SSH 进服务器 pull + retag `:latest` + `compose up -d --force-recreate backend frontend`）。
+**正常路径（设计上）**：`git push origin main` → Test 工作流 → Deploy 工作流（build 镜像推 ACR → **同步 `docker-compose.yml` 与 `deploy/caddy/Caddyfile` 到服务器** → SSH 进服务器 pull + retag `:latest` + `compose up -d --force-recreate backend frontend` → 若 Caddyfile 有变化则再 `--force-recreate caddy`）。
+
+> **推送到 main 就等于发布生产。** 没有 staging、没有 tag 门禁（`Deploy` 只在 Test 全绿后跑）。
+> 回滚办法：在服务器上把 `:latest` 重新 tag 回上一个已知可用的 `<SHA>` 再 `compose up -d --force-recreate`（ACR 上每个 commit 都有一个 tag，历史版本都在）。
+
+> **CI 用专用部署密钥**（2026-10-09 起）：`ECS_SSH_KEY` 里放的是 ed25519 专用密钥，与个人 `id_rsa` 解耦
+> （背景与迁移步骤见 §6.2.1）。
 
 > **R17（2026-10-09 修）**：同步 compose 这一步**以前没有**，deploy 只对服务器上那份陈旧副本跑 `compose up` —— 于是"改了 compose"（如 R12 的 `user: 10001`）会**静默不生效**：镜像换了、容器还是按旧配置起。已在 deploy job 加 `actions/checkout` + `appleboy/scp-action`，并把 `grep -n 'user: "'` 打进 CI 日志以便肉眼确认。
 > **⚠️ Caddyfile 的生效条件**：它已由 CI 自动同步，但 Caddy 只在**进程启动时**读一次配置 —— 所以 deploy 脚本会比对内容哈希，变了才 `--force-recreate caddy`（幂等，不会每次部署都重启代理）。首次运行因为还没有 baseline 哈希，会重建一次 caddy。
@@ -236,7 +242,11 @@ python -c "import yaml;print(list(yaml.safe_load(open('.github/workflows/test.ym
 
 **为什么这么难发现**：默认日志级别（INFO）下，"公钥不被接受"只记 **debug**，`auth.log` 里只剩一行 `Connection closed … [preauth]`，**没有任何 `Failed publickey`**。
 
-**修法（只有用户能做，私钥不经 Agent 手）**：GitHub 仓库 → Settings → Secrets and variables → Actions → `ECS_SSH_KEY` → Update → 粘贴本机 `~/.ssh/id_rsa` 完整内容。
+**当时的修法（只有用户能做，私钥不经 Agent 手）**：GitHub 仓库 → Settings → Secrets and variables → Actions → `ECS_SSH_KEY` → Update → 粘贴本机 `~/.ssh/id_rsa` 完整内容。
+
+> **后续（同日）**：这个修法能立刻恢复部署，但把 **CI 与个人登录绑在同一把私钥**上了 ——
+> 副作用是每次部署都触发云盾"登录地非常用"告警，且 CI 私钥泄露等于个人登录被攻破。
+> 已换成的长期方案：**CI 专用 ed25519 部署密钥**，见 §6.2.1。
 
 **教训**：
 1. **"看不到失败记录" ≠ "没连上"**。诊断顺序必须是：先确认对端**有没有收到**（`[preauth]` 也算收到了），再分辨"认证失败 / 网络不通"。
@@ -298,7 +308,7 @@ docker compose exec -T backend sh -c 'touch /app/logs/.wtest'   # 目录能不�
 | 1 | **GitHub Secret `ECS_SSH_KEY` 不对** → CI 自动部署走不通 | ✅ **已修（用户操作）+ 实测通过** | 见下方「§6.1 CI 部署恢复的实测证据」 |
 | 2 | **R12 FileLogger 写不进去**（uid 不匹配 + 宿主机 root 属主） | ✅ **已全修（代码 + 服务器）** | 代码：compose `user` 统一 10001 + Dockerfile 预建 `/app/logs` + 启动期 `ProbeLogDir`。服务器：`chown -R 10001:10001 /opt/DecisionCourt/logs` 已执行（见 §6.3） |
 | 3 | **R13 无 prompt 版本归因** | ✅ **已修并上线** | `llm_calls.prompt_version`（`semver@git_sha#内容哈希`）+ Recorder 每次现取 + git_sha 由 ldflags 注入（[`OBSERVABILITY.md §8.4`](../OBSERVABILITY.md)） |
-| 4 | sshd 仍允许口令登录 + root 直登，且 22 端口对全网开放（`lastb` 已有爆破记录） | ⏳ 待授权 | `PasswordAuthentication no` + `PermitRootLogin prohibit-password`；改前先确认密钥登录可用、保留已登录会话、`sshd -t` 校验后再 reload。**2026-10-09 云盾登录告警再次印证这条的紧迫性**（见 §6.2） |
+| 4 | sshd 仍允许口令登录 + root 直登，且 22 端口对全网开放（`lastb` 已有爆破记录） | ⏳ **待用户授权**（已备好步骤） | `PasswordAuthentication no` + `PermitRootLogin prohibit-password`。**含备份 / 语法校验 / reload / 回滚的安全执行步骤见 §6.2.2** —— 云盾告警（§6.2）暴露的真正暴露面就是这条 |
 | 5 | prod compose 的 `version:` 属性已废弃（每次 compose 命令打 warning） | ✅ **已删** | 删除该行（纯噪音） |
 | 6 | `prompts/base.yaml` 版本号（`semver`）需手工改 YAML 才变；`/prompts/version` 的 `git_sha` 为空 | ✅ **已修** | `git_sha` 由 Dockerfile ldflags 注入；另加 `content_hash` 覆盖"热加载改了内容但 semver/git_sha 都不动"的场景。**semver 仍保持手工维护**（它是人读的版本标签 + A/B 身份标识，有意保留） |
 | 7 | **R17 `deploy.yml` 从不同步 `docker-compose.yml`** → compose 变更静默不生效 | ✅ **已修** | deploy job 补 `actions/checkout` + `appleboy/scp-action`（只同步 compose，不碰 `.env`），并把 `user:` 行打进 CI 日志（见 §3.2） |
@@ -329,13 +339,74 @@ docker compose exec -T backend sh -c 'touch /app/logs/.wtest'   # 目录能不�
 
 **但告警本身指出了一个真问题**：CI 用的部署私钥与**你个人登录用的 `id_rsa` 是同一把**，
 而 GitHub Actions 的 runner 跑在 Azure（每次 IP 都不同）→ 以后每次 CI 部署都会触发"非常用登录地"告警。
-建议（按性价比排序）：
+处置（按性价比排序）：
 
-1. **给 CI 单独一把部署密钥**（ed25519），公钥追加进服务器 `~/.ssh/authorized_keys`，私钥只放
-   GitHub Secret `ECS_SSH_KEY`。这样 CI 私钥泄露 ≠ 你的个人登录被攻破，也便于单独吊销。
-2. **做第 4 项的 sshd 加固**：关掉口令登录与 root 直登 —— 22 端口对全网开放且 `lastb` 已有爆破记录，
-   这才是这次告警暴露出的真正暴露面。
-3. 在云盾控制台把 GitHub Actions 的网段加入"常用登录地"白名单，或直接对该告警标注为预期行为（治标）。
+1. ✅ **已办：给 CI 单独一把部署密钥**（见下方 §6.2.1）。
+2. ⏳ **未办：做第 4 项的 sshd 加固**（见 §6.2.2 的安全执行步骤）—— 22 端口对全网开放且
+   `lastb` 已有爆破记录，这才是这次告警暴露出的真正暴露面。
+3. （可选，治标）在云盾控制台把 GitHub Actions 的网段加入"常用登录地"白名单，或把该告警标为预期行为。
+   做了第 1 项之后这个就不再需要了。
+
+#### 6.2.1 CI 专用部署密钥（2026-10-09 已生成并装到服务器）
+
+**为什么**：让"CI 的私钥"与"你的个人登录私钥"解耦 —— CI 私钥泄露 ≠ 你的登录被攻破，也能单独吊销；
+顺带消除每次部署必响的云盾告警。
+
+**做了什么**：
+
+| 步骤 | 结果 |
+|---|---|
+| 生成密钥对 | `ssh-keygen -t ed25519`（无口令），指纹 **`SHA256:TzanMH4hPwznSU1Sag75QDpLs5WjkFA0tX0zYBcDoAQ`** |
+| 公钥装到服务器 | 追加进 `/home/admin/.ssh/authorized_keys`（**追加不覆盖**，原有三把保留）→ 装完共 3 把：阿里云 ECDSA、用户 RSA `id_rsa.pub`、CI ed25519 |
+| 实测登录 | 用**新私钥** `-o IdentitiesOnly=yes` 直连 → 成功执行命令（不是只看配置） |
+| 私钥存放 | `C:\Users\LENVOV\ci-deploy-decisioncourt`（**仓库外，未入仓、不会被 commit**） |
+
+**⏳ 唯一待办（只能用户做，私钥不经 Agent 手）**：GitHub 仓库 → Settings → Secrets and variables →
+Actions → `ECS_SSH_KEY` → **Update** → 粘贴上面那个私钥文件的**完整内容**（含 BEGIN/END 两行）。
+
+- **换之前 CI 照常工作**（旧 `id_rsa` 仍在 `authorized_keys` 里）；
+- 换完之后云盾的"登录地非常用"告警不再触发；
+- 验证方式：Actions → Deploy → **Run workflow** 手动跑一次，跑通且无告警即生效。
+
+**⚠️ 别删 `id_rsa` 那条**：它同时是用户本人的登录密钥。CI 专用密钥与它是**并列**关系，不是替换。
+
+**⚠️ 密钥文件的边界**：这个私钥**不能**进仓库、不能贴进对话/工单/文档。若将来轮换，重新生成一对
+（公钥追加、旧的那行从 `authorized_keys` 删掉）即可，不需要改动任何代码或 CI 配置。
+
+#### 6.2.2 sshd 加固的安全执行步骤（未执行，等授权）
+
+一次性把"只认钥匙、不认密码"打开。**唯一的风险是改完把自己锁在门外**，所以按这个顺序做：
+
+```bash
+# 1) 先备份 + 确认密钥登录此刻可用（不要跳过）
+sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak-$(date +%F)
+sudo sshd -T | grep -iE 'passwordauthentication|permitrootlogin'   # 看当前值
+
+# 2) 改两行（用 drop-in，不动主文件）
+sudo tee /etc/ssh/sshd_config.d/99-hardening.conf >/dev/null <<'EOF'
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+EOF
+
+# 3) 语法校验 —— 不通过就删掉 drop-in 重来，别 reload
+sudo sshd -t && echo "config OK"
+
+# 4) reload（不是 restart：不断已建立的连接）
+sudo systemctl reload ssh
+
+# 5) 另开一个终端验证仍能登录（这一步之前，**别关掉当前已登录的会话**）
+#    ssh -i ~/.ssh/id_rsa admin@8.218.24.43 'echo STILL_IN && id -un'
+```
+
+**回滚**（万一登不上，从保留的那个会话执行）：
+
+```bash
+sudo rm /etc/ssh/sshd_config.d/99-hardening.conf && sudo systemctl reload ssh
+```
+
+**注意**：不要顺手把 22 端口关掉或改端口 —— 那会同时切断 CI 部署与你自己的登录，
+且 22 端口在 `authorized_keys` 模式下已经够安全。真正的暴露面是"口令登录开着"，不是端口号。
+
 
 ### 6.3 R12 的服务器侧修复（2026-10-09，已执行并实测）
 
@@ -366,4 +437,28 @@ docker run --rm --user 10001:10001 -v /opt/DecisionCourt/logs/backend:/app/logs 
 ```
 
 **至此 R12 全链路闭合**：宿主机属主 ✅ → 容器 uid ✅ → 应用写入 ✅（有启动日志正向证据）。
+
+### 6.4 后续两次部署（2026-10-09 当天）
+
+| commit | 内容 | 生产验证 |
+|---|---|---|
+| `edf232e` | R12（uid 10001 + 启动期探测）+ R13（`prompt_version` 归因）+ R15（空 `systemPrompt` → 上游 422） | 见 deferred-items 的「上线记录」 |
+| `d1a02d4` | R17（deploy 同步 `docker-compose.yml`） | 部署后服务器 compose 的 **mtime 由 11:35:26 变 11:48:38** → 同步步骤确实执行 |
+| `82d9b93` | R14（显式无会话调用落库）+ Caddyfile 纳入 CI 同步 | 见下 |
+
+**`82d9b93` 的验证证据**（本次两个改动都"改的是流水线/DB 语义"，所以都用**可观测的产物**证明，而不是看 CI 绿）：
+
+| 项 | 证据 |
+|---|---|
+| Caddyfile 被同步 | 服务器上 `deploy/caddy/Caddyfile` 的 mtime 更新为部署时刻（13:09:24） |
+| 哈希戳写入 | `deploy/caddy/.caddyfile.sha256` = `672827f8…`（此前不存在 → 首次运行必然走重建分支） |
+| **caddy 真的被重建** | `dc_caddy` 的 `StartedAt` = `2026-10-09T05:09:59Z`（= 13:09:59 +08，正是本次部署） |
+| **重建后 HTTPS 仍通**（风险最高的一步） | `/health` `/api/v1/health/llm` `/metrics` `/` 全 **200**；TLS 证书仍为 `CN=decisioncourt.cn`，有效期 2026-10-08 → 2027-01-06 |
+| R14 迁移生效（生产库） | `llm_calls.session_id` 的 `is_nullable` = **YES**（此前 `NO`） |
+| R14 落库（生产） | 打一次 `POST /prompts/eval` → `llm_calls` 出现 `task_type=prompt_eval` / `agent_type=promptlab` / **`session_id` 为空** / `request_id` 非空 / `prompt_version=1.0.3-pr1@82d9b93#4ba89d0c` / `status=success` |
+| 后端版本 | 启动日志 `version=82d9b93b97e1755f29be8938fba606a1b05aa9e6`（= 镜像 tag） |
+
+**教训（补一条）**：验证"流水线类改动"要看**它留下的痕迹**（mtime / 戳文件 / 容器启动时间），
+不能只看 CI 全绿 —— 因为 CI 全绿恰恰是 R17 那种故障的伪装（镜像更新了、编排没更新，一切看起来正常）。
+
 

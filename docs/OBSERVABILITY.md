@@ -270,6 +270,14 @@ cat backup-2026-07-06.sql | docker exec -i dc_postgres psql -U decisioncourt -d 
 
 `g.recorder.Record(...)` 在 `gateway.Chat` 里是**无条件调用**（不受 `AGENT_GATEWAY_ENABLED` 总开关影响），recorder 自身的 `Enabled` 只看 `llmClient != nil`。字段：`model` / `prompt_tokens` / `completion_tokens` / `cost_usd|cny` / `latency_ms` / `agent_type` / `request_id` / **`prompt_version`（R13）** / `status`。
 
+**`session_id` 可以为 NULL（R14）**：没有庭审归属的调用（Prompt Lab 的 `POST /prompts/eval`、`/prompts/abtest`）
+现在**照常落库**，`session_id` 为空、`agent_type=promptlab`、`task_type=prompt_eval|prompt_abtest`。
+所以按 session 聚合时它们**自然被排除**，要单独看就用 `WHERE session_id IS NULL`。
+
+为什么以前查不到：这类调用因 `session_uuid` 为空被当成"漏填 session 的 bug"丢弃，只在 `decision_events`
+留一条 `llm_audit_fk_violation`（`payload.kind='empty_session'`）。**那道护栏仍在** —— 只有**显式**声明
+无会话的调用才放行，真忘了传 `session_uuid` 的调用依旧只留审计事件。详见 `docs/decisioncourt-db-design.md` §3.7。
+
 ### 8.3 FileLogger 详细日志：✅ 已修（2026-10-09 收口）—— 修前写不进去，连带 trace 端点为空
 
 > **状态更新（2026-10-09，R12 修复后）**：根因（uid 不匹配）已在代码里消除，且加了**启动期
@@ -342,6 +350,11 @@ prompt 调优的主要工作方式恰恰是「改 YAML → 5 秒热加载」，�
 -- 改 prompt 前后各版本的调用量 / token 效率 / 失败率
 SELECT prompt_version, COUNT(*) AS calls, AVG(total_tokens) AS avg_tokens
 FROM llm_calls WHERE session_id = '<court_sessions.id>'
+GROUP BY prompt_version ORDER BY MIN(created_at);
+
+-- Prompt Lab 自己的评判调用（无庭审归属，session_id 为 NULL，见 §8.2）
+SELECT prompt_version, COUNT(*) AS judge_calls, AVG(total_tokens) AS avg_tokens
+FROM llm_calls WHERE session_id IS NULL
 GROUP BY prompt_version ORDER BY MIN(created_at);
 ```
 
