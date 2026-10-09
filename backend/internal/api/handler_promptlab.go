@@ -80,6 +80,15 @@ func NewPromptLabAdapter(store *promptlab.Store, llmClient llm.Client) PromptLab
 	return &promptLabAdapter{store: store, llmClient: llmClient}
 }
 
+// WithPromptLab 注入 Prompt Lab 依赖。
+//
+// 必须在 RegisterAPIRoutes 之前调用 —— RegisterPromptLabRoutes 在
+// promptLab == nil 时**不注册任何路由**（静默降级 404），晚于注册就等于没接。
+func (h *Handler) WithPromptLab(c PromptLabClient) *Handler {
+	h.promptLab = c
+	return h
+}
+
 // RegisterPromptLabRoutes 把 /api/v1/prompts/* 路由挂到传入的 group。
 //
 // 端点清单 (与 V1.0.3-PLAN §2.6 完全一致):
@@ -87,6 +96,16 @@ func NewPromptLabAdapter(store *promptlab.Store, llmClient llm.Client) PromptLab
 //   POST /api/v1/prompts/abtest  → PromptABTest
 //   GET  /api/v1/prompts/version → PromptVersion
 //   POST /api/v1/prompts/reload  → PromptReload
+//
+// 限流 (2026-10-09 补): eval / abtest **会真实调用 LLM**,所以和
+// /courtrooms/:uuid/{evidences,actions} 一样过 LLMRateLimit（user 维度）。
+// 这两条此前从未接线,也就没暴露过;接线时必须带上限流,否则等于新增两个
+// 无限制烧 token 的入口。
+//
+// 不挂 SessionRateLimit: 它从 URL param `session_uuid` 取键,这两条路由没有
+// 该 param → 恒走"放行"分支（session_ratelimit.go:92），挂上只会是 no-op。
+//
+// version / reload 不调 LLM（reload 只重读 YAML + swap 内存）,不挂限流。
 //
 // v1.0.3 PR-B2 admin 决策说明:
 //   plan 原本要求 /reload 是 admin-only,但项目当前 auth 是匿名 JWT,
@@ -100,10 +119,22 @@ func NewPromptLabAdapter(store *promptlab.Store, llmClient llm.Client) PromptLab
 //   接口签名无需变化 (handler 内部判断)。
 func (h *Handler) RegisterPromptLabRoutes(api *gin.RouterGroup) {
 	if h.promptLab == nil {
+		// 与 RegisterTraceRoutes 对称：nil 时**必须出声**。
+		// 2026-10-09 的教训就是这个 return 之前是静默的 —— 装配漏调
+		// WithPromptLab()，日志里一个字都没有，直到有人去 curl 端点才发现
+		// 线上恒 404（"文档说有、实际没有"）。
+		slog.Error("RegisterPromptLabRoutes: promptLab is nil — /api/v1/prompts/* 将 404，" +
+			"检查 main.go 是否漏调 handler.WithPromptLab()（或 LLM_API_KEY 未配置）")
 		return
 	}
-	api.POST("/prompts/eval", h.PromptEval)
-	api.POST("/prompts/abtest", h.PromptABTest)
+
+	llmGroup := api.Group("/")
+	if h.LLMRateLimit != nil {
+		llmGroup.Use(h.LLMRateLimit)
+	}
+	llmGroup.POST("/prompts/eval", h.PromptEval)
+	llmGroup.POST("/prompts/abtest", h.PromptABTest)
+
 	api.GET("/prompts/version", h.PromptVersion)
 	api.POST("/prompts/reload", h.PromptReload)
 }

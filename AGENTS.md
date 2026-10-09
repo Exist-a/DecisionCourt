@@ -266,6 +266,7 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 | 现象 | 排查方向 |
 |------|----------|
 | `Permission denied (publickey)` | SSH_KEY 路径错 / key 失效 / known_hosts 不一致 |
+| CI Deploy 的 SSH 步骤失败，但服务器 `auth.log` 里**看不到** runner 的失败记录 | **不要据此判断"没连上"**。默认日志级别下"提供的公钥不在 `authorized_keys`"只记 debug，`auth.log` 只剩 `Connection closed by authenticating user <u> <ip> [preauth]`。先查 GitHub runner 网段（`172.208.x` / `20.168.x` 是 Azure，runner 跑在上面）有没有这条 `[preauth]`：有 = 连上了、**是密钥不对**（改 GitHub Secret `ECS_SSH_KEY`）；完全没有 = 才考虑网络/安全组。鉴别"密钥内容错"vs"RSA 算法被拒"：`sshd -T \| grep pubkeyacceptedalgorithms`（Ubuntu 24.04 无 `ssh-rsa` 但有 `rsa-sha2-*`），或用 Go `x/crypto/ssh` 拿候选私钥直连实测（GitHub action 同款库）。2026-10-09 实测：runner 两次都连上了，真因是 Secret 里的私钥不在新机 `authorized_keys` 里 |
 | `Connection timed out` | ECS 安全组未放行本地 IP / ECS 没开机 |
 | `Host key verification failed` | `ssh-keyscan -t ed25519 <ECS_HOST>` 更新 known_hosts |
 | `bash: command not found` | ECS 上没装该命令（如 `jq` / `htop`）|

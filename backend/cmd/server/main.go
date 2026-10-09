@@ -425,6 +425,16 @@ func main() {
 	// 必须在 auth 之后挂（需从 ctx 取 viewer_id 签 token）。
 	// Cookie 复用 JWT_SECRET 作 HMAC key（不新增 env）。
 	authedGroup.Use(middleware.CSRF(middleware.DefaultCSRFConfig([]byte(config.AppConfig.JWTSecret))))
+
+	// v1.0.3 PR-B2 Prompt Lab REST 端点装配（2026-10-09 补齐）。
+	// 此前 NewPromptLabAdapter 全仓无调用点 → handler.promptLab 恒为 nil →
+	// RegisterPromptLabRoutes 静默不注册 → /api/v1/prompts/* 恒 404，
+	// v1.0.3 的 Prompt Lab 前端从未拿到过后端。
+	// 传 gatewayClient（不是裸 llmClient）：eval/abtest 的 LLM 调用同样进
+	// llm_calls 审计 + metrics + 缓存/压缩，与庭审调用走同一条白盒通道。
+	// 必须在 RegisterAPIRoutes 之前 —— 晚于注册就等于没接。
+	handler.WithPromptLab(api.NewPromptLabAdapter(promptlabStore, gatewayClient))
+
 	handler.RegisterAPIRoutes(authedGroup)
 
 	handler.RegisterRoutes(r) // 注册 /health 到 r

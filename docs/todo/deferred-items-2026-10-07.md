@@ -988,17 +988,49 @@ denied: unknown manifest class for application/vnd.oci.empty.v1+json
 | 业务冒烟 | `POST /api/v1/auth/anon`（带 `user_id`）→ 200 + JWT；`GET /api/v1/courtrooms` → 200 `{"count":0}`；`XSRF-TOKEN` cookie 正常下发（`Path=/; Max-Age=86400; Secure`） |
 | 前端构建期注入 | 服务的 JS chunk 里是 `https://decisioncourt.cn` / `wss://decisioncourt.cn`（GitHub secrets 正确） |
 
-### 阻塞项：CI 的 deploy job 连不上服务器（需用户在控制台处理）
+### 阻塞项：CI 的 deploy job SSH 认证失败（根因已查明，需用户改 GitHub Secret）
 
 **现象**：`build` job 成功（镜像已推 ACR），但 `deploy` job 不落地 —— 服务器上镜像/容器长时间无变化。
 
-**证据**：服务器 `/var/log/auth.log` 里**所有** `Accepted publickey` 的来源都是 `111.40.17.203`（用户本机 IP），**没有任何 GitHub Actions runner 网段的连接记录**。说明请求根本没到 sshd，被云侧防火墙/安全组挡在 22 端口之外（阿里云轻量/ECS 的防火墙默认只放行特定来源）。
+**⚠️ 第一版结论是错的，此处纠正。** 我最初写的是「被云防火墙挡住」，依据只有一条否定证据（`Accepted publickey` 里没有 runner 网段）。深挖后推翻：
 
-**选项（三选一，需用户决定）**：
-1. 安全组放行 22 端口给 GitHub runner 网段（`https://api.github.com/meta` 的 `actions` 字段，CIDR 列表需定期同步）；
-2. 改拉取式部署（服务器侧定时/钩子 `docker compose pull && up -d`，不依赖入站 SSH）；
-3. 维持现状：每次手动跑等价部署脚本（本次即此路径）。
+| 排查 | 结果 |
+|---|---|
+| 服务器本机防火墙 | iptables INPUT `policy ACCEPT` 且**零规则**；nft 只有 Docker 的 NAT/filter；ufw / firewalld / fail2ban **全部 inactive** → 无本机拦截 |
+| sshd 限流 | `maxstartups 10:30:100`、`persourcemaxstartups none` → 宽松，不是限流 |
+| 22 端口是否只放行本机 | **不是**。日志里有随机公网 IP（`46.201.2.176`、`91.196.82.14`、`186.124.x`）打到 SSH 握手阶段，`lastb` 还有来自 `59.98.148.5` 的暴力破解 → 22 端口对全网开放 |
+| runner 到底有没有连上 | **连上了**。`07:22:24 Connection closed by authenticating user admin 172.208.126.96 [preauth]`、`07:34:44 ... 20.168.109.87 [preauth]` —— `172.208.x` / `20.168.x` 是 **Azure 网段（GitHub runner 就跑在 Azure）**，两次 Deploy 各一条，用户是 `admin`，**在认证阶段被关闭** |
+| 是不是 RSA 算法被拒 | **不是**。服务器 `pubkeyacceptedalgorithms` 无 `ssh-rsa`(SHA-1) 但有 `rsa-sha2-512/256`；用 GitHub Action 同款库（`golang.org/x/crypto/ssh`）拿用户 `id_rsa` 实测 → **`DIAL OK`，认证成功**，指纹 `SHA256:Ny/HKBZeCc4sjvhmVBssGe4IzO+dm2FnhYAiq16Kc1w`（= `lenvov@LAPTOP-VOOCEJD6`，在服务器 `authorized_keys` 里） |
 
-**未改 GitHub Secret / 服务器配置**：涉及远端写与安全边界，等用户确认。
+**真因**：`admin@8.218.24.43` 的 `authorized_keys` 只有两把钥匙 —— 阿里云自带的 ECDSA `swas-imported-key` + 用户的 RSA `id_rsa.pub`。runner 连接正常、用户正确，但**它提供的公钥不在这份清单里** → 认证失败、连接在 `[preauth]` 阶段关闭。即 **GitHub Secret `ECS_SSH_KEY` 里装的不是这把 `id_rsa`**（很可能还是旧机器那套 / 或本机 `id_ed25519` —— 那把在本机对新服务器也是 `Permission denied`）。
+
+**为什么静默**：默认日志级别（INFO）下，密钥不在 `PubkeyAcceptedAlgorithms` / 不被接受这类失败只记在 debug，`auth.log` 里只剩一行 `Connection closed ... [preauth]`，没有任何 `Failed publickey` —— 所以"没看到失败记录"≠"没连上"。
+
+**用户侧修法（只有他能做，私钥不经我手）**：
+1. GitHub 仓库 → Settings → Secrets and variables → Actions → `ECS_SSH_KEY` → **Update**
+2. 粘贴本机 `C:\Users\LENOVO\.ssh\id_rsa` 的**完整内容**（含 `-----BEGIN OPENSSH PRIVATE KEY-----` / `-----END ...-----` 两行，末尾留一个换行）
+3. 顺带确认 `ECS_USER` = `admin`、`ECS_HOST` = `8.218.24.43`（日志显示 runner 用的用户就是 `admin`，这两项已对）
+
+**（可选）更干净的长期做法**：单独生成一把 ed25519 部署密钥给 CI 用（避免与个人登录密钥混用），把公钥追加进服务器 `~/.ssh/authorized_keys`，私钥存进 `ECS_SSH_KEY`。
+
+**部署期间的实际落地方式**：本次两个版本都是我手动跑等价脚本完成的（`docker pull` → `retag :latest` → `compose up -d --force-recreate backend frontend` → 容器内 health）。修好 Secret 后这条路可以退回纯 CI。
+
+**顺带发现的安全项（未改，待用户决定）**：`sshd -T` 显示 `passwordauthentication yes` + `permitrootlogin yes`，且 22 端口对全网开放，`lastb` 已有针对 `root` / `jumpserv` / `lucjan` / `develope` 的爆破记录。建议改成 `PasswordAuthentication no` + `PermitRootLogin prohibit-password`（改前先确认密钥登录可用、并保留一个已登录会话，避免锁死）。
+
+### R11（P1）Prompt Lab 的 4 条 REST 路由从未接线 → 线上恒 404（2026-10-09，用户授权后修）
+
+**根因**：`handler.promptLab` 靠 `NewPromptLabAdapter(store, llmClient)` 注入，而**全仓（含测试）没有任何调用点** —— 该函数只有定义。`RegisterPromptLabRoutes` 开头 `if h.promptLab == nil { return }`，于是 `/api/v1/prompts/{eval,abtest,version,reload}` 在所有环境都不注册。v1.0.3 PR-B2 的 Prompt Lab 前端因此拿不到后端。
+
+**修法（三处）**：
+1. `handler.WithPromptLab(c)` —— 补一个导出的注入入口（字段是 unexported，main.go 是 package main，没有 setter 就接不上）。
+2. `main.go` 在 `RegisterAPIRoutes` **之前**调用 `handler.WithPromptLab(api.NewPromptLabAdapter(promptlabStore, gatewayClient))`。传 `gatewayClient` 而非裸 `llmClient`：eval/abtest 的 LLM 调用同样进 `llm_calls` 审计 + metrics + 缓存/压缩，与庭审调用走同一条白盒通道。
+3. **限流**：eval / abtest **会真实调用 LLM**，所以与 `/courtrooms/:uuid/{evidences,actions}` 一样过 `LLMRateLimit`（user 维度）；version / reload 不调 LLM，不挂。**不挂 `SessionRateLimit`** —— 它从 URL param `session_uuid` 取键，这两条路由没有该 param → 恒走"放行"分支（`session_ratelimit.go:92`），挂上只是 no-op。
+
+**对称性硬化**：`RegisterPromptLabRoutes` 的 `promptLab == nil` 分支此前**静默 return**（这就是它 404 几个月没人发现的原因）；`RegisterTraceRoutes` 的同类分支早就会打 `ERROR`（main.go:346 的 `WithTraceStore` 就是被它揪出来的）。现补上对称的 ERROR 日志，让"漏接线"下次自己喊出来。
+
+**测试**：新增 2 条（`handler_promptlab_test.go`）——`TestPromptLabRoutes_NotRegisteredWhenNil`（nil 时 4 条全 404）、`TestPromptLabRoutes_EvalAndABTestBehindLLMRateLimit`（eval/abtest 被限流且**不触发 LLM 调用**，version/reload 放行）。
+
+**验证**：`go vet ./...` + `go build ./...` 干净；`go test ./...` 23/23 包 ok；promptlab 相关 6 条测试全绿（含新增 2 条）。
+
 
 

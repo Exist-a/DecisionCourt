@@ -181,3 +181,71 @@ func TestPromptABTest_TooManyOutputs400(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Equal(t, 0, fake.abCalled, "超长 trial_outputs 不应触发 RunABTest")
 }
+
+// T5: promptLab 未注入时 4 条路由都不注册（404）。
+//
+// 这条覆盖的是 2026-10-09 之前线上一直存在的真实状态：装配漏了
+// NewPromptLabAdapter → handler.promptLab == nil → RegisterPromptLabRoutes
+// 直接 return → 前端拿 404 而不是 503。必须显式断言，否则"漏接线"这种
+// 静默降级又会被放过。
+func TestPromptLabRoutes_NotRegisteredWhenNil(t *testing.T) {
+	h := &Handler{} // promptLab 故意留 nil
+	r := promptLabEngine(h)
+
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/prompts/eval"},
+		{http.MethodPost, "/api/v1/prompts/abtest"},
+		{http.MethodGet, "/api/v1/prompts/version"},
+		{http.MethodPost, "/api/v1/prompts/reload"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader("{}"))
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusNotFound, rec.Code, "%s %s 应 404", tc.method, tc.path)
+	}
+}
+
+// T6: eval / abtest 过 LLMRateLimit，version / reload 不过。
+//
+// 接线时必须带上限流（这两条会真实调 LLM），且不能误伤不烧 token 的两条。
+// 用一个"恒定 429"的假限流器区分：被限流的路由必须 429，未被限流的必须 200。
+func TestPromptLabRoutes_EvalAndABTestBehindLLMRateLimit(t *testing.T) {
+	fake := &fakePromptLabClient{
+		EvalResult: promptlab.EvalResult{Rule: promptlab.EvalRuleLength, Pass: true},
+	}
+	h := &Handler{promptLab: fake}
+	h.LLMRateLimit = func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"code": "RATE_LIMITED"})
+	}
+	r := promptLabEngine(h)
+
+	// eval → 被限流，且不应真的调到 LLM
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/prompts/eval",
+		strings.NewReader(`{"rule":"length_compliance","output":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.Equal(t, 0, fake.evalCalled, "被限流的请求不应触发 LLM 调用")
+
+	// abtest → 同样被限流
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/prompts/abtest",
+		strings.NewReader(`{"version_a":"v1","version_b":"v2","rule":"length_compliance","trial_outputs":["a"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.Equal(t, 0, fake.abCalled)
+
+	// version → 不调 LLM，必须放行
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/prompts/version", nil)
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	// reload → 不调 LLM，必须放行
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/prompts/reload", nil)
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+}

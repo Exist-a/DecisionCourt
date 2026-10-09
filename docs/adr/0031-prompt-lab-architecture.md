@@ -12,6 +12,8 @@
 | **替代决策** | (a) LangSmith / Langfuse SDK / (b) 继续 hardcoded baseRules / (c) Web UI prompt 编辑器 |
 | **影响** | `backend/prompts/base.yaml` (NEW) + `internal/promptlab/` (NEW) + `internal/agent/prompts.go` (MODIFIED) + `internal/api/handler_promptlab.go` (NEW) |
 
+> **状态更新（2026-10-09）**：本 ADR 的 REST 层**从落地起就没被接上过** —— `NewPromptLabAdapter` 全仓无调用点，`handler.promptLab` 恒为 nil，`RegisterPromptLabRoutes` 静默 return，`/api/v1/prompts/*` 在所有环境恒 404。已修：补 `handler.WithPromptLab()` 入口 + `main.go` 装配（传 `gatewayClient`，让 eval/abtest 也进 `llm_calls` 审计与 metrics）+ eval/abtest 过 `LLMRateLimit` + nil 分支改为打 ERROR。详见 `docs/todo/deferred-items-2026-10-07.md` §R11。另：`prompts/base.yaml` 此前也没进 runtime 镜像（多阶段构建只拷了 binary），线上一直降级 hardcoded fallback，已随同批 §R10 修。
+
 ---
 
 ## 1. 决策
