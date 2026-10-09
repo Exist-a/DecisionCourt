@@ -69,8 +69,16 @@
 按顺序，每步都给"为什么"：
 
 ```bash
-# ① 装 Docker（官方源；机器 apt 已配阿里云内网镜像，实测 download.docker.com 50ms 可达）
-curl -fsSL https://get.docker.com | sudo env NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive sh
+# ① 装 Docker —— 用官方 apt 源（download.docker.com；机器 apt 已配阿里云内网镜像，实测该源 50ms 可达）
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list
+# ⚠️ 24.04 的 needrestart 会交互打断 apt；`sudo VAR=x` 默认不被 sudoers 允许，必须走 `sudo env`
+sudo env NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive apt-get update
+sudo env NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo systemctl enable --now docker
 sudo usermod -aG docker admin          # 之后新 SSH 会话里 admin 不用 sudo 就能跑 docker
 
@@ -96,9 +104,13 @@ docker login --username=Exist-a crpi-rnawo8jx69bsvlbx.cn-hongkong.personal.cr.al
 cd /opt/DecisionCourt && docker compose up -d
 ```
 
-**两个容易踩的点**：
+**三个容易踩的点**：
 - `.env` 里 `DATABASE_URL` 的密码必须与 `POSTGRES_PASSWORD` 一致（新 volume 按后者初始化）。
 - 本机 `secrets/ecs.env` 与 GitHub Secret `ECS_HOST` 是**两处**，换机都要改；`scripts/ecs.ps1` 也曾硬编码 IP。
+- **`logs/` 的属主**：Docker 会自动把 bind mount 的目标目录建成 `root:root`，而容器跑在 uid 1001（compose `user`）→ **FileLogger 与 trace 全部写不进去**（本次实际踩到，见 §6 遗留项 2 / R12）。起栈后顺手修一次：
+  ```bash
+  sudo chown -R 1001:1001 /opt/DecisionCourt/logs    # 或统一到 10001 并同步改 compose 的 user
+  ```
 
 ### 3.2 发版（每次）
 
