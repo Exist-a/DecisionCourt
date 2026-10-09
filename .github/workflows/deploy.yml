@@ -110,6 +110,29 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      # R12 根因修复（2026-10-09）：deploy job 此前**既不 checkout 也不上传
+      # docker-compose.yml**，只是对服务器上那份**陈旧副本**跑 `compose up`。
+      # 后果：改了 compose（例如把 user 从 1001 改成 10001）→ 新镜像确实上线了，
+      # 但编排配置没跟着走 → 容器仍按旧配置起来。
+      # 2026-10-09 实测踩到：R12 的日志目录权限修复就这样静默失效了一整个部署周期
+      # （宿主机 logs/ 已 chown 10001，容器却还是 uid 1001 → 仍写不进去），
+      # 最后靠新加的启动期 probe 打 ERROR 才发现。
+      # 服务器上的 compose 与 Caddyfile 一直靠**人工 scp**（见
+      # docs/deployment/SECOND-LAUNCH-2026-10-09.md §3.1），这条流水线让它自动跟仓库同步。
+      - uses: actions/checkout@v4
+
+      - name: 同步编排文件到服务器
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          # 只同步 compose。服务器上的 .env 不在仓库里，不会被碰（§8 红线）。
+          # Caddyfile 仍然人工同步 + 需要 recreate caddy 才生效，见文档遗留项。
+          source: "docker-compose.yml"
+          target: "/opt/DecisionCourt/"
+          overwrite: true
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -122,6 +145,11 @@ jobs:
             # v0.10.12: ECS 实际路径是 /opt/DecisionCourt (大写 D, 跟 scripts/ecs.ps1 一致)
             # 之前写 /opt/decisioncourt (小写 d) 跟 ecs.ps1 不一致,导致 cd fail 整个 deploy 1 秒挂
             cd /opt/DecisionCourt
+
+            # 打印服务器上实际生效的编排关键行, 让"compose 到底更新了没有"在 CI 日志里可见
+            # (R12: 这个值如果不等于仓库里的值, 就是同步步骤失效了)
+            echo "==> 服务器上 docker-compose.yml 的关键配置"
+            grep -n 'user: "' docker-compose.yml || true
 
             # 拉新镜像
             echo "==> 拉新镜像 (tag: ${{ env.TAG }})"

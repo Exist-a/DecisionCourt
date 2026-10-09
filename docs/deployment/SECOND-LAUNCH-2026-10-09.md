@@ -87,9 +87,12 @@ sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapf
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swap.conf
 
-# ③ 建目录 + 上传编排文件（compose 与 Caddyfile 与仓库同源，改完要同步）
-sudo mkdir -p /opt/DecisionCourt/deploy/caddy && sudo chown -R admin:admin /opt/DecisionCourt
-# 在本机仓库根目录跑：
+# ③ 建目录 + 上传编排文件（compose 与 Caddyfile 与仓库同源）
+sudo mkdir -p /opt/DecisionCourt/deploy/caddy /opt/DecisionCourt/logs/backend /opt/DecisionCourt/logs/caddy
+sudo chown -R admin:admin /opt/DecisionCourt
+# 日志目录必须归容器 uid（否则 FileLogger / trace 全废，见 §6 遗留项 2 / R12）
+sudo chown -R 10001:10001 /opt/DecisionCourt/logs
+# 在本机仓库根目录跑（首次 bootstrap 用；之后 compose 由 CI 自动同步，Caddyfile 仍需人工）：
 #   scp -i ~/.ssh/id_rsa docker-compose.yml admin@8.218.24.43:/opt/DecisionCourt/
 #   scp -i ~/.ssh/id_rsa deploy/caddy/Caddyfile admin@8.218.24.43:/opt/DecisionCourt/deploy/caddy/
 
@@ -120,7 +123,10 @@ cd /opt/DecisionCourt && docker compose up -d
 
 ### 3.2 发版（每次）
 
-**正常路径（设计上）**：`git push origin main` → Test 工作流 → Deploy 工作流（build 镜像推 ACR → SSH 进服务器 pull + retag `:latest` + `compose up -d --force-recreate backend frontend`）。
+**正常路径（设计上）**：`git push origin main` → Test 工作流 → Deploy 工作流（build 镜像推 ACR → **同步 `docker-compose.yml` 到服务器** → SSH 进服务器 pull + retag `:latest` + `compose up -d --force-recreate backend frontend`）。
+
+> **R17（2026-10-09 修）**：同步 compose 这一步**以前没有**，deploy 只对服务器上那份陈旧副本跑 `compose up` —— 于是"改了 compose"（如 R12 的 `user: 10001`）会**静默不生效**：镜像换了、容器还是按旧配置起。已在 deploy job 加 `actions/checkout` + `appleboy/scp-action`，并把 `grep -n 'user: "'` 打进 CI 日志以便肉眼确认。
+> **⚠️ Caddyfile 仍未自动同步**：它改了也不会 reload（deploy 只重建 backend/frontend）。改反代配置要做完 scp 后手动 `docker compose up -d --force-recreate caddy`。
 
 **本次实际路径（Deploy 的 SSH 失败，改手动）**：等 build 把镜像推到 ACR 后，在服务器上跑等价脚本。脚本内容（本次放在服务器 `/tmp/dc-deploy.sh`，未入仓，此处留档）：
 
@@ -284,17 +290,19 @@ docker compose exec -T backend sh -c 'touch /app/logs/.wtest'   # 目录能不�
 
 ## 6. 遗留项
 
-> **状态更新（2026-10-09 11:00 前后）**：第 1 项（CI Deploy 的 SSH 认证）**已由用户修复并实测生效**；
-> 第 2/3/5/6 项已于 2026-10-09 修复（代码侧）；第 2 项的存量机器 chown 与第 4 项的 sshd 加固仍待执行。
+> **状态更新（2026-10-09 11:40 前后）**：第 1 项（CI Deploy 的 SSH 认证）**已由用户修复并实测生效**；
+> 第 2/3/5/6/7 项已于 2026-10-09 修复；第 2 项的存量机器 chown **已执行并实测**（见 §6.3）；第 4 项 sshd 加固与第 8 项 Caddyfile 同步仍待处理。
 
 | # | 项 | 状态 | 修法 |
 |---|---|---|---|
 | 1 | **GitHub Secret `ECS_SSH_KEY` 不对** → CI 自动部署走不通 | ✅ **已修（用户操作）+ 实测通过** | 见下方「§6.1 CI 部署恢复的实测证据」 |
-| 2 | **R12 FileLogger 写不进去**（uid 不匹配 + 宿主机 root 属主） | ✅ 代码已修 / ⏳ 存量机器待 chown | 代码：compose `user` 统一 10001 + Dockerfile 预建 `/app/logs` + 启动期 `ProbeLogDir` ERROR。存量机器仍需 `sudo chown -R 10001:10001 /opt/DecisionCourt/logs` + `compose up -d --force-recreate backend frontend`（[`OBSERVABILITY.md §8.3`](../OBSERVABILITY.md)） |
-| 3 | **R13 无 prompt 版本归因** | ✅ **已修（2026-10-09 收口）** | `llm_calls.prompt_version`（`semver@git_sha#内容哈希`）+ Recorder 每次现取 + git_sha 由 ldflags 注入（[`OBSERVABILITY.md §8.4`](../OBSERVABILITY.md)） |
+| 2 | **R12 FileLogger 写不进去**（uid 不匹配 + 宿主机 root 属主） | ✅ **已全修（代码 + 服务器）** | 代码：compose `user` 统一 10001 + Dockerfile 预建 `/app/logs` + 启动期 `ProbeLogDir`。服务器：`chown -R 10001:10001 /opt/DecisionCourt/logs` 已执行（见 §6.3） |
+| 3 | **R13 无 prompt 版本归因** | ✅ **已修并上线** | `llm_calls.prompt_version`（`semver@git_sha#内容哈希`）+ Recorder 每次现取 + git_sha 由 ldflags 注入（[`OBSERVABILITY.md §8.4`](../OBSERVABILITY.md)） |
 | 4 | sshd 仍允许口令登录 + root 直登，且 22 端口对全网开放（`lastb` 已有爆破记录） | ⏳ 待授权 | `PasswordAuthentication no` + `PermitRootLogin prohibit-password`；改前先确认密钥登录可用、保留已登录会话、`sshd -t` 校验后再 reload。**2026-10-09 云盾登录告警再次印证这条的紧迫性**（见 §6.2） |
-| 5 | prod compose 的 `version:` 属性已废弃（每次 compose 命令打 warning） | ✅ **已删（2026-10-09 收口）** | 删除该行（纯噪音） |
-| 6 | `prompts/base.yaml` 版本号（`semver`）需手工改 YAML 才变；`/prompts/version` 的 `git_sha` 为空 | ✅ **已修（2026-10-09 收口）** | `git_sha` 由 Dockerfile ldflags 注入；另加 `content_hash`（`base_rules` 正文 sha256 前 8 位）覆盖"热加载改了内容但 semver/git_sha 都不动"的场景。**semver 仍保持手工维护**（它是人读的版本标签 + A/B 身份标识，有意保留） |
+| 5 | prod compose 的 `version:` 属性已废弃（每次 compose 命令打 warning） | ✅ **已删** | 删除该行（纯噪音） |
+| 6 | `prompts/base.yaml` 版本号（`semver`）需手工改 YAML 才变；`/prompts/version` 的 `git_sha` 为空 | ✅ **已修** | `git_sha` 由 Dockerfile ldflags 注入；另加 `content_hash` 覆盖"热加载改了内容但 semver/git_sha 都不动"的场景。**semver 仍保持手工维护**（它是人读的版本标签 + A/B 身份标识，有意保留） |
+| 7 | **R17 `deploy.yml` 从不同步 `docker-compose.yml`** → compose 变更静默不生效 | ✅ **已修** | deploy job 补 `actions/checkout` + `appleboy/scp-action`（只同步 compose，不碰 `.env`），并把 `user:` 行打进 CI 日志（见 §3.2） |
+| 8 | **Caddyfile 仍靠人工 scp，且改了不会 reload** | ⏳ 待办（低优先） | 反代配置很少变；改了要 `scp` + `docker compose up -d --force-recreate caddy`。要彻底自动化就把它也加进 deploy 的 scp + 重建列表 |
 
 ### 6.1 CI 部署恢复的实测证据（2026-10-09 10:05–10:06）
 
@@ -328,3 +336,34 @@ docker compose exec -T backend sh -c 'touch /app/logs/.wtest'   # 目录能不�
 2. **做第 4 项的 sshd 加固**：关掉口令登录与 root 直登 —— 22 端口对全网开放且 `lastb` 已有爆破记录，
    这才是这次告警暴露出的真正暴露面。
 3. 在云盾控制台把 GitHub Actions 的网段加入"常用登录地"白名单，或直接对该告警标注为预期行为（治标）。
+
+### 6.3 R12 的服务器侧修复（2026-10-09，已执行并实测）
+
+**改了什么**：
+
+```bash
+sudo mkdir -p /opt/DecisionCourt/logs/backend /opt/DecisionCourt/logs/caddy
+sudo chown -R 10001:10001 /opt/DecisionCourt/logs
+```
+
+改前 `logs/`、`logs/backend`、`logs/caddy` 都是 `root:root 0755`；改后三者的属主均为 `10001:10001`。
+
+**当场验证（不靠推测）**——用一个 uid 10001 的临时容器挂同一目录写文件：
+
+```bash
+IMG=$(docker inspect dc_backend --format '{{.Config.Image}}')
+docker run --rm --user 10001:10001 -v /opt/DecisionCourt/logs/backend:/app/logs \
+  --entrypoint sh "$IMG" -c 'touch /app/logs/.wtest && echo WRITABLE_AS_10001 && rm -f /app/logs/.wtest'
+# → WRITABLE_AS_10001
+```
+
+**注意：光 chown 还不够，必须让容器以 uid 10001 运行** —— 这正是 **R17** 的坑：第一次部署时镜像更新了、
+但服务器上的 compose 还是旧的 `user: "1001:1001"`，容器仍是 uid 1001，于是 chown 成 10001 之后**依然写不进去**，
+反而由新加的启动期 probe 打出 ERROR 才暴露。补做完 compose 同步 + `--force-recreate` 后，启动日志变为：
+
+```
+{"level":"INFO","msg":"agent_gateway: file logger log dir writable","dir":"logs"}
+```
+
+**至此 R12 全链路闭合**：宿主机属主 ✅ → 容器 uid ✅ → 应用写入 ✅（有启动日志正向证据）。
+

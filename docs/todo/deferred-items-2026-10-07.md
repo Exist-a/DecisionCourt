@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。<br>**2026-10-09（第二次上线）追加 R7–R13**：**R7**（`next build` 被 ESLint 死变量阻断，R4/R5 残留）、**R8**（`test.yml` 缺 job key → 依赖审计从未执行）、**R9**（ACR 拒收 BuildKit attestation index）、**R10**（`prompts/base.yaml` 未进 runtime 镜像 → 线上永久降级）、**R11**（Prompt Lab 4 条 REST 路由从未接线 → 恒 404）**五项已修并上线**；**R12**（FileLogger 因 uid 不匹配 + 宿主机 root 属主而写不进去）、**R13**（无 prompt 版本归因）**两项已于同日修复**（2026-10-09 收口）——详见文末 R12 / R13 的「修复落地」小节；验证 R13 时又发现 **R15**（空 `systemPrompt` → 上游 422，Prompt Lab 的 LLM-as-judge 恒失败）**已修**，**R14**（无 session 的调用不进 `llm_calls`，属 D2-LLM-FK 设计取舍）与 **R16**（semver 不随内容变，属已决策语义）**未修，待决策** |
+| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。<br>**2026-10-09（第二次上线）追加 R7–R13**：**R7**（`next build` 被 ESLint 死变量阻断，R4/R5 残留）、**R8**（`test.yml` 缺 job key → 依赖审计从未执行）、**R9**（ACR 拒收 BuildKit attestation index）、**R10**（`prompts/base.yaml` 未进 runtime 镜像 → 线上永久降级）、**R11**（Prompt Lab 4 条 REST 路由从未接线 → 恒 404）**五项已修并上线**；**R12**（FileLogger 因 uid 不匹配 + 宿主机 root 属主而写不进去）、**R13**（无 prompt 版本归因）**两项已修复并上线**（commit `edf232e`）——详见文末 R12 / R13 的「修复落地」小节；修复验证期间又发现并解决 **R15**（空 `systemPrompt` → 上游 422，Prompt Lab 的 LLM-as-judge 恒失败）与 **R17**（`deploy.yml` 从不同步 `docker-compose.yml` → compose 变更静默不生效，R12 因此白修一个部署周期）；**R14**（无 session 的调用不进 `llm_calls`，属 D2-LLM-FK 设计取舍）与 **R16**（semver 不随内容变，属已决策语义）**未修，待决策** |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -1202,6 +1202,52 @@ payload={"kind":"empty_session","session_uuid":"","model":"deepseek-chat",...}
 ### R16（P3，待决策）`prompt_version` / `content_hash` 随热加载变化，但 `/prompts/version` 的 `semver` 仍不动（2026-10-09）
 
 不是缺陷，是**已决策的语义**，记录以免下次误判：`semver` 是人工维护的版本标签（也是 A/B 的身份标识），**有意**不随内容自动变；"内容变没变"由 `content_hash`（sha256 前 8 位）回答。若将来希望 semver 也自动跟随，需要考虑它与 A/B `version_a`/`version_b` 标识语义的冲突。
+
+### R17（P1）✅ 已修（2026-10-09）`deploy.yml` 从不同步 `docker-compose.yml` → compose 变更静默不生效，R12 因此白修一个部署周期
+
+**发现路径**：R12 修完 push 上线后，**新加的启动期 probe 立刻打出一条 ERROR**：
+
+```
+"msg":"agent_gateway: file logger log dir is NOT writable ... 
+ "error":"log dir \"logs\" is not writable: open logs/.writable-probe: permission denied"
+```
+
+即：我**已经在宿主机上把 `logs/` chown 给了 10001**（当场验证过 `WRITABLE_AS_10001`），新代码也确认上线了（`version=edf232e...`），但容器**仍然写不进去**。
+
+**根因**：`deploy.yml` 的 deploy job **既不 `actions/checkout` 也不上传 `docker-compose.yml`**，只是 SSH 进服务器对**那份陈旧副本**跑 `docker compose up -d --force-recreate`。所以：
+
+| 层 | 实际状态 |
+|---|---|
+| 镜像 | 新的（`edf232e`，含新代码）✅ |
+| 服务器上的 compose | **仍是 bootstrap 时人工 scp 的旧版**，`user: "1001:1001"` ❌ |
+| 容器实际 uid | `docker inspect → User=1001:1001`（新 compose 的 10001 从未生效） |
+| 宿主机 `logs/` | 已被 chown 成 `10001:10001` |
+| 结果 | uid 1001 对 10001 拥有的目录无写权限 → 仍然写不进去 |
+
+**为什么静默**：这是 AGENTS.md §6.2e 那条「**「开关是 on」≠「数据拿到了」**」的又一实例，只是换了一层 —— 这一次是「**镜像更新了 ≠ 编排配置也更新了**」。而且它天然自洽：没人去比对"服务器上的 compose 和仓库里的是不是同一份"的话，从 CI 日志（全绿）、容器状态（healthy）、端点（全 200）都看不出任何异常。
+
+**修法**（`deploy.yml`）：
+1. deploy job 补 `actions/checkout@v4`；
+2. 补一个 `appleboy/scp-action@v1.0.0` 步骤，把仓库的 `docker-compose.yml` 同步到 `/opt/DecisionCourt/`（**只同步 compose**；`.env` 不在仓库里，碰不到，§8 红线安全）；
+3. deploy 脚本里加一行 `grep -n 'user: "' docker-compose.yml`，把"服务器上实际生效的编排关键行"打进 CI 日志 —— 让"compose 到底更新了没有"变成**可观测**，而不是靠人比对。
+
+**验证**：`PyYAML` 解析确认 job/steps 结构正确（`checkout → scp → Deploy via SSH`）；实跑见下方上线记录。
+
+**顺带修正一处认知**：`docs/deployment/SECOND-LAUNCH-2026-10-09.md` §3.1 一直写着"compose 与 Caddyfile 与仓库同源，**改完要同步**（人工 scp）"—— 这条纪律本身没错，但它把一件**机器该做的事交给了人**，于是漏了。compose 现已自动化；**Caddyfile 仍未自动同步、且改了也不会 reload**（见该文档 §6 遗留项）。
+
+### 上线记录（2026-10-09，`edf232e`）
+
+| 项 | 结果 |
+|---|---|
+| 提交 | `edf232e`（R12 + R13 + R15，23 文件 +1000/−112） |
+| CI | `build` 推镜像成功（约 4 分钟）→ `deploy` 落地 |
+| 服务器编排 | 人工 scp 修正后的 `docker-compose.yml`（先备份到 `/tmp/docker-compose.yml.bak-20261009`），再 `up -d --force-recreate backend frontend` |
+| 容器 uid | `dc_backend User=10001:10001`、`dc_frontend User=10001:10001` ✅ |
+| R12 | 启动日志 `agent_gateway: file logger log dir writable` ✅（同步 compose 前是 ERROR） |
+| R13 | 启动日志 `promptlab loaded version=1.0.3-pr1@edf232e#4ba89d0c`；`GET /api/v1/prompts/version` → `git_sha=edf232e49…` + `content_hash=4ba89d0c` ✅ |
+| HTTPS | `/health` 200 · `/api/v1/health/llm` 200 · `/metrics` 200 · `/` 200（23436 B，**frontend 换 uid 后正常**）✅ |
+| 宿主机 | `logs/`、`logs/backend`、`logs/caddy` 属主改 `10001:10001`；实测 `docker run --user 10001:10001 -v .../logs/backend:/app/logs` 内 `touch` 成功 |
+
 
 
 
