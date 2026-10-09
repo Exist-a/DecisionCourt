@@ -248,7 +248,7 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 | **Agent / 用户本人** SSH 运维（§9.3 表格里的所有命令） | RSA `~/.ssh/id_rsa` | 本机 `~/.ssh/` | 一直用它，**不要改** |
 | **CI 自动部署**（GitHub Actions 的 Deploy job） | ed25519 专用密钥（指纹 `SHA256:TzanMH4hPwznSU1Sag75QDpLs5WjkFA0tX0zYBcDoAQ`） | 私钥 `C:\Users\LENVOV\ci-deploy-decisioncourt`（**仓库外，未入仓**）；公钥已追加进服务器 `authorized_keys` | 走 GitHub Secret `ECS_SSH_KEY` |
 
-- **为什么拆开**：此前 CI 与个人登录共用 `id_rsa`，而 GitHub runner 跑在 Azure、每次 IP 不同 → **每次部署都触发云盾"登录地非常用"告警**，且 CI 私钥泄露等于个人登录被攻破。背景与迁移步骤见 [`docs/deployment/SECOND-LAUNCH-2026-10-09.md`](docs/deployment/SECOND-LAUNCH-2026-10-09.md) §6.2.1。
+- **为什么拆开**：此前 CI 与个人登录共用 `id_rsa` → **CI 私钥泄露等于个人登录被攻破，且无法单独吊销 CI 那一把**。（另一件常被混为一谈的事：CI 部署仍会触发云盾"登录地非常用"告警 —— 那是**登录地**判据（runner 在 Azure），**换钥匙不会消除它**，要静默得在云盾侧加白名单。）背景与迁移步骤见 [`docs/deployment/SECOND-LAUNCH-2026-10-09.md`](docs/deployment/SECOND-LAUNCH-2026-10-09.md) §6.2.1。
 - ⏳ **待用户完成**：把上面那个私钥文件的内容贴进 GitHub Secret `ECS_SSH_KEY`（贴之前 CI 用旧 `id_rsa`，也正常工作）。
 - **红线**：这个私钥**不得**写入仓库任何文件、不得回显到对话/文档/工单。轮换方式 = 重新生成一对 + 公钥追加进 `authorized_keys` + 旧行删除，**不需要改代码或 CI 配置**。
 

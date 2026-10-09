@@ -431,20 +431,6 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     setSidebarTab(nextTab);
   };
 
-  const handleSendInput = () => {
-    if (!inputValue.trim()) return;
-    const content = inputValue.trim();
-    sendAction({
-      action: "submit_evidence",
-      content,
-      type: "fact",
-    });
-    // v0.10 (ADR 0020) fe.evidence_submitted:用户参与度指标。
-    // payload 不含 content (PII 守卫会拒绝),只含 char_count。
-    getAnalytics().trackEvidenceSubmitted("fact", content.length);
-    setInputValue("");
-  };
-
   const handleSubmitEvidence = (content: string, type: EvidenceType) => {
     sendAction({ action: "submit_evidence", content, type });
     // v2.13: 乐观插入一条「排队中」占位 —— 发言期间提交会被 session 锁排到本轮
@@ -455,6 +441,16 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     ]);
     // v0.10 (ADR 0020) fe.evidence_submitted:同上,只记录类型 + 字符数。
     getAnalytics().trackEvidenceSubmitted(type, content.length);
+  };
+
+  // v2.13 收尾：底部输入栏提交的证据同样要乐观插入「排队中」占位。
+  // 此前这里自己发一份 submit_evidence（漏了占位），只有证据板表单走
+  // handleSubmitEvidence → 底部提交看起来像"点了没反应"。两条路径收敛到同一个
+  // 函数，避免以后再次各自漂移。
+  const handleSendInput = () => {
+    if (!inputValue.trim()) return;
+    handleSubmitEvidence(inputValue.trim(), "fact");
+    setInputValue("");
   };
 
   const handleAnswerQuestion = () => {

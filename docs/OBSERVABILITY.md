@@ -374,6 +374,46 @@ curl -X POST "$B/prompts/eval" -b "dc_session=$SESS; XSRF-TOKEN=$RAW" -H "X-XSRF
 
 不这么做恒 `CSRF_TOKEN_MISMATCH`（连试 4 次才定位）。浏览器端天然正确 —— `readCookie` 走 `decodeURIComponent`。
 
+### 8.6 一次真实庭审的指标快照（2026-10-09 生产，可当基线）
+
+> 用户在 `https://decisioncourt.cn` 上跑了一场完整 quick 庭审，事后我**只用 HTTPS** 拉了一次 `/metrics` 看它记录了什么。
+> 留作基线：以后再有"感觉哪里没记上"，先比这张表。
+> **注意 `/metrics` 是进程内存态，容器一重启就归零**（所以快照要看"同一容器生命周期内"的数据）。
+
+| 类别 | 观测到的值 | 解读 |
+|---|---|---|
+| 业务动作 | `POST /courtrooms` ×1、`POST /courtrooms/:uuid/start` ×1 | 立案 + 开庭各一次 |
+| 前端埋点 | `POST /courtrooms/:uuid/events` ×**12，全部 200** | ✅ 埋点写入链路正常（这正是 2026-09-14→10-08 静默丢了 3 周的那条链路，R2 修好后已连续可用） |
+| WebSocket | `/ws/courtrooms/:uuid` ×1，持续 **183.9 s** | 一次完整庭审的时长量级合理 |
+| 状态机 | `idle→opening→cross_exam→cross_exam×2→closing→deliberation→verdict`（7 次 transition） | ✅ 完整走到判决，无卡死 |
+| 判决 | `judge.final_decision`=1、`verdict.ready`=1、`verdict_evidence_accuracy`=**1** | 判决生成，证据引用准确率 100% |
+| 质证轮次 | `span{RunCrossExamRound,ok}` ×3，共 96.0 s | 打了 3 轮质证 |
+| LLM 调用 | `llm_call_total`：prosecutor 14、defender 15、judge 4、clerk 7（合计 ≈40） | 各 Agent 都在调；流式 5+5 |
+| token | input **132,473** / output 6,142 / 流式估算 2,555 | 与 D17 记录的 89.8k 同量级（本轮多了 3 次 round_summary 等） |
+| 幻觉守卫 | `speak_hallucination_total{evidence_ref_empty_with_stats}` = **1** | ✅ D24 的度量在工作（1 次发言幻觉被抓） |
+| 缓存回收 | `llm_cache_miss`=30、`put`=30、**`evict{reason=session}`=30**、`llm_cache_size`=**0** | ✅ D7 的会话终态回收在工作（判决后清空） |
+| 并发槽 | `global_concurrency_current`=**0**、`max`=5 | ✅ D20 的 gauge 判决后回落正常（修复前会停在 1） |
+| A2A / 信念 | `agent.speak`=10、`agent.speak_chunk`=**2079**、`belief.diff`=12、`belief.updated`=24、`agent.cot_step`=18 | 流式、信念引擎、ReAct 都在动 |
+
+**本次**没**在 `/metrics` 里体现、但属于正常**的项（避免下次误判为"丢了"）：
+
+- `POST /api/v1/prompts/eval` 的 histogram 不在表里 —— 容器在本次部署时重启过，counter 归零；
+  我先前的 eval 调用发生在重启之前。**不是缺陷**。
+- `llm_call_total` 的 `phase` label 全为空 —— phase 维度确实没填（小瑕疵，不影响归因，`agent`/`task` 都有值）。
+
+**本快照回答不了的（`/metrics` 层面看不到，必须登机器）**：
+
+| 想看什么 | 去哪看 | 为什么 `/metrics` 没有 |
+|---|---|---|
+| 会话预算烧了多少（`budget_used / budget_total`） | FileLogger JSON 的 `budget_used` 字段 | 没有对应的 gauge/counter 埋点 —— **想在图上看只能加指标** |
+| 每次调用的 prompt 版本（`prompt_version`） | `llm_calls` 表 / FileLogger JSON | 是行级字段，不是聚合指标 |
+| 「喂进去什么 / 出来什么」（`system_prompt` / `input_messages` / `output_content`） | `logs/backend/agent_gateway_<日期>.log` 或 `GET /courtrooms/:uuid/traces/*` | 落文件，不进内存指标 |
+| 前端埋点的明细（哪 12 条、`event_type` 是什么） | `decision_events` 表 | 指标只按 HTTP 路径计数 |
+
+**结论**：这场庭审**该记的都在记**（业务动作 / 埋点 / LLM 调用 / token / 幻觉 / 回收 / 并发全部有），
+没有任何一类"静默丢失"。唯一需要留意的两处：**预算用量没有指标**（要看得登机器翻文件）、
+**`phase` label 未填**。
+
 ---
 
 ## 9. 不在本文档范围
