@@ -163,10 +163,27 @@ docker manifest inspect "$REG/decision-court/decision-court-backend:$SHA" >/dev/
 ### 3.3 验收 checklist（每次发版后）
 
 1. 四个端点：`/health` · `/api/v1/health/llm` · `/metrics` · `/`
-2. 启动日志三行（§1.2 表最后一行）—— **这是判断"跑的是不是当前代码"最快的方法**：`version=` 必须等于镜像 tag；`promptlab loaded` 出现说明 YAML 进了镜像
+2. 启动日志三行（§1.2 表最后一行）—— 判断"跑的是不是当前代码"最直接的方法：`version=` 必须等于镜像 tag；`promptlab loaded` 出现说明 YAML 进了镜像
 3. 业务冒烟：`auth/anon`（带 `user_id`）→ `GET /courtrooms`
 4. 容器 5 个状态
 5. 埋点写读：`POST` + `GET /courtrooms/:uuid/events`（手工 curl 注意 CSRF 编码坑，见 §4.9）
+
+**⭐ 只用 HTTPS 就能确认"跑的是哪个 commit"**（不需要 SSH —— 端口 22 被限流时尤其有用）。
+R13 注入的 `git_sha` 就是构建时的 commit：
+
+```bash
+# 1) 先拿 anon 会话（cookie 落到 jar）
+curl -s -c jar.txt -X POST https://decisioncourt.cn/api/v1/auth/anon \
+     -H 'Content-Type: application/json' -d "{\"user_id\":\"$(uuidgen)\"}"
+# 2) 读 git_sha —— 它必须等于本次部署的 commit SHA
+curl -s -b jar.txt https://decisioncourt.cn/api/v1/prompts/version
+# → {"data":{"semver":"1.0.3-pr1","git_sha":"d2af1ca3b776…","content_hash":"4ba89d0c",...}}
+```
+
+2026-10-09 实用过一次：SSH 因密集重连被限流（§AGENTS.md §9.6），正是靠这个方法确认了
+`d2af1ca` 已上线。**`git_sha` 是 R13 顺带带来的部署验证通道** —— 建议以后发版优先用它，
+把 SSH 留给必须登机器才能看的东西（容器状态、日志文件、DB）。
+
 
 ---
 
