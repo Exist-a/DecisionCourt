@@ -453,6 +453,7 @@ docker run --rm --user 10001:10001 -v /opt/DecisionCourt/logs/backend:/app/logs 
 | Caddyfile 被同步 | 服务器上 `deploy/caddy/Caddyfile` 的 mtime 更新为部署时刻（13:09:24） |
 | 哈希戳写入 | `deploy/caddy/.caddyfile.sha256` = `672827f8…`（此前不存在 → 首次运行必然走重建分支） |
 | **caddy 真的被重建** | `dc_caddy` 的 `StartedAt` = `2026-10-09T05:09:59Z`（= 13:09:59 +08，正是本次部署） |
+| **幂等分支也实测过** | 紧接着的下一次部署（`acb87f7`，内容未变）：scp 仍重写了 Caddyfile（mtime 变 14:03:03），但**内容哈希未变 → caddy 未被重建**（`StartedAt` 仍是 `05:09:59Z`）。两个分支都验证过，不是只验了"会重建"那一边 |
 | **重建后 HTTPS 仍通**（风险最高的一步） | `/health` `/api/v1/health/llm` `/metrics` `/` 全 **200**；TLS 证书仍为 `CN=decisioncourt.cn`，有效期 2026-10-08 → 2027-01-06 |
 | R14 迁移生效（生产库） | `llm_calls.session_id` 的 `is_nullable` = **YES**（此前 `NO`） |
 | R14 落库（生产） | 打一次 `POST /prompts/eval` → `llm_calls` 出现 `task_type=prompt_eval` / `agent_type=promptlab` / **`session_id` 为空** / `request_id` 非空 / `prompt_version=1.0.3-pr1@82d9b93#4ba89d0c` / `status=success` |
