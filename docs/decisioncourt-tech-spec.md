@@ -539,7 +539,7 @@ Agent Gateway 需要输出可量化的成本优化数据：
 
 | 指标 | 定义 | 示例目标 |
 |---|---|---|
-| **Token 节省率** | （未优化 Token - 实际 Token）/ 未优化 Token | ≥ 30%⚠️ **尚无生产数据**：现有 70.3%（Legacy）/ 34.1%（Smart，2026-10-09 复测）均来自[合成 fixture 微基准](../backend/internal/agent_gateway/compression_eval_test.go)（假庭审 + 人工灌预算），真实庭审压缩从未触发。**该指标目前无法验收**，达成与否待真实触发后测 |
+| **Token 节省率** | （未优化 Token - 实际 Token）/ 未优化 Token | ❌ **目标 ≥ 30% 在真实输入下不成立**：2026-10-11 真实庭审实测压缩被调用 7 次但**节省 0.0%**（设计使然——压缩器只处理非 system 消息，而本项目 token 大头在单条 system prompt；见 [ADR 0006 状态更新](adr/0006-smart-prompt-compression.md) + [deferred-items-2026-10-09 §M8](todo/deferred-items-2026-10-09.md)）。此前 70.3%（Legacy）/ 34.1%（Smart）均来自[合成 fixture 微基准](../backend/internal/agent_gateway/compression_eval_test.go)，**不能当产品指标** |
 | **模型降级率** | 简单任务使用轻量模型的比例 | ≥ 60% |
 | **缓存命中率** | 命中缓存的请求占比 | ≥ 20% |
 | **平均单次庭审成本** | 完整庭审的 LLM 调用成本 | ≤ 0.5 元 |

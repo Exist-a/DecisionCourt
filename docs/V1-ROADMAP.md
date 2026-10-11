@@ -93,7 +93,7 @@
 - (本 commit): 文档同步
 详情见 [todo/bugfix-log-2026-08-23.md §F8-F12](./todo/bugfix-log-2026-08-23.md)。
 
-**当前阻塞**：✅ 无阻塞项。Round 1/2 共 12 个 bug 全修；**v2.11（D7–D12+D14）/ v2.12（D15–D19 + D13）/ v2.13（D20–D26）均已实现，docker 与浏览器双路径实测通过**。其余 deferred：D1 安全审计 P1-P3（用户授权启动）+ M5 v3.0 端侧 TTS / v2.0 REDESIGN（用户 2026-08-23 确认不启动）。D2 + D3 已于 v2.6 收尾（ADR 0040）。**2026-10-11 收口批次**：第 1–3 轮成果 + Module A（发言步全量带）+ belief UTF-8 修复 + Module B（投影层接线 M1/M3/M4）+ Module C（主张级接地检查）+ Module D（Ops 拨测）**均已本地提交**（未 push）。**git 状态**：本轮按用户 2026-10-11 决定**只本地提交、不 push**（push main 会自动触发 Test→Deploy 上线）；部署前置与遗留见 `docs/deployment/SECOND-LAUNCH-2026-10-09.md` 文末。**待用户决策**：M8（会话预算默认值是否上调 / 压缩省 0% 是否修）。
+**当前阻塞**：✅ 无阻塞项。Round 1/2 共 12 个 bug 全修；**v2.11（D7–D12+D14）/ v2.12（D15–D19 + D13）/ v2.13（D20–D26）均已实现，docker 与浏览器双路径实测通过**。其余 deferred：D1 安全审计 P1-P3（用户授权启动）+ M5 v3.0 端侧 TTS / v2.0 REDESIGN（用户 2026-08-23 确认不启动）。D2 + D3 已于 v2.6 收尾（ADR 0040）。**2026-10-11 收口批次**：第 1–3 轮成果 + Module A（发言步全量带）+ belief UTF-8 修复 + Module B（投影层接线 M1/M3/M4）+ Module C（主张级接地检查）+ Module D（Ops 拨测）**均已本地提交**（未 push）。**git 状态**：本轮按用户 2026-10-11 决定**只本地提交、不 push**（push main 会自动触发 Test→Deploy 上线）；部署前置与遗留见 `docs/deployment/SECOND-LAUNCH-2026-10-09.md` 文末。**M8 已处置**：预算默认 200k→**300k**；压缩本轮不修（system 压缩最低优先级，宣称已改正）；P2 可见面已出[方案文档](P2-VISIBILITY-PROPOSAL.md)待评审。阶段落地记录见 [`docs/STAGE-LANDING-2026-10-11.md`](STAGE-LANDING-2026-10-11.md)。
 
 ---
 

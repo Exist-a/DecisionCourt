@@ -161,11 +161,17 @@ Agent 需要熟悉以下核心文档：
   部署前置（服务器 `.env` 补 `GF_ADMIN_PASSWORD` / `OPS_METRICS_TOKEN`；`private_memories`
   表必须**先部署新代码再 DROP**）见 [`docs/deployment/SECOND-LAUNCH-2026-10-09.md`](docs/deployment/SECOND-LAUNCH-2026-10-09.md) 文末。
 - **本轮完成**：发言步「全量带」（Module A）、`belief.truncateReason` UTF-8 修复、
-  投影层接线 M1/M3/M4（Module B）、主张级接地检查 + 度量（Module C）、Ops 拨测脚本（Module D）。
-- 🔴 **本轮新发现（待用户决策）**：`docs/todo/deferred-items-2026-10-09.md` **§M8** ——
-  standard 3 轮庭审实测 **209,018 token > 200k 默认预算** → 判决被拒走 fallback；
-  且 Token 压缩在真实庭审里被调用 **7 次但节省 0.0%**（PRD 宣称的「≥30%」无生产依据）。
+  投影层接线 M1/M3/M4（Module B）、主张级接地检查 + 度量（Module C）、Ops 拨测脚本（Module D）、
+  **预算默认值 200k→300k（M8-1）**。阶段落地记录见
+  [`docs/STAGE-LANDING-2026-10-11.md`](docs/STAGE-LANDING-2026-10-11.md)（模块清单 / 验证证据 / 决策 / 遗留）。
+- 🔴 **本轮新发现与处置**（`docs/todo/deferred-items-2026-10-09.md` **§M8**）：
+  standard 3 轮庭审实测 **209,018 token > 旧 200k 预算** → 判决走 fallback（**已上调默认到 300k**）；
+  且 Token 压缩在真实庭审里被调用 **7 次但节省 0.0%** —— **确认是设计问题**（压缩器只处理非 system
+  消息，而 token 大头在单条 system prompt），用户定 **"system prompt 压缩放最低优先级"**，本轮**不修**，
+  PRD/tech-spec/ADR 0006 的「≥30%」宣称**已改正为"真实 ≈0%"**。
   **回答"压缩能省多少 token""预算够不够"之前先读 §M8，不要读代码猜。**
+- **P2 可见面**（是否让双方看到对方的**推理链**）已出方案文档
+  [`docs/P2-VISIBILITY-PROPOSAL.md`](docs/P2-VISIBILITY-PROPOSAL.md)，**待用户评审、未实施**。
 
 ## 7. 禁止事项
 

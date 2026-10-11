@@ -267,5 +267,10 @@ Agent Gateway 的预算能力经历了 v0.5（累计 token）→ v2（多维 + �
 
 standard 3 轮 + 1 条证据的庭审实测 **209,018 token > 默认 200,000** → `reject-when-exhausted`
 拦下 GenerateVerdict，判决降级为 fallback；**既有同类庭审已到 197,788（98.9%）**，即默认预算早已贴线。
-其中 `react_think` 占 77%，流式发言仅占 5.6%。是否上调默认值 / 按模式分档 → 待用户决策。
-完整数据与根因（含"压缩真实省 0%"）见 [deferred-items-2026-10-09 §M8](todo/deferred-items-2026-10-09.md)。
+其中 `react_think` 占 77%，流式发言仅占 5.6%。完整数据与根因（含"压缩真实省 0%"）见
+[deferred-items-2026-10-09 §M8](todo/deferred-items-2026-10-09.md)。
+
+**✅ 已处置（2026-10-11）**：默认值 **200000 → 300000**（`config.DefaultBudgetPerSession` +
+`agent_gateway.DefaultBudgetPerSession` 两处常量 + `.env.example` + 相关测试）。⚠️ 服务器 `.env`
+若显式写了 `AGENT_GATEWAY_BUDGET_PER_SESSION`，**默认值变更不会覆盖它**，上线时需手工同步
+（`.env` 属敏感文件，Agent 不代改，AGENTS.md §8）。
