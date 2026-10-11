@@ -33,27 +33,23 @@
 
 ## 2. 实测撞出的两个前提反转（已登记 §M8）
 
-### 2.1 压缩在真实庭审里省 0.0%（**确认是设计问题**）
+### 2.1 压缩不是"永远 0%"（**⚠️ 本节已于当日复核更正**）
 
-**实测**：一场 standard 3 轮庭审里压缩被真正调用 **7 次**，每次 `before_count == after_count`
-且 `before_length == after_length`（例：`msgs 5->5 chars 22815->22815`）。
+**初版结论（取样不全，已废）**：基于 7 条压缩记录得出"真实庭审省 0.0%"。
 
-**根因（读代码确认）**：
-1. `CompressScored`（`agent_gateway/prompt_compressor.go:220`）**只对非 system 消息**做
-   评分/原子组/贪心打包；**system 消息始终强制保留**。
-2. 本项目 `react_runner.buildInitialMessages` 把 baseRules + 工具说明 + 证据 + 庭审历史
-   **全部塞进单条 system 消息**，整个 messages 数组常常"只有这一条 system + 少量 ReAct 尾巴"。
-3. 于是可压缩面极小 → 真实输入上 ≈0%。
-4. system 被豁免**是 v2.10 的正确修复**：早先 system 共用 3000 字节上限，实测
-   `12304→1500`（销毁 87% 指令），模型因此编造证据被反幻觉打回（ADR 0015/0021）。
-   之后给 system 单独设 24000 字节宽松上限（`compressMaxSystemMsgLen`，仅对长期庭审兜底）。
+**复核后的正确结论**：完整日志有 **12** 条压缩记录 —— 前 7 条（session `1e241ab4`）**0.0%**，
+后 5 条（session `78e68370`）**17.7–22.1%**。且省幅**不是四步流水线挣来的，而是 system 消息的
+兜底上限（`compressMaxSystemMsgLen=24000 → 20000`）被触发**（算术可证：`after ≈ 20000 + 保留的非
+system 尾巴`）。流水线只在非 system 列表 ≥ ~9 条时才开始丢消息。
 
-**结论**：用户 2026-10-11 的判断——"**系统提示词的压缩应放最低优先级**"——与代码现状一致，
-且是**正确的安全选择**（压 system 会破坏指令/输出契约）。代价是：**压缩器在本项目的 prompt
-架构下结构性无法省 token**，PRD/tech-spec 宣称的「≥30%」不成立（fixture 值 34.1% 无生产对应物）。
+**机制（不变）**：`CompressScored` 只对非 system 消息评分/丢弃；而本项目把 baseRules + 证据 +
+庭审历史全塞进**单条 system 消息** → token 大头不在可压面内。system 被豁免**是对的**（v2.10 实测：
+压 system → 销毁指令 → 模型编造证据）。用户 2026-10-11 定："**system prompt 压缩放最低优先级**"。
 
-**要真降 token 的正确位置不是压缩器，而是"素材组装层"**（庭审历史只带最近 N 轮、
-证据按需检索），属新功能、另立项；压缩器维持"低优先级、只对对话尾巴生效"的定位。
+**逐条数据 + 算术证明 + 重构方案（未实施）**：见
+[`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](COMPRESSION-REDESIGN-PROPOSAL.md)。该审计还额外查出
+**5 项异常**（限流疑似引发重试自食其果 / 兜底截断砍掉**最新**庭审历史 / quick 庭审波动 2.6 倍 /
+预算拒绝不进文件日志 / 兜底摘要从未触发）。
 
 ### 2.2 默认 200k 预算对 standard 庭审不够 → 判决 fallback
 
@@ -130,5 +126,6 @@
 - [`docs/AGENT-GROUNDING-ANALYSIS.md`](AGENT-GROUNDING-ANALYSIS.md) —— 接地三层诊断 + §8/§9 实施记录
 - [`docs/AGENT-GATEWAY-BUDGET-PLAN.md`](AGENT-GATEWAY-BUDGET-PLAN.md) —— 预算维度计划（Phase 3 用户决定不做）
 - [`docs/OPS-DASHBOARD-PLAN.md`](OPS-DASHBOARD-PLAN.md) —— 可观测呈现层 + 拨测
-- [`docs/adr/0006-smart-prompt-compression.md`](adr/0006-smart-prompt-compression.md) —— 压缩策略（本批补"真实输入省 0%"状态更新）
+- [`docs/adr/0006-smart-prompt-compression.md`](adr/0006-smart-prompt-compression.md) —— 压缩策略（本批补实测状态更新：真实省幅 0%～22%）
+- [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](COMPRESSION-REDESIGN-PROPOSAL.md) —— 压缩重构方案 + 数据审计（**未实施**）
 - [`AGENTS.md`](../AGENTS.md) §6.2f —— 给后续 Agent 的批次纪要（含"push=上线"耦合）

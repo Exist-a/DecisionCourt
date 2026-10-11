@@ -131,9 +131,9 @@ right-sized 四阶段：P0 应用内只读 `/ops` 面板（零新基建，复用
 
 ### 5.9 阶段落地记录：2026-10-11 收口批次
 
-把上述进行中文档里登记的未完成项逐模块落地（发言步「全量带」/ 投影层接线 M1·M3·M4 / 主张级接地检查 + 度量 / Ops 拨测 / 预算默认 200k→300k），并修复了一个实测撞出的真 bug（`belief.truncateReason` 按字节截中文 → `belief_diffs` 整行被 Postgres 拒 → 静默丢数据）。同时**实测推翻了两个长期前提**：压缩"省 30%"（真实 ≈0%，见 §M8）与预算"够用"（209k > 200k）。
+把上述进行中文档里登记的未完成项逐模块落地（发言步「全量带」/ 投影层接线 M1·M3·M4 / 主张级接地检查 + 度量 / Ops 拨测 / 预算默认 200k→300k），并修复了一个实测撞出的真 bug（`belief.truncateReason` 按字节截中文 → `belief_diffs` 整行被 Postgres 拒 → 静默丢数据）。同时**实测推翻了两个长期前提**：压缩"省 30%"（真实 **0%～22%**，且省幅主要来自 system 兜底上限）与预算"够用"（209k > 200k）。
 
-落地记录：[`STAGE-LANDING-2026-10-11.md`](./STAGE-LANDING-2026-10-11.md) · 缺口账：[`todo/deferred-items-2026-10-09.md`](./todo/deferred-items-2026-10-09.md)（含 **§M8**）· P2 可见面方案（待评审）：[`P2-VISIBILITY-PROPOSAL.md`](./P2-VISIBILITY-PROPOSAL.md)
+落地记录：[`STAGE-LANDING-2026-10-11.md`](./STAGE-LANDING-2026-10-11.md) · 缺口账：[`todo/deferred-items-2026-10-09.md`](./todo/deferred-items-2026-10-09.md)（含 **§M8**）· 压缩重构方案 + 数据审计（未实施）：[`COMPRESSION-REDESIGN-PROPOSAL.md`](./COMPRESSION-REDESIGN-PROPOSAL.md) · P2 可见面方案（待评审）：[`P2-VISIBILITY-PROPOSAL.md`](./P2-VISIBILITY-PROPOSAL.md)
 
 ---
 

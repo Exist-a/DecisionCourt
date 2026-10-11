@@ -4,7 +4,7 @@
 |---|---|
 | **文档编号** | （计划，非 ADR；落地后按需转为 ADR） |
 | **标题** | Agent Gateway Token 预算计算：现状盘点 + 分阶段完善计划 |
-| **状态** | ✅ **Phase 0 / 1 / 2 已落地（2026-10-10 第 3 轮）**：预算水位指标 + 成本维度接线（定价配置化）+ 流式 usage 取自末帧真实值。**Phase 3（预留式预算）用户 2026-10-11 决定不做**（保持事后记账，避免过拒）；Phase 4（多维度/持久化）触发式未做。实施记录见文末。<br>🔴 **2026-10-11 实测新增**：standard 3 轮庭审实测 **209,018 token > 200k 预算** → 判决被拒走 fallback；压缩在同场被调用 7 次但**省 0%**。详见 [deferred-items-2026-10-09 §M8](todo/deferred-items-2026-10-09.md)。 |
+| **状态** | ✅ **Phase 0 / 1 / 2 已落地（2026-10-10 第 3 轮）**：预算水位指标 + 成本维度接线（定价配置化）+ 流式 usage 取自末帧真实值。**Phase 3（预留式预算）用户 2026-10-11 决定不做**（保持事后记账，避免过拒）；Phase 4（多维度/持久化）触发式未做。实施记录见文末。<br>🔴 **2026-10-11 实测新增**：standard 3 轮庭审实测 **209,018 token > 200k 预算** → 判决被拒走 fallback（默认已上调 300k）；压缩在同日真实庭审里省幅 **0%～22%**（省幅主要来自 system 兜底上限）。详见 [deferred-items-2026-10-09 §M8](todo/deferred-items-2026-10-09.md) 与 [COMPRESSION-REDESIGN-PROPOSAL](COMPRESSION-REDESIGN-PROPOSAL.md)。 |
 | **作者** | Exist + ZCode Agent |
 | **拟定日期** | 2026-10-09 |
 | **触发** | 2026-10-09 代码审查（对照代码而非文档）发现"成本维度预留但未接线"等 5 处缺口 |
@@ -267,8 +267,9 @@ Agent Gateway 的预算能力经历了 v0.5（累计 token）→ v2（多维 + �
 
 standard 3 轮 + 1 条证据的庭审实测 **209,018 token > 默认 200,000** → `reject-when-exhausted`
 拦下 GenerateVerdict，判决降级为 fallback；**既有同类庭审已到 197,788（98.9%）**，即默认预算早已贴线。
-其中 `react_think` 占 77%，流式发言仅占 5.6%。完整数据与根因（含"压缩真实省 0%"）见
-[deferred-items-2026-10-09 §M8](todo/deferred-items-2026-10-09.md)。
+其中 `react_think` 占 77%，流式发言仅占 5.6%。完整数据与根因（含压缩省幅 0%～22% 的复核）见
+[deferred-items-2026-10-09 §M8](todo/deferred-items-2026-10-09.md) 与
+[COMPRESSION-REDESIGN-PROPOSAL](COMPRESSION-REDESIGN-PROPOSAL.md)。
 
 **✅ 已处置（2026-10-11）**：默认值 **200000 → 300000**（`config.DefaultBudgetPerSession` +
 `agent_gateway.DefaultBudgetPerSession` 两处常量 + `.env.example` + 相关测试）。⚠️ 服务器 `.env`

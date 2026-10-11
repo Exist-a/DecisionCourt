@@ -937,7 +937,7 @@ Agent Gateway 是位于 Agent Orchestration 与 LLM Provider 之间的中间层�
 >
 > **基线 benchmark（2026-07-01 初测 / 2026-10-09 复测 / 2026-10-11 真实实测）**：⚠️ 下表数字是**合成 fixture 微基准，不是产品指标** —— 输入是测试里手写的 12 轮假庭审（`compression_eval_test.go` 的 `fixedTrialTranscript()`，重复填充文本 + fake LLM + 人工灌预算到 throttle 档）。仅供**策略横向对比**：v0.5+ Legacy keep-5 保留 6 条、省 **70.3%**；v2 Smart 保留 **13**/19 条、省 **34.1%**（2026-10-09 复测；初测 14 条 / 31.4%）。
 >
-> 🔴 **2026-10-11 真实庭审实测（结论反转）**：压缩在真实输入上被调用 **7 次但节省 0.0%**（`msgs 5->5 chars 22815->22815`）。**根因是设计问题**：压缩器只处理非 system 消息，而本项目把 baseRules + 证据 + 庭审历史全塞进**单条 system prompt**，system 又被强制保留（且 v2.10 实测过"压 system → 销毁指令 → 模型编造证据"，故豁免是对的）。**所以「Token 节省率 ≥ 30%」这一指标在真实输入下不成立**，本 PRD 该指标条目应视为**不可验收**/待重新定义。完整数据见 [ADR 0006 状态更新](adr/0006-smart-prompt-compression.md) 与 [deferred-items-2026-10-09 §M8](todo/deferred-items-2026-10-09.md)。
+> 🟡 **2026-10-11 真实庭审实测（含同日复核更正）**：压缩在真实输入上被调用 **12 次**，省幅 **0%～22%** —— 前 7 次（system < 24,000 字节）为 **0.0%**，后 5 次（system 超 24,000）为 **17.7–22.1%**，且**省幅主要来自 system 消息的兜底上限（24000→20000）而非四步流水线**。根因（设计问题）：压缩器只处理非 system 消息，而本项目把 baseRules + 证据 + 庭审历史全塞进**单条 system prompt**；system 又被强制保留（v2.10 实测过"压 system → 销毁指令 → 模型编造证据"，故豁免是对的）。**所以「Token 节省率 ≥ 30%」在真实输入下不成立（0%～22%）**，该指标条目应视为**不可验收**/待重新定义。逐条数据见 [COMPRESSION-REDESIGN-PROPOSAL](COMPRESSION-REDESIGN-PROPOSAL.md) 与 [ADR 0006 状态更新](adr/0006-smart-prompt-compression.md)。
 
 #### 9.4.0 v0.5+ 已实装
 
@@ -972,7 +972,7 @@ Agent Gateway 需要输出可量化的成本优化数据：
 
 | 指标 | 定义 | 示例目标 |
 |---|---|---|
-| **Token 节省率** | （未优化 Token - 实际 Token）/ 未优化 Token | ❌ **目标 ≥ 30% 不成立**（2026-10-11 真实实测 ≈ 0.0%，见上方 benchmark 说明与 §M8）；该指标待重新定义 |
+| **Token 节省率** | （未优化 Token - 实际 Token）/ 未优化 Token | ❌ **目标 ≥ 30% 不成立**（2026-10-11 真实实测 **0%～22%**，且省幅主要来自 system 兜底上限；见上方 benchmark 说明与 [COMPRESSION-REDESIGN-PROPOSAL](COMPRESSION-REDESIGN-PROPOSAL.md)）；该指标待重新定义 |
 | **模型降级率** | 简单任务使用轻量模型的比例 | ≥ 60% |
 | **缓存命中率** | 命中缓存的请求占比 | ≥ 20% |
 | **平均单次庭审成本** | 完整庭审的 LLM 调用成本 | ≤ 0.5 元 |

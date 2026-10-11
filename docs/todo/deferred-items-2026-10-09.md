@@ -4,7 +4,7 @@
 |---|---|
 | **生成日期** | 2026-10-09 |
 | **状态** | **2026-10-11 收口更新**：✅ **M1 已接线**（用户拍板方案①，投影产物 WorkingMemory 现已真正被提示词消费）／ ✅ **M2 已收口**（legacy `private_memories` 表删除，Expand-Contract 走完）／ ✅ **M3 已真填充**（`LLMContext.Beliefs` 现由信念引擎产物填充并被提示词消费）／ ✅ **M4 已删**（两个孤儿投影 API 删除）／ 🟡 **M5 记录性复核项**（随 M1 联动评估：新区块只读投影后的 WorkingMemory，未破隔离）／ ✅ **M6 已更正 + 已加固**（数字改正 + eval floor 护栏）／ 🔴 **M7 已采到真实数据，但结论反转**（见下方 M6/M7 状态更新与新增 **M8**） |
-| **2026-10-11 新增** | **M8：压缩在真实庭审里省 0% + 会话预算被顶穿** —— 见 §M8。**已处置**：预算默认 200k→**300k**（已落地）；压缩**本轮不修**（用户定"system 压缩最低优先级"，定性为结构性无效，宣称已改正）；P2 已出方案文档。 |
+| **2026-10-11 新增** | **M8：压缩在真实庭审里省 0% + 会话预算被顶穿** —— 见 §M8。**已处置**：预算默认 200k→**300k**（已落地）；压缩**本轮不修**（用户定"system 压缩最低优先级"），**⚠️ 结论已于 2026-10-11 复核更正**（"永远 0%" 取样不全 → 实为 **0%～22%**，且省幅主要来自 system 兜底上限；见 §M8 与 [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](../COMPRESSION-REDESIGN-PROPOSAL.md)）；P2 已出方案文档。 |
 | **触发** | 以面试题「设计分层 Agent 记忆系统，基于投影在生成对方提示词前剥离私有字段，按可见性维护各 Agent 私有策略池，从协议层硬保证控辩双方互不可见对方私有推理链」为题，**逐条对照真实代码**（不采信文档，因文档可能漂移）核对结论 |
 | **关联 PR** | 无（本批为新增发现，M1 起编号） |
 | **核对基线** | `main` @ `1515bbb`（v2.13 + 第二次上线文档收尾之后） |
@@ -257,8 +257,7 @@ ProjectPayloadForOpponent` 一条，消除"4 个入口有多个在跑"的误读�
 
 ## M6（P2）压缩节省率基线数字漂移 + 无护栏 + 引用源缺失
 
-> **状态更新（2026-10-11，真实庭审实测）**：本项的"问题 0（生产从未触发压缩）"已被实测解决 —— 一场 3 轮标准庭审里压缩**真的触发了 7 次**，但每次 **节省 = 0.0%**（逐条见 §M8）。
-> 这比"从未触发"更严重：**压缩在真实输入上基本不省 token**（fixture 值 34.1% 无生产对应物）。已登记为 §M8（P1）。
+> **状态更新（2026-10-11，真实庭审实测 + 同日复核更正）**：本项的"问题 0（生产从未触发压缩）"已被实测解决 —— 压缩**真的触发了**。**⚠️ 但"省 0%"的初版结论取样不全，已更正**：完整日志 12 条压缩记录中，前 7 条（session `1e241ab4`）确为 **0.0%**，后 5 条（session `78e68370`）**省 17.7–22.1%**。且省幅来源**不是四步流水线，而是 system 消息的兜底上限**（`compressMaxSystemMsgLen=24000` → 截到 20000）被触发。逐条数据、算术证明与其余 5 项异常见 [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](../COMPRESSION-REDESIGN-PROPOSAL.md)。
 >
 > **状态更新（2026-10-10，第 1 轮止血）**：**问题 1（数字漂移）/ 问题 2（引用源不存在）已于 2026-10-09 修复** ——
 > `decisioncourt-prd.md` §9.4、`decisioncourt-tech-spec.md`（Token 节省率行）、`ADR 0006` 顶部状态更新均已改为
@@ -369,7 +368,7 @@ Smart 的节省率**低于** Legacy（34.1% vs 70.3%）是**设计取舍**（留
 
 ---
 
-## M8（P1，2026-10-11 新增）压缩在真实庭审里省 0% + 会话预算被顶穿 → 判决走 fallback
+## M8（P1，2026-10-11 新增）压缩省幅 0%～22% + 会话预算被顶穿 → 判决走 fallback
 
 ### 怎么发现的
 
@@ -399,7 +398,7 @@ GenerateVerdict failed, using fallback: agent_gateway: token budget exhausted
 ~5.6%，是"压线的最后一根稻草"，主因是既有的 `react_think` 输入膨胀（Round 2 把证据
 正文放开到全文 + ReAct 历史放宽）。
 
-### 压缩：真实触发 7 次，每次省 0.0%
+### 压缩：初版"7 次全 0.0%"（取样不全），复核后为 12 次 · 0%～22%
 
 从 FileLogger（`logs/agent_gateway_2026-10-11.log`）取到的 7 条 `compressed=true`：
 
@@ -415,17 +414,23 @@ task=react_think_retry  msgs 2->2  chars 20850->20850  saved=0.0%  ratio=0.999
 
 `before_count == after_count` **且** `before_length == after_length`：压缩是**空转**。
 
-**结论二（压缩）**：与 M6 的 fixture 值（34.1% 省、保留 13 条）完全对不上。定性根因
-（待复核）：`PromptCompressor.Compress` 只处理 **`messages` 列表**，而本项目的 token 大头
-（baseRules + 证据全文 + 庭审历史）在**单条 system prompt** 里，而 `CompressScored`
-对 system 消息**强制保留**（与 legacy 一致）—— 于是可压缩面只剩很小的对话尾巴，
-真实输入上自然 ≈0%。**"压缩能不能省 token"这件事，历史上从未在真实输入上验证过。**
+**结论二（压缩）—— 初版说"空转"，同日复核后更正**：完整日志 12 条压缩记录中，**前 7 条 0.0%、后 5 条 17.7–22.1%**。
+因而**不是"结构性永远 0%"**。更正后的机制：`CompressScored` 只对**非 system** 消息评分/丢弃，system 只受
+**兜底上限**约束（`compressMaxSystemMsgLen=24000` → `compressSystemTargetLen=20000`）——
+- system < 24,000 且非 system 列表 ≤ ~5 条 → 什么都不丢 → **0%**（session `1e241ab4`，system 20.7–22.9k）；
+- system > 24,000 → 触发兜底截断 → **17–22%**，且 `after ≈ 20000 + 保留的非 system 尾巴`（算术逐条吻合）。
+即：**省幅主要来自那条兜底上限，而不是四步流水线**（流水线只在列表 ≥ ~9 条时才开始丢消息）。
+逐条数据 + 算术证明见 [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](../COMPRESSION-REDESIGN-PROPOSAL.md) §1.2。
 
 ### 影响
 
 - 长标准庭审的**最终判决会降级**（belief-only fallback），用户可见质量下降；
-- PRD / tech-spec 的「Token 节省率 ≥ 30%」**在真实输入上不成立**（真实值 ≈ 0%）；
-- 这解释了为什么"预算快烧完"却指望不上压缩兜底（R19 的隐忧在此坐实）。
+- PRD / tech-spec 的「Token 节省率 ≥ 30%」**在真实输入上不成立**（实测 0%（短）～22%（长），
+  且省幅主要来自 system 兜底上限；见 §1.2 更正）；
+- 这解释了为什么"预算快烧完"却指望不上压缩兜底（R19 的隐忧在此坐实）；
+- **同日审计另查出 5 项异常**（限流疑似引发重试自食其果 / 兜底截断砍掉最新庭审历史 /
+  quick 庭审波动 2.6 倍 / 预算拒绝不进文件日志 / 兜底摘要从未触发）——
+  见 [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](../COMPRESSION-REDESIGN-PROPOSAL.md) §3。
 
 ### ✅ 决策与落地（2026-10-11）
 
@@ -437,8 +442,9 @@ task=react_think_retry  msgs 2->2  chars 20850->20850  saved=0.0%  ratio=0.999
    该变量，上调默认值**不会覆盖**，上线时需手工同步（`.env` 属敏感文件，Agent 不代改）。
 2. **压缩**：**本轮不修**。用户指出 **"系统提示词的压缩应放最低优先级"** —— 与代码现状一致
    （`CompressScored` 对 system 强制保留；且 v2.10 实测过"压 system → 销毁指令 → 模型编造证据"）。
-   定性结论见 §2.1：**压缩器在本项目 prompt 架构下结构性无法省 token**；PRD/tech-spec 的
-   「≥30%」已改正（见 ADR 0006 状态更新）。要在素材组装层真降 token 属新功能、另立项。
+   重构方案（把 system 拆成"契约块 + 素材块"）+ 附带修（兜底截断改为"保最近、砍最旧"）
+   已写入 [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](../COMPRESSION-REDESIGN-PROPOSAL.md)，**未实施**。
+   PRD/tech-spec/ADR 0006 的「≥30%」已按实测更正（0%～22%，见 ADR 0006 状态更新）。
 3. **P2 可见面**：**先出方案文档** —— 见 [`docs/P2-VISIBILITY-PROPOSAL.md`](../P2-VISIBILITY-PROPOSAL.md)
    （澄清了"论证其实已可见、P2 真正问的是要不要给推理链"，推荐维持现状）。
 

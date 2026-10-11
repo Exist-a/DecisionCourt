@@ -166,10 +166,12 @@ Agent 需要熟悉以下核心文档：
   [`docs/STAGE-LANDING-2026-10-11.md`](docs/STAGE-LANDING-2026-10-11.md)（模块清单 / 验证证据 / 决策 / 遗留）。
 - 🔴 **本轮新发现与处置**（`docs/todo/deferred-items-2026-10-09.md` **§M8**）：
   standard 3 轮庭审实测 **209,018 token > 旧 200k 预算** → 判决走 fallback（**已上调默认到 300k**）；
-  且 Token 压缩在真实庭审里被调用 **7 次但节省 0.0%** —— **确认是设计问题**（压缩器只处理非 system
-  消息，而 token 大头在单条 system prompt），用户定 **"system prompt 压缩放最低优先级"**，本轮**不修**，
-  PRD/tech-spec/ADR 0006 的「≥30%」宣称**已改正为"真实 ≈0%"**。
-  **回答"压缩能省多少 token""预算够不够"之前先读 §M8，不要读代码猜。**
+  且 Token 压缩在真实庭审里省幅为 **0%～22%**（12 条记录：短/中庭审 0%，system 超 24,000 字节时
+  触发兜底截断才有 17–22%，**省幅主要来自那条兜底上限而非四步流水线**）。
+  用户定 **"system prompt 压缩放最低优先级"**，本轮**不修**；PRD/tech-spec/ADR 0006 的「≥30%」
+  **已按实测更正**。重构方案 + 6 项数据审计异常见
+  [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](docs/COMPRESSION-REDESIGN-PROPOSAL.md)（**未实施**）。
+  **回答"压缩能省多少 token""预算够不够"之前先读这两份文档，不要读代码猜。**
 - **P2 可见面**（是否让双方看到对方的**推理链**）已出方案文档
   [`docs/P2-VISIBILITY-PROPOSAL.md`](docs/P2-VISIBILITY-PROPOSAL.md)，**待用户评审、未实施**。
 
