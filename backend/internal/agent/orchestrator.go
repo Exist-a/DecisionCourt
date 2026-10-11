@@ -253,7 +253,8 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		)
 	}
 
-	systemPrompt, err := promptBuilder(agent, session, evidences, toolBlockForPrompt(toolMap), o.loadInvestigationFindings(ctx, session.ID))
+	findings := o.loadInvestigationFindings(ctx, session.ID)
+	systemPrompt, err := promptBuilder(agent, session, evidences, toolBlockForPrompt(toolMap), findings)
 	if err != nil {
 		return Speaker{}, nil, err
 	}
@@ -263,6 +264,15 @@ func (o *Orchestrator) lawyerSpeakReAct(
 	// context), then memory (deeper history). Failure is best-effort: an
 	// empty string here simply means "no prior memory yet".
 	systemPrompt = systemPrompt + o.buildEpisodicMemoryBlock(ctx, session.ID, string(self))
+
+	// 2026-10-11 发言步「全量带」：发言步（streamSpeakContent）此前只拿
+	// 论点/立场/置信度，看不到任何案件素材。这里单独装配一份「## 案件素材」
+	// （不含 baseRules / 工具协议）供发言步使用。装配失败与 promptBuilder 同级
+	// 处理（返回错误）—— 实践中 promptBuilder 已先跑过同一批 sanitize，不会走到。
+	speakMaterials, err := buildSpeakMaterials(session, evidences, findings, messages, self, opponent)
+	if err != nil {
+		return Speaker{}, nil, err
+	}
 
 	// v0.10.23 候选 2: 拉同 agent 历史发言 (用于新意度 Jaccard 检查)。
 	// 失败 = best-effort, 不阻断 trial。Service 层注入 HistoryProvider
@@ -342,6 +352,9 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		// PR-4 在 courtroom.Service 注入 GORM 实现;pre-v1.0.2 调用方 nil-safe。
 		// 注意: 与 o.rebutRepo (Hook Sink) 不同,这里是 Read Repository。
 		RebuttalRepository: o.rebutRead,
+		// 2026-10-11 发言步「全量带」：把案件素材交给 streamSpeakContent，
+		// 让最终发言在生成时能看到证据 / 调查发现 / 庭审历史 / 对方论点。
+		SpeakMaterials: speakMaterials,
 	})
 	runner.SetStepHook(stepHook)
 

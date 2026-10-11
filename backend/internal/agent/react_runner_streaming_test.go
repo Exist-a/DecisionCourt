@@ -27,6 +27,9 @@ type streamingScriptedLLM struct {
 	streamCalls     int
 	// streamMessages 用于断言 prompt 包含的论据（被第一次 Complete 决策时填）
 	capturedMessages []llm.Message
+	// streamSysPrompts 记录每次 StreamComplete 的 system prompt（2026-10-11
+	// 「发言步全量带」测试用来断言 SpeakMaterials 真的进了发言步提示词）。
+	streamSysPrompts []string
 }
 
 func (s *streamingScriptedLLM) Complete(_ context.Context, _ string, msgs []llm.Message, _ llm.CompletionOptions) (string, llm.Usage, error) {
@@ -41,10 +44,11 @@ func (s *streamingScriptedLLM) Complete(_ context.Context, _ string, msgs []llm.
 	return s.completeScript[idx], llm.Usage{}, nil
 }
 
-func (s *streamingScriptedLLM) StreamComplete(_ context.Context, _ string, _ []llm.Message, _ llm.CompletionOptions) <-chan llm.StreamChunk {
+func (s *streamingScriptedLLM) StreamComplete(_ context.Context, sys string, _ []llm.Message, _ llm.CompletionOptions) <-chan llm.StreamChunk {
 	s.mu.Lock()
 	chunks := append([]string{}, s.streamChunks...)
 	s.streamCalls++
+	s.streamSysPrompts = append(s.streamSysPrompts, sys)
 	s.mu.Unlock()
 
 	out := make(chan llm.StreamChunk, len(chunks)+1)

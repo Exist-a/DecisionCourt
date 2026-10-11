@@ -693,6 +693,49 @@ func buildInvestigationContext(session model.CourtSession, findings []investigat
 	return b.String()
 }
 
+// buildSpeakMaterials 汇总「发言步（streamSpeakContent）」需要的完整案件素材。
+//
+// 2026-10-11 发言步「全量带」（docs/AGENT-GROUNDING-ANALYSIS.md §8 决策）：
+// 发言步此前只拿到「论点 / 立场 / 置信度」，看不到任何案件素材 —— 用户读到的
+// 最终发言在生成时手里没有可追溯的事实。本函数把素材整理成明确的「## 案件素材」
+// 区段（**不带** baseRules / 工具协议 / action 说明，避免把 ReAct 的格式噪声带进
+// 发言步），交由 RunnerConfig.SpeakMaterials 注入。
+//
+// 内容与顺序：案件信息 + 证据全文（buildContextSafe）、调查发现
+// （buildInvestigationContext）、本轮对话摘要（withArgumentSummaryText，含用户
+// 最新补充 / 对方刚刚说 / 你之前说）、庭审历史（renderTranscriptLine）。
+//
+// 隔离不变量：庭审历史一律经 renderTranscriptLine 渲染（D13-A 白名单），本函数
+// 不得直接读 model.Message.Metadata（reasoning 不进入发言步提示词）。
+func buildSpeakMaterials(
+	session model.CourtSession,
+	evidences []model.Evidence,
+	findings []investigation.Finding,
+	messages []model.Message,
+	self, opponent model.AgentType,
+) (string, error) {
+	var b strings.Builder
+	b.WriteString("## 案件素材\n")
+	ctx, err := buildContextSafe(session, evidences)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(ctx)
+	b.WriteString(buildInvestigationContext(session, findings))
+	b.WriteString(withArgumentSummaryText(messages, self, opponent))
+	if len(messages) > 0 {
+		b.WriteString("\n## 庭审历史（按时间顺序）\n")
+		for _, m := range messages {
+			line, err := renderTranscriptLine(m, historyLineMaxRunes)
+			if err != nil {
+				return "", err
+			}
+			b.WriteString(line)
+		}
+	}
+	return b.String(), nil
+}
+
 // sourceLabel 把 source 枚举映射成中文标签,便于 LLM 一眼区分证据来源。
 func sourceLabel(source string) string {
 	switch source {

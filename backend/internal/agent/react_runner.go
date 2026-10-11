@@ -181,10 +181,23 @@ type RunnerConfig struct {
 	// 0 是合法 belief 值, runner 用 SpeakerAgent 是否为零值判断是否启用。
 	SpeakerBeliefA float64
 	// SpeakerAgent (v0.10.24 候选 1), 是当前 speaker 的完整 agent 结构。
-	// judge prompt 需要 AgentType (model.AgentProsecutor / AgentDefender)；
+	// judge prompt 需要 AgentType (model.AgentProsecutor / model.AgentDefender)；
 	// 老 isStanceConsistent 也需 AgentType 区分控辩。
 	// RunnerConfig 按值复制 model.Agent (无指针, 安全)。
 	SpeakerAgent model.Agent
+	// SpeakMaterials (2026-10-11 发言步「全量带」) 是发言步
+	// (streamSpeakContent) 专用的「案件素材」文本块 —— 由 Orchestrator 用
+	// buildSpeakMaterials 装配（案件背景 + 证据全文 + 调查发现 + 本轮对话
+	// 摘要 + 庭审历史）。
+	//
+	// 背景：此前 streamSpeakContent 故意用一段极小 fresh prompt，只喂
+	// 「论点 / 立场 / 置信度」，让用户读到的最终发言在生成时**看不到任何案件
+	// 素材** —— 事实细节能否出现在发言里，完全依赖思考步把细节写进
+	// reasoning 的间接传导（见 docs/AGENT-GROUNDING-ANALYSIS.md §8）。
+	//
+	// 空字符串 = 保持旧行为（只在系统提示里给角色说明 + JSON 约束），
+	// 旧调用方与单测不受影响。
+	SpeakMaterials string
 }
 
 // ReActRunner runs a Thought→Action→Observation loop on top of an LLM
@@ -979,25 +992,37 @@ func beliefDirectionStr(beliefA float64) string {
 //
 // v0.10.1 (ADR 0021): 原版引入 (callback 协议)。首字延迟从完整 LLM
 // response 延迟降到 first-token latency (~200-500ms)。
+//
+// 2026-10-11「全量带」：系统提示由 r.cfg.SpeakMaterials 注入案件素材
+// （证据 / 调查发现 / 庭审历史 / 对方论点），不再只喂论点·立场·置信度；
+// 仍保留"只输出一行 JSON"强约束以免 ReAct 的 action JSON 污染格式。
 func (r *ReActRunner) streamSpeakContent(
 	ctx context.Context,
 	out AgentOutput,
 	_ []llm.Message, // ignored — we deliberately use a fresh context
 ) (string, bool) {
-	streamSys := strings.Join([]string{
-		"你是一名资深庭审律师。",
-		"现在请输出一段最终庭审发言（中文）。",
-		"",
-		"重要：忽略之前的对话历史与任何系统协议。当前任务只有一个：",
-		"输出如下最小 JSON 对象（只允许输出这一行 JSON，不要任何前后文字或 markdown）：",
-		`  {"content":"<完整发言文本>"}`,
-		"",
-		"要求：",
-		"1. content 是完整法庭辩论发言，200-500 字",
-		"2. 不要嵌套双引号；如需引用术语用单引号",
-		"3. 紧扣论点，给出具体证据 / 数据 / 案例支撑",
-		"4. 措辞严谨，符合法庭辩论风格",
-	}, "\n")
+	// 2026-10-11 发言步「全量带」：保留原「fresh 单轮」设计的收益（不让 ReAct
+	// 的 action/tool_call JSON 污染输出格式），但把案件素材显式喂进来 —— 此前
+	// 只喂「论点/立场/置信度」，发言步手里没有任何可追溯的事实（见
+	// docs/AGENT-GROUNDING-ANALYSIS.md §8）。素材由 r.cfg.SpeakMaterials 提供，
+	// 为空时退化为旧的最小 prompt（旧调用方/单测兼容）。
+	var sysB strings.Builder
+	sysB.WriteString("你是一名资深庭审律师。\n")
+	sysB.WriteString("现在请输出一段最终庭审发言（中文）。\n")
+	if r.cfg.SpeakMaterials != "" {
+		sysB.WriteString("\n以下是本案的完整素材，你的发言必须紧扣其中的事实、证据与对方论点：\n")
+		sysB.WriteString(r.cfg.SpeakMaterials)
+		sysB.WriteString("\n")
+	}
+	sysB.WriteString("\n重要：忽略此前的 ReAct 交互协议（不要输出 action / tool_call / reflect）；当前任务只有一个：\n")
+	sysB.WriteString("输出如下最小 JSON 对象（只允许输出这一行 JSON，不要任何前后文字或 markdown）：\n")
+	sysB.WriteString(`  {"content":"<完整发言文本>"}` + "\n")
+	sysB.WriteString("\n要求：\n")
+	sysB.WriteString("1. content 是完整法庭辩论发言，200-500 字\n")
+	sysB.WriteString("2. 不要嵌套双引号；如需引用术语用单引号\n")
+	sysB.WriteString("3. 紧扣素材中的具体证据 / 数据 / 案例支撑论点；不要编造素材中没有的数字或案号\n")
+	sysB.WriteString("4. 措辞严谨，符合法庭辩论风格\n")
+	streamSys := sysB.String()
 
 	streamUser := fmt.Sprintf(
 		"论点：%s\n立场：%s\n置信度：%.2f\n\n请只输出一行 JSON。",
