@@ -4,7 +4,7 @@
 |---|---|
 | **文档编号** | （计划，非 ADR；落地后按需转为 ADR） |
 | **标题** | 白盒化呈现层：从"SSH 进容器翻日志"到"打开页面看数据" |
-| **状态** | ✅ **P0/P2 已落地（2026-10-10 第 3 轮）**：`/metrics?format=prometheus` 文本导出、`/metrics` 访问控制（token/public）、Prometheus + Grafana **默认启动**（dev + prod 两份 compose，带 `mem_limit`）、Grafana 数据源与仪表盘自动 provisioning —— 全部**实测验证过**。**未做**：P1 拨测告警、告警规则。实施记录见 §10。 |
+| **状态** | ✅ **P0/P1/P2 已落地**：`/metrics?format=prometheus` 文本导出、`/metrics` 访问控制（token/public）、Prometheus + Grafana **默认启动**（dev + prod 两份 compose，带 `mem_limit`）、Grafana 数据源与仪表盘自动 provisioning（2026-10-10 第 3 轮）；**P1 外部拨测**（`scripts/probe-health.sh`，不接通知渠道，2026-10-11）。**未做**：通知渠道、基于指标的告警规则。实施记录见 §10。 |
 | **作者** | Exist + ZCode Agent |
 | **拟定日期** | 2026-10-09 |
 | **触发** | 用户 2026-10-09：「白盒化的功课做了不少，但没有可视化，部署上线后拿数据还要 SSH 进去，我觉得不太对」 |
@@ -254,8 +254,15 @@ JSON 文件日志已经在磁盘上；只有当"跨机器/跨天检索日志"成
 
 ### 10.4 仍未做
 
-- **P1 外部拨测/告警**（uptime 探针 + 通知渠道）。
-- **告警规则**（Alertmanager / Grafana alerting 规则文件）—— 现在只有面板，没有"主动叫你"。
+- **P1 外部拨测** —— ✅ **已做（2026-10-11）**：`scripts/probe-health.sh`，校验
+  `/health`（body `status:ok`）与 `/api/v1/health/llm`（**body `configured:true`**，
+  该端点在未配置 key 时也返 200，只看状态码会漏判），可选探 `/metrics`（带 token）与前端；
+  异常打印可操作 `[ALERT]` 行并非零退出，靠 crontab MAILTO 通知。用户 2026-10-11 决定
+  **本步不接通知渠道**。三态实测：健康 → OK/exit 0；停 backend → BACKEND_DOWN/exit 1；
+  200+`configured:false` → LLM_NOT_CONFIGURED/exit 1。
+- **通知渠道**（邮件 / Telegram / webhook）—— 用户 2026-10-11 决定暂不接（拨测先行）。
+- **告警规则**（Alertmanager / Grafana alerting 规则文件）—— 现在只有面板 + 拨测，还没有
+  基于指标趋势的规则化告警。
 - **P3 日志聚合** —— 建议永久不做。
 - ⏸️ **部署暂缓（用户 2026-10-10 决定）**：以上全部**已在本地跑通并实测**，但**未提交、未部署**。
   下次部署的前置（服务器 `.env` 补 `GF_ADMIN_PASSWORD` + `OPS_METRICS_TOKEN`）见

@@ -153,6 +153,20 @@ Agent 需要熟悉以下核心文档：
 2. **「看不到失败记录」≠「没连上」**——默认日志级别会吞掉鉴权失败细节。诊断顺序：先确认对端**有没有收到**，再分辨认证失败 / 网络不通，最后才怀疑防火墙。**不要只用否定证据下结论。**
 3. **沉默的 `return` 是长期隐患**——任何"降级为不可用"的分支都要出声（WARN/ERROR + 可操作提示）。
 
+### 6.2f 2026-10-11 收口批次（本地已提交，**未 push**）
+
+- **`push` 到 `main` = 自动上线**：`.github/workflows/deploy.yml` 的 `workflow_run` 会在
+  Test 成功后触发 Deploy（构建镜像 → ACR → SSH 到 ECS → `docker compose up -d`）。
+  在本项目里 **"push" 等于 "部署到生产"**。用户 2026-10-11 决定**本轮只本地提交、不 push**。
+  部署前置（服务器 `.env` 补 `GF_ADMIN_PASSWORD` / `OPS_METRICS_TOKEN`；`private_memories`
+  表必须**先部署新代码再 DROP**）见 [`docs/deployment/SECOND-LAUNCH-2026-10-09.md`](docs/deployment/SECOND-LAUNCH-2026-10-09.md) 文末。
+- **本轮完成**：发言步「全量带」（Module A）、`belief.truncateReason` UTF-8 修复、
+  投影层接线 M1/M3/M4（Module B）、主张级接地检查 + 度量（Module C）、Ops 拨测脚本（Module D）。
+- 🔴 **本轮新发现（待用户决策）**：`docs/todo/deferred-items-2026-10-09.md` **§M8** ——
+  standard 3 轮庭审实测 **209,018 token > 200k 默认预算** → 判决被拒走 fallback；
+  且 Token 压缩在真实庭审里被调用 **7 次但节省 0.0%**（PRD 宣称的「≥30%」无生产依据）。
+  **回答"压缩能省多少 token""预算够不够"之前先读 §M8，不要读代码猜。**
+
 ## 7. 禁止事项
 
 Agent 在工作过程中禁止：

@@ -3,7 +3,8 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-09 |
-| **状态** | 🔴 **M1 待决策**（需用户拍板接线与否）／ 🔴 **M2 未收口**（双写过渡期承诺未执行）／ 🟡 M3、M4 未做（低优先）／ 🟡 M5 记录性复核项 ／ 🟡 **M6 数字漂移**（压缩节省率宣称值与实跑不符 + 引用源缺失 + 无护栏）／ ⏳ **M7 待跑**（真实庭审压缩数值采集，需手动跑一场，依赖 M6 定性纠正先落地） |
+| **状态** | **2026-10-11 收口更新**：✅ **M1 已接线**（用户拍板方案①，投影产物 WorkingMemory 现已真正被提示词消费）／ ✅ **M2 已收口**（legacy `private_memories` 表删除，Expand-Contract 走完）／ ✅ **M3 已真填充**（`LLMContext.Beliefs` 现由信念引擎产物填充并被提示词消费）／ ✅ **M4 已删**（两个孤儿投影 API 删除）／ 🟡 **M5 记录性复核项**（随 M1 联动评估：新区块只读投影后的 WorkingMemory，未破隔离）／ ✅ **M6 已更正 + 已加固**（数字改正 + eval floor 护栏）／ 🔴 **M7 已采到真实数据，但结论反转**（见下方 M6/M7 状态更新与新增 **M8**） |
+| **2026-10-11 新增** | 🔴 **M8：压缩在真实庭审里省 0% + 会话预算被顶穿** —— 见 §M8（本批最高优先级发现） |
 | **触发** | 以面试题「设计分层 Agent 记忆系统，基于投影在生成对方提示词前剥离私有字段，按可见性维护各 Agent 私有策略池，从协议层硬保证控辩双方互不可见对方私有推理链」为题，**逐条对照真实代码**（不采信文档，因文档可能漂移）核对结论 |
 | **关联 PR** | 无（本批为新增发现，M1 起编号） |
 | **核对基线** | `main` @ `1515bbb`（v2.13 + 第二次上线文档收尾之后） |
@@ -100,6 +101,19 @@
   4. ⚠️ **与 M5 联动**：一旦有了"读原始 payload"的新消费方，公开 payload 里明文存 `reasoning`
      这件事就会从"审计友好"变成"泄漏源"，实施时必须确认新消费方**只读投影后的 `WorkingMemory`**。
 
+### ✅ 实施记录（2026-10-11）
+
+- `buildEpisodicMemoryBlock` 扩展为 **`buildA2AContextBlock`**：一次 `BuildContextView`
+  消费三部分 —— 对方的公开发言（来自已投影的 `WorkingMemory`）、本方私有策略笔记
+  （`PrivateMemory`）、当前信念状态（`Beliefs`）。
+- 三个律师路径（ReAct + 非 ReAct 的 `ProsecutorSpeak`/`DefenderSpeak`）都追加该区块；
+  发言步素材（`buildSpeakMaterials`）也共用同一份 → **think 与 speak 两个 prompt 都消费投影**。
+- ✅ **M5 联动已满足**：新区块只读投影后的 `WorkingMemory` 行（`from_agent != self` 且
+  `message_type == speech`），**不重读**对手原始 payload；对手 `reasoning` 未进入提示词（有回归测试）。
+- 回归：`TestBuildA2AContextBlock_ConsumesProjectedOpponent_NotReasoning`（对手公开结论/引用可见、
+  reasoning 不可见）+ 原 episodic memory 三条集成测试（`ProsecutorSpeakWithReAct_*`）继续通过。
+- 验证：dev compose quick 庭审实跑干净（75,267 token、零 ERROR/WARN），判决由 LLM 正常生成。
+
 ---
 
 ## M2（P2）legacy `private_memory` 表只写不读
@@ -172,6 +186,17 @@ Beliefs map[string]float64
 
 二选一：① 删字段（承认信念不进 context view）；② 真的填充（把 `belief` engine 快照注入，需评估 prompt 变化）。倾向 ① —— 避免留占位符误导。
 
+### ✅ 实施记录（2026-10-11，用户选"真填充"，范围限定"只填本方信念"）
+
+- `buildA2AContextBlock` 在调用 `BuildContextView` 后，把**信念引擎的产物**
+  （`agent.BeliefA`）写入 `view.Beliefs[selfType]`，并从中渲染
+  「## 当前信念状态」区段 —— `LLMContext.Beliefs` 不再是从未填充的占位符。
+- 同步**移除** `ProsecutorPrompt` / `DefenderPrompt` 里直接读 `model.Agent` 的标量
+  「## 当前信念度」行，使信念**单一来源于投影层**（信息等价，最小行为变更）。
+- 三个律师路径（ReAct + 非 ReAct）都追加该区段，避免非 ReAct 路径丢信念信息。
+- 测试：`TestBuildA2AContextBlock_NoMemoryOrOpponent_OnlyBeliefSection` 断言信念区段
+  来自投影层且值为传入信念。
+
 ---
 
 ## M4（P3）`SanitizeForViewer` / `Message.SanitizedPayload` 零调用点
@@ -194,6 +219,18 @@ Beliefs map[string]float64
 ### 建议动作
 
 随 M1 的方案一并决定：选 ① 接线则这些入口会被用起来；选 ③ 删除则一并清理。**不建议单独保留**（除非同时完成 M1 的 ② 显式降级注释）。
+
+### ✅ 实施记录（2026-10-11，用户选"删除"）
+
+按 M1 方案①接线后，这两个入口仍无生产调用点，故删除：
+
+- 删 `Bus.SanitizeForViewer`、随其无用的 `ErrNotVisible`、以及 `Message.SanitizedPayload`；
+- 三条断言 D13-B 白名单契约的用例（reasoning 剥离 / 未登记键丢弃 / 未知类型只留 content）
+  **原样平移到存活的 `ProjectPayloadForOpponent`** —— 同一保证换实现，不简化覆盖面；
+- 删 `TestSanitizeForViewer_Rules`（其契约已不存在，同 M2 先例）。
+
+结果：投影层生产路径收敛为 `BuildContextView → sanitizeMessageRow →
+ProjectPayloadForOpponent` 一条，消除"4 个入口有多个在跑"的误读。
 
 ---
 
@@ -220,6 +257,9 @@ Beliefs map[string]float64
 
 ## M6（P2）压缩节省率基线数字漂移 + 无护栏 + 引用源缺失
 
+> **状态更新（2026-10-11，真实庭审实测）**：本项的"问题 0（生产从未触发压缩）"已被实测解决 —— 一场 3 轮标准庭审里压缩**真的触发了 7 次**，但每次 **节省 = 0.0%**（逐条见 §M8）。
+> 这比"从未触发"更严重：**压缩在真实输入上基本不省 token**（fixture 值 34.1% 无生产对应物）。已登记为 §M8（P1）。
+>
 > **状态更新（2026-10-10，第 1 轮止血）**：**问题 1（数字漂移）/ 问题 2（引用源不存在）已于 2026-10-09 修复** ——
 > `decisioncourt-prd.md` §9.4、`decisioncourt-tech-spec.md`（Token 节省率行）、`ADR 0006` 顶部状态更新均已改为
 > **34.1% / 13 条** + 加"合成 fixture 微基准，不是生产实测"限定词 + 死链改指可复现源
@@ -326,6 +366,82 @@ Smart 的节省率**低于** Legacy（34.1% vs 70.3%）是**设计取舍**（留
 
 - 属**用户手动跑一场**的任务（非纯代码改动）：按 AGENTS.md §11 用 dev compose 跑，或按 §9 在服务器上跑。
 - 跑完顺带补 M6 的「数字护栏」（eval 测试加下限断言），防止再次静默漂移。
+
+---
+
+## M8（P1，2026-10-11 新增）压缩在真实庭审里省 0% + 会话预算被顶穿 → 判决走 fallback
+
+### 怎么发现的
+
+做 Module A（发言步「全量带」）的真实庭审验证时，跑一场 **standard 3 轮 + 1 条证据**的
+庭审，判决阶段日志出现：
+
+```
+[GenerateVerdict] LLM error: agent_gateway: token budget exhausted (session=1e241ab4-… ratio=1.05)
+GenerateVerdict failed, using fallback: agent_gateway: token budget exhausted
+```
+
+即：**会话预算被打满，最终判决被拒，降级为"依据法官信念度直接裁决"的 fallback**
+（判决书里用户可见地写着"LLM 生成失败"）。
+
+### 实测数据（session `1e241ab4-a336-4d05-8056-18508be55c26`）
+
+| 指标 | 实测 |
+|---|---|
+| 本场总 token | **209,018** > 预算 200,000 → ratio 1.045（日志四舍五入 1.05） |
+| `react_think` | 19 次，输入均值 **8,309**，合计 **162,109（77%）** |
+| `react_think_retry` | 3 次，均值 9,602，合计 29,252 |
+| `react_speak_stream` | 6 次，均值 1,670，合计 11,802（**5.6%**，Module A 的增量来源） |
+| 既往同类标准庭审 `079793a2` | **197,788（98.9%）**——早已贴线 |
+| 既往标准庭审 `8b9558d4` | 147,073 |
+
+**结论一（预算）**：200k 的默认预算对"标准 3 轮 + 证据"已经不够用；Module A 只加了
+~5.6%，是"压线的最后一根稻草"，主因是既有的 `react_think` 输入膨胀（Round 2 把证据
+正文放开到全文 + ReAct 历史放宽）。
+
+### 压缩：真实触发 7 次，每次省 0.0%
+
+从 FileLogger（`logs/agent_gateway_2026-10-11.log`）取到的 7 条 `compressed=true`：
+
+```
+task=react_think        msgs 5->5  chars 22815->22815  saved=0.0%  ratio=0.703
+task=react_think_retry  msgs 6->6  chars 22923->22923  saved=0.0%  ratio=0.754
+task=react_think        msgs 1->1  chars 21826->21826  saved=0.0%  ratio=0.804
+task=react_think        msgs 3->3  chars 22579->22579  saved=0.0%  ratio=0.853
+task=react_think_retry  msgs 4->4  chars 22687->22687  saved=0.0%  ratio=0.903
+task=react_think        msgs 1->1  chars 20742->20742  saved=0.0%  ratio=0.953
+task=react_think_retry  msgs 2->2  chars 20850->20850  saved=0.0%  ratio=0.999
+```
+
+`before_count == after_count` **且** `before_length == after_length`：压缩是**空转**。
+
+**结论二（压缩）**：与 M6 的 fixture 值（34.1% 省、保留 13 条）完全对不上。定性根因
+（待复核）：`PromptCompressor.Compress` 只处理 **`messages` 列表**，而本项目的 token 大头
+（baseRules + 证据全文 + 庭审历史）在**单条 system prompt** 里，而 `CompressScored`
+对 system 消息**强制保留**（与 legacy 一致）—— 于是可压缩面只剩很小的对话尾巴，
+真实输入上自然 ≈0%。**"压缩能不能省 token"这件事，历史上从未在真实输入上验证过。**
+
+### 影响
+
+- 长标准庭审的**最终判决会降级**（belief-only fallback），用户可见质量下降；
+- PRD / tech-spec 的「Token 节省率 ≥ 30%」**在真实输入上不成立**（真实值 ≈ 0%）；
+- 这解释了为什么"预算快烧完"却指望不上压缩兜底（R19 的隐忧在此坐实）。
+
+### 建议动作（需用户决策）
+
+1. **预算**：把 `AGENT_GATEWAY_BUDGET_PER_SESSION` 默认值上调（如 200000 → 300000），
+   或按庭审模式（quick/standard/deep）分档；至少要让 standard 不再必然踩线。
+2. **压缩**：让压缩真正作用于 system prompt（token 大头），或**明确限定"压缩只对
+   message 列表生效"并下调对外宣称**——不能让"≥30% 节省"继续挂在文档里。
+3. **度量**：补一条"压缩实际节省率"指标（现有 `prompt_compression_ratio` 是
+   after/before **长度比**，0% 节省时值为 1.0，不直观）。
+
+### 关联
+
+- M6 / M7（本项是它们"问题 0 / 待跑"的**实测答案**，且结论反转）；
+- [R19](deferred-items-2026-10-07.md)（预算用量没有指标 —— 已由第 3 轮 `budget_ratio` 解决，
+  正因如此本场才能看到 ratio=1.05）；
+- `docs/AGENT-GATEWAY-BUDGET-PLAN.md`（Phase 3 预留式预算用户已决定**不做**）。
 
 ---
 
