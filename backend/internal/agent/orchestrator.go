@@ -39,6 +39,11 @@ type Orchestrator struct {
 	// orchestrator 在组装控辩提示词前拉取本场累积的 InvestigationFinding 并真正
 	// 注入"## 调查活动"section。Nil = 不注入 (向后兼容 / 测试 mock)。
 	investigationLister InvestigationLister
+	// groundingObserver (2026-10-11, AGENT-GROUNDING §3 P1), if non-nil, 收到每次
+	// 发言里"无素材支撑的事实性主张"的计数 (kind = number / case_number /
+	// evidence_id)。service 层 wire 成 metric，让"接地率"可观测。
+	// 只标注不硬拒。Nil = 不上报 (向后兼容 / 测试)。
+	groundingObserver func(kind string, count int)
 }
 
 // InvestigationLister (2026-10-10 Round 2) 抽象"拉取本场调查发现"的能力, 让
@@ -88,6 +93,43 @@ func (o *Orchestrator) SetHistoryProvider(hp HistoryProvider) {
 // Nil-safe: 传 nil 关闭上报(向后兼容 / 测试)。
 func (o *Orchestrator) SetHallucinationObserver(fn func(mode, pattern string)) {
 	o.hallucinationObserver = fn
+}
+
+// SetGroundingObserver (2026-10-11, AGENT-GROUNDING §3 P1) 注入主张级接地观察者。
+// 由 courtroom.Service wire 成 metric 计数。Nil-safe。
+func (o *Orchestrator) SetGroundingObserver(fn func(kind string, count int)) {
+	o.groundingObserver = fn
+}
+
+// reportGrounding 对一次发言跑主张级接地检查：抽取事实性主张，逐条核对能否在
+// materials（本次生成实际可见的素材）中找到支撑，把"无支撑"的按类别计数上报，
+// 并在结构化日志里留一条可检索记录。
+//
+// **只标注不硬拒**（AGENT-GROUNDING §3 P1）。content 为空或观察者未接线时直接返回。
+func (o *Orchestrator) reportGrounding(content, materials string) {
+	if o.groundingObserver == nil || strings.TrimSpace(content) == "" {
+		return
+	}
+	unsupported, total := CheckGrounding(content, materials)
+	if len(unsupported) == 0 {
+		return
+	}
+	counts := map[string]int{}
+	samples := make([]string, 0, 3)
+	for _, c := range unsupported {
+		counts[c.Kind]++
+		if len(samples) < 3 {
+			samples = append(samples, c.Kind+":"+c.Text)
+		}
+	}
+	for kind, n := range counts {
+		o.groundingObserver(kind, n)
+	}
+	slog.Warn("agent: unsupported factual claims in speech (annotate-only, not blocked)",
+		"unsupported", len(unsupported),
+		"total_claims", total,
+		"samples", strings.Join(samples, " | "),
+	)
 }
 
 // NewOrchestrator wires the orchestrator with an A2A bus (for message
@@ -143,7 +185,8 @@ func (o *Orchestrator) ProsecutorSpeak(
 	messages []model.Message,
 	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3
 ) (Speaker, error) {
-	prompt, err := ProsecutorPrompt(agent, session, evidences, "", o.loadInvestigationFindings(ctx, session.ID))
+	findings := o.loadInvestigationFindings(ctx, session.ID)
+	prompt, err := ProsecutorPrompt(agent, session, evidences, "", findings)
 	if err != nil {
 		return Speaker{}, err
 	}
@@ -155,6 +198,7 @@ func (o *Orchestrator) ProsecutorSpeak(
 	if err != nil {
 		return speaker, err
 	}
+	o.reportGrounding(speaker.Content, BuildGroundingMaterials(session, evidences, findings, messages))
 	o.recordSideEffects(ctx, session, agent, model.AgentDefender, speaker, evidences)
 	return speaker, nil
 }
@@ -167,7 +211,8 @@ func (o *Orchestrator) DefenderSpeak(
 	messages []model.Message,
 	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3
 ) (Speaker, error) {
-	prompt, err := DefenderPrompt(agent, session, evidences, "", o.loadInvestigationFindings(ctx, session.ID))
+	findings := o.loadInvestigationFindings(ctx, session.ID)
+	prompt, err := DefenderPrompt(agent, session, evidences, "", findings)
 	if err != nil {
 		return Speaker{}, err
 	}
@@ -178,6 +223,7 @@ func (o *Orchestrator) DefenderSpeak(
 	if err != nil {
 		return speaker, err
 	}
+	o.reportGrounding(speaker.Content, BuildGroundingMaterials(session, evidences, findings, messages))
 	o.recordSideEffects(ctx, session, agent, model.AgentProsecutor, speaker, evidences)
 	return speaker, nil
 }
@@ -389,12 +435,14 @@ func (o *Orchestrator) lawyerSpeakReAct(
 				return speaker, steps, err
 			}
 			fallback.Agent = agent
+			o.reportGrounding(fallback.Content, speakMaterials)
 			o.recordSideEffects(ctx, session, agent, opponent, fallback, evidences)
 			return fallback, steps, nil
 		}
 		return speaker, steps, err
 	}
 	speaker.Agent = agent
+	o.reportGrounding(speaker.Content, speakMaterials)
 	o.recordSideEffects(ctx, session, agent, opponent, speaker, evidences)
 	return speaker, steps, nil
 }

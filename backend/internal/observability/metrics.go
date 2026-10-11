@@ -113,6 +113,13 @@ const (
 	// 之前质量度量只覆盖判决书（MetricVerdictEvidenceAccuracy），发言阶段的
 	// 幻觉率只能翻日志 —— 想量化"压缩是否伤到发言质量"时无从观察。
 	MetricSpeakHallucinationTotal = "speak_hallucination_total"
+
+	// 2026-10-11（AGENT-GROUNDING-ANALYSIS.md §3 P1）：主张级接地度量。
+	// 发言里"无法在提供给模型的素材中找到支撑"的事实性主张数（按 kind 分 label：
+	// number / case_number / evidence_id）。只标注不硬拒 —— 先把"接地率"变成可
+	// 回归的量，再决定是否加严。此前四道护栏全是模式级，没有任何一道在判断
+	// "这句话有没有依据"。
+	MetricGroundingUnsupportedTotal = "grounding_unsupported_claims_total"
 )
 
 // memMetrics 是线程安全的内存实现。

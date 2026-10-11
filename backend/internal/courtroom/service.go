@@ -129,6 +129,19 @@ func (s *Service) WithObservability(m observability.Metrics, rec observability.E
 	// mode 是有界枚举(HallucinationMode 6 值),可安全做 label。
 	if s.orchestrator != nil && m != nil {
 		s.orchestrator.SetHallucinationObserver(speakHallucinationObserver(m))
+		// 2026-10-11 (AGENT-GROUNDING §3 P1): 主张级接地观察者。kind 是有界枚举
+		// (number / case_number / evidence_id)，作为 label 安全。
+		s.orchestrator.SetGroundingObserver(groundingObserver(m))
+	}
+}
+
+// groundingObserver (2026-10-11, AGENT-GROUNDING §3 P1) 返回把"无素材支撑的事实性
+// 主张数"计入 MetricGroundingUnsupportedTotal 的观察者。独立成函数便于单测。
+func groundingObserver(m observability.Metrics) func(kind string, count int) {
+	return func(kind string, count int) {
+		m.AddCounter(observability.MetricGroundingUnsupportedTotal, map[string]string{
+			"kind": kind,
+		}, float64(count))
 	}
 }
 
