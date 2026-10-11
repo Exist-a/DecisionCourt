@@ -283,42 +283,6 @@ func TestContextView_EmptySession(t *testing.T) {
 	require.NotNil(t, view.Beliefs, "Beliefs map must be non-nil even when empty so callers can range over it")
 }
 
-// Test 9 (bonus, ensures SanitizeForViewer single-row API works correctly).
-func TestSanitizeForViewer_Rules(t *testing.T) {
-	bus, _, _ := newTestBus(t)
-	row := publicSpeechRow(t, uuid.New(), "defender", 1, map[string]interface{}{
-		"content":   "X",
-		"reasoning": "secret",
-	})
-
-	// orchestrator → unchanged
-	got, err := bus.SanitizeForViewer(row, AddressOrchestrator)
-	require.NoError(t, err)
-	require.Equal(t, row.Payload, got.Payload)
-
-	// from-agent itself → unchanged
-	got, err = bus.SanitizeForViewer(row, "defender")
-	require.NoError(t, err)
-	require.Equal(t, row.Payload, got.Payload)
-
-	// opposing agent → reasoning stripped
-	got, err = bus.SanitizeForViewer(row, "prosecutor")
-	require.NoError(t, err)
-	var p map[string]interface{}
-	require.NoError(t, json.Unmarshal([]byte(got.Payload), &p))
-	_, hasR := p["reasoning"]
-	require.False(t, hasR)
-
-	// private row + opposing viewer → ErrNotVisible
-	privRow := privateMemoRow(t, uuid.New(), "defender", MessageTypeStrategyNote, 1, map[string]interface{}{})
-	_, err = bus.SanitizeForViewer(privRow, "prosecutor")
-	require.ErrorIs(t, err, ErrNotVisible)
-
-	// empty viewer rejected
-	_, err = bus.SanitizeForViewer(row, "")
-	require.Error(t, err)
-}
-
 // Test 10 (bonus, malformed payload does not crash BuildContextView).
 func TestContextView_MalformedPayload_SkippedButEnvelopeKept(t *testing.T) {
 	bus, repo, _ := newTestBus(t)

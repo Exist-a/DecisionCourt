@@ -94,17 +94,8 @@ type Message struct {
 	CreatedAt   time.Time              `json:"created_at"`
 }
 
-// SanitizedPayload returns a copy of the payload containing only the keys
-// allowed to cross to the opposing side. Public messages use this when projected
-// to the opposing side so private chains-of-thought never leak across the bench.
-//
-// v2.11 (deferred D13-B)：从"删掉 reasoning 一个键"改为**正向白名单投影**
-// （见 publicPayloadWhitelist）。未登记的键默认不进入对方视图 —— 新增敏感字段
-// 不再需要"人工记得删"，漏登记只会让对方少看到合法信息（可见的降级），
-// 而不是静默泄漏。
-//
-// 注意：本方法与 context_view.go 的 sanitizeMessageRow 同源（共用同一张白名单），
-// 改白名单时两者一起生效。当前生产代码没有调用点（保留给按需单行投影）。
-func (m Message) SanitizedPayload() map[string]interface{} {
-	return ProjectPayloadForOpponent(m.MessageType, m.Payload)
-}
+// 2026-10-11（M4 收口）：原 Message.SanitizedPayload() 是本包唯一的"值级单行投影"
+// 入口，但全仓零生产调用点（只有测试用它）。投影层实际的生产路径是
+// BuildContextView → sanitizeMessageRow → ProjectPayloadForOpponent。
+// 该孤儿方法已删除，避免"投影层有多个在跑的入口"的误读（见
+// docs/todo/deferred-items-2026-10-09.md §M4）。

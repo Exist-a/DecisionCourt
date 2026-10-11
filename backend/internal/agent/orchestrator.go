@@ -147,6 +147,9 @@ func (o *Orchestrator) ProsecutorSpeak(
 	if err != nil {
 		return Speaker{}, err
 	}
+	// M1/M3：非 ReAct 路径同样消费投影层（对方的公开发言 + 信念状态），
+	// 因为信念行已从 ProsecutorPrompt 移出，此处不追加会丢失该信息。
+	prompt += o.buildA2AContextBlock(ctx, session.ID, string(model.AgentProsecutor), agent.BeliefA)
 	enhanced := withArgumentSummary(messages, model.AgentProsecutor, model.AgentDefender)
 	speaker, err := o.speak(ctx, agent, prompt, enhanced, len(evidences) > 0, agentMap)
 	if err != nil {
@@ -168,6 +171,8 @@ func (o *Orchestrator) DefenderSpeak(
 	if err != nil {
 		return Speaker{}, err
 	}
+	// M1/M3：同 ProsecutorSpeak —— 非 ReAct 路径也消费投影层。
+	prompt += o.buildA2AContextBlock(ctx, session.ID, string(model.AgentDefender), agent.BeliefA)
 	enhanced := withArgumentSummary(messages, model.AgentDefender, model.AgentProsecutor)
 	speaker, err := o.speak(ctx, agent, prompt, enhanced, len(evidences) > 0, agentMap)
 	if err != nil {
@@ -259,17 +264,18 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		return Speaker{}, nil, err
 	}
 	systemPrompt = systemPrompt + withArgumentSummaryText(messages, self, opponent)
-	// v0.5: inject the agent's episodic memory (private strategy notes from
-	// prior rounds). Order matters — argument summary first (immediate
-	// context), then memory (deeper history). Failure is best-effort: an
-	// empty string here simply means "no prior memory yet".
-	systemPrompt = systemPrompt + o.buildEpisodicMemoryBlock(ctx, session.ID, string(self))
+	// A2A 投影层区段（M1/M3 接线）：对方的公开发言（已投影、剥离推理链）+ 本方
+	// 私有策略笔记 + 当前信念状态（来自投影层 Beliefs）。Order matters — argument
+	// summary first (immediate context), then the projection block. 一次
+	// BuildContextView，think 与 speak 两个 prompt 共用同一份（见 speakMaterials）。
+	a2aBlock := o.buildA2AContextBlock(ctx, session.ID, string(self), agent.BeliefA)
+	systemPrompt = systemPrompt + a2aBlock
 
 	// 2026-10-11 发言步「全量带」：发言步（streamSpeakContent）此前只拿
 	// 论点/立场/置信度，看不到任何案件素材。这里单独装配一份「## 案件素材」
 	// （不含 baseRules / 工具协议）供发言步使用。装配失败与 promptBuilder 同级
 	// 处理（返回错误）—— 实践中 promptBuilder 已先跑过同一批 sanitize，不会走到。
-	speakMaterials, err := buildSpeakMaterials(session, evidences, findings, messages, self, opponent)
+	speakMaterials, err := buildSpeakMaterials(session, evidences, findings, messages, self, opponent, a2aBlock)
 	if err != nil {
 		return Speaker{}, nil, err
 	}

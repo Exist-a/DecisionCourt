@@ -5,7 +5,7 @@
 //
 //  1. Each Agent only sees its own private memory (no cross-agent leakage).
 //  2. Each Agent never sees the opposing side's `reasoning` field, even on
-//     public messages — the SanitizedPayload() projection strips it.
+//     public messages — the positive whitelist projection strips it.
 //  3. The Clerk explicitly opts OUT of any private memory read.
 //
 // The view is consumed by Orchestrator right before each LLM call; see
@@ -28,9 +28,9 @@ import (
 type LLMContext struct {
 	// WorkingMemory holds the public messages as seen by selfAgent. Messages
 	// originating from a *different* agent (i.e. the opposing side) have had
-	// their `reasoning` field stripped via SanitizedPayload. Messages authored
-	// by selfAgent itself keep their full payload so the agent can reflect on
-	// its own prior reasoning.
+	// their `reasoning` field stripped by the positive whitelist projection.
+	// Messages authored by selfAgent itself keep their full payload so the
+	// agent can reflect on its own prior reasoning.
 	WorkingMemory []model.A2AMessage
 
 	// PrivateMemory holds the private (visibility=private) messages authored by
@@ -86,7 +86,7 @@ func IsPrivateMemoryMessageType(t MessageType) bool {
 //   - Private messages authored BY selfAgent go to PrivateMemory (full payload).
 //   - Private messages addressed TO selfAgent are also visible (full payload).
 //   - Public messages authored BY a *different* agent have their `reasoning`
-//     field stripped via SanitizedPayload.
+//     field stripped by the positive whitelist projection.
 //   - Public messages authored BY selfAgent keep their full payload.
 //   - The orchestrator (AddressOrchestrator) sees everything; callers that
 //     pass AddressOrchestrator as selfAgent get the union of public + every
@@ -168,38 +168,6 @@ func (b *Bus) BuildContextView(
 
 	return out, nil
 }
-
-// SanitizeForViewer is the single-row counterpart to BuildContextView. It is
-// exposed so the Orchestrator can sanitize on-demand (e.g. when constructing
-// a custom ad-hoc prompt that does not need the full view).
-//
-// Rules:
-//   - viewer == AddressOrchestrator: returns the row unchanged.
-//   - viewer == FromAgent: returns the row unchanged (self sees own reasoning).
-//   - viewer is any other agent:
-//   - If visibility == private: returns ErrNotVisible.
-//   - If visibility == public: strips `reasoning` from Payload.
-//   - If the row's payload JSON is malformed: returns ErrMalformedPayload.
-func (b *Bus) SanitizeForViewer(
-	row model.A2AMessage,
-	viewerAgent string,
-) (model.A2AMessage, error) {
-	if viewerAgent == "" {
-		return model.A2AMessage{}, fmt.Errorf("a2a: SanitizeForViewer requires viewerAgent")
-	}
-	if viewerAgent == AddressOrchestrator || viewerAgent == row.FromAgent {
-		return row, nil
-	}
-	if row.Visibility == string(VisibilityPrivate) {
-		return model.A2AMessage{}, ErrNotVisible
-	}
-	return sanitizeMessageRow(row)
-}
-
-// ErrNotVisible is returned by SanitizeForViewer when viewer is not entitled
-// to read a private message. We export this so callers (e.g. the orchestrator
-// hot path) can branch on it without string matching.
-var ErrNotVisible = fmt.Errorf("a2a: message not visible to viewer")
 
 // ErrMalformedPayload is returned when a stored Payload column cannot be
 // decoded as JSON. v0.5 does not auto-repair; the row is skipped.

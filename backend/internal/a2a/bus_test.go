@@ -429,38 +429,33 @@ func TestBus_Send_RequiresFromToType(t *testing.T) {
 	}
 }
 
-func TestMessage_SanitizedPayload_StripsReasoning(t *testing.T) {
+// 2026-10-11（M4 收口）：原先这三条用例挂在 Message.SanitizedPayload() 上，该
+// 方法因零生产调用点被删除。断言（D13-B 正向白名单契约）**原样平移**到存活的
+// ProjectPayloadForOpponent 上 —— 同一保证，换实现，不简化覆盖面。
+func TestProjectPayloadForOpponent_StripsReasoning(t *testing.T) {
 	// v2.11 (deferred D13-B): 投影改成按 MessageType 的**正向白名单**，所以这条
 	// 测试必须显式给出消息类型（此前不设 MessageType 也能过，因为实现只是删
 	// reasoning 一个键）。断言意图不变：reasoning 必须被剥离、其他公开字段保留。
-	m := Message{
-		MessageType: MessageTypeSpeech,
-		Payload: map[string]interface{}{
-			"content":   "公开内容",
-			"reasoning": "私有推理",
-			"stance":    "pro_a",
-		},
-	}
-	out := m.SanitizedPayload()
+	out := ProjectPayloadForOpponent(MessageTypeSpeech, map[string]interface{}{
+		"content":   "公开内容",
+		"reasoning": "私有推理",
+		"stance":    "pro_a",
+	})
 	_, hasReasoning := out["reasoning"]
 	require.False(t, hasReasoning, "reasoning must be stripped from sanitized payload")
 	require.Equal(t, "公开内容", out["content"])
 	require.Equal(t, "pro_a", out["stance"])
 }
 
-// TestMessage_SanitizedPayload_DropsUnregisteredKeys v2.11 (D13-B) 的核心收益：
+// TestProjectPayloadForOpponent_DropsUnregisteredKeys v2.11 (D13-B) 的核心收益：
 // 白名单之外的键（= 未来新增的敏感字段）默认不进入对方视图，**不需要人工记得删**。
-func TestMessage_SanitizedPayload_DropsUnregisteredKeys(t *testing.T) {
-	m := Message{
-		MessageType: MessageTypeSpeech,
-		Payload: map[string]interface{}{
-			"content":             "公开内容",
-			"reasoning":           "私有推理",
-			"planned_next_move":   "下一轮我要突袭汇率风险", // 虚构的"未来敏感字段"
-			"internal_confidence": 0.93,
-		},
-	}
-	out := m.SanitizedPayload()
+func TestProjectPayloadForOpponent_DropsUnregisteredKeys(t *testing.T) {
+	out := ProjectPayloadForOpponent(MessageTypeSpeech, map[string]interface{}{
+		"content":             "公开内容",
+		"reasoning":           "私有推理",
+		"planned_next_move":   "下一轮我要突袭汇率风险", // 虚构的"未来敏感字段"
+		"internal_confidence": 0.93,
+	})
 
 	for _, leaked := range []string{"reasoning", "planned_next_move", "internal_confidence"} {
 		if _, ok := out[leaked]; ok {
@@ -470,18 +465,14 @@ func TestMessage_SanitizedPayload_DropsUnregisteredKeys(t *testing.T) {
 	require.Equal(t, "公开内容", out["content"], "白名单内的键必须保留")
 }
 
-// TestMessage_SanitizedPayload_UnknownTypeKeepsOnlyContent 未登记的 MessageType
+// TestProjectPayloadForOpponent_UnknownTypeKeepsOnlyContent 未登记的 MessageType
 // 只放行 content（保留"对方说了什么"的信封语义，不泄漏结构化字段）。
-func TestMessage_SanitizedPayload_UnknownTypeKeepsOnlyContent(t *testing.T) {
-	m := Message{
-		MessageType: MessageType("brand_new_event_type"),
-		Payload: map[string]interface{}{
-			"content":     "新事件",
-			"some_secret": "不该外泄",
-			"another_key": 1,
-		},
-	}
-	out := m.SanitizedPayload()
+func TestProjectPayloadForOpponent_UnknownTypeKeepsOnlyContent(t *testing.T) {
+	out := ProjectPayloadForOpponent(MessageType("brand_new_event_type"), map[string]interface{}{
+		"content":     "新事件",
+		"some_secret": "不该外泄",
+		"another_key": 1,
+	})
 	require.Equal(t, map[string]interface{}{"content": "新事件"}, out)
 }
 

@@ -216,8 +216,9 @@ func ProsecutorPrompt(agent model.Agent, session model.CourtSession, evidences [
 		return "", fmt.Errorf("sanitize OptionA: %w", err)
 	}
 	b.WriteString(fmt.Sprintf("你是\"选项A代表\"，你的使命是证明【%s】是更优选择。\n", optionA))
-	b.WriteString(fmt.Sprintf("## 当前信念度\n对选项 A（%s）的信念度：%.2f\n对选项 B（%s）的信念度：%.2f\n",
-		session.OptionA, agent.BeliefA, session.OptionB, agent.BeliefB))
+	// 2026-10-11 (M3)：信念状态不再在此处直接渲染 —— 改由投影层区段
+	// （buildA2AContextBlock 的「## 当前信念状态」，值来自 LLMContext.Beliefs）
+	// 提供，使信念单一来源于投影层，避免"标量注入 + 投影区段"两处重复。
 	b.WriteString("## 策略\n")
 	b.WriteString("1. 主动寻找支持选项 A 的证据。如果当前证据列表为空或没有 A 相关证据，优先调用 investigator_search（**一次即可**，不要反复检索；随后必须给出你的主张）。\n")
 	b.WriteString("2. 对选项B代表提出的反例进行有力反驳。如果对方已发言、且论点你没完全消化，先 action=\"reflect\" 拆解对方逻辑再定稿。\n")
@@ -241,8 +242,7 @@ func DefenderPrompt(agent model.Agent, session model.CourtSession, evidences []m
 		return "", fmt.Errorf("sanitize OptionB: %w", err)
 	}
 	b.WriteString(fmt.Sprintf("你是\"选项B代表\"，你的使命是证明【%s】是更优选择。\n", optionB))
-	b.WriteString(fmt.Sprintf("## 当前信念度\n对选项 A（%s）的信念度：%.2f\n对选项 B（%s）的信念度：%.2f\n",
-		session.OptionA, agent.BeliefA, session.OptionB, agent.BeliefB))
+	// 2026-10-11 (M3)：同 ProsecutorPrompt —— 信念状态由投影层区段提供。
 	b.WriteString("## 策略\n")
 	b.WriteString("1. 主动寻找选项 B 的优势、选项 A 的风险和成本。如果当前证据列表为空或没有 B 相关证据，优先调用 investigator_search（**一次即可**，不要反复检索；随后必须给出你的主张）。\n")
 	b.WriteString("2. 对选项A代表提出的证据进行质证，指出来源问题或逻辑漏洞。若对方刚抛出新论点，先 action=\"reflect\" 拆解再反击。\n")
@@ -713,6 +713,7 @@ func buildSpeakMaterials(
 	findings []investigation.Finding,
 	messages []model.Message,
 	self, opponent model.AgentType,
+	a2aBlock string,
 ) (string, error) {
 	var b strings.Builder
 	b.WriteString("## 案件素材\n")
@@ -723,6 +724,9 @@ func buildSpeakMaterials(
 	b.WriteString(ctx)
 	b.WriteString(buildInvestigationContext(session, findings))
 	b.WriteString(withArgumentSummaryText(messages, self, opponent))
+	// 投影层产出（对方的公开发言 + 私有策略笔记 + 信念状态）—— 与 think 步共用
+	// 同一份（M1：让发言步也消费投影，而不是只有 think 步消费）。
+	b.WriteString(a2aBlock)
 	if len(messages) > 0 {
 		b.WriteString("\n## 庭审历史（按时间顺序）\n")
 		for _, m := range messages {

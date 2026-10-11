@@ -17,25 +17,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- buildEpisodicMemoryBlock unit tests --------------------------------
+// --- buildA2AContextBlock unit tests ------------------------------------
 
-func TestBuildEpisodicMemoryBlock_NoPriorMemory_ReturnsEmpty(t *testing.T) {
+func TestBuildA2AContextBlock_NoMemoryOrOpponent_OnlyBeliefSection(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
 
-	block := orch.buildEpisodicMemoryBlock(context.Background(), uuid.New(), "prosecutor")
-	require.Equal(t, "", block, "no memory should yield empty block, not an empty heading")
+	// 2026-10-11 (M1/M3)：现在区块总是渲染「当前信念状态」（来自投影层
+	// LLMContext.Beliefs），所以"无记忆"不再等于"空区块" —— 但绝不能出现空的
+	// 记忆/对手区段标题。
+	block := orch.buildA2AContextBlock(context.Background(), uuid.New(), "prosecutor", 0.62)
+	require.NotContains(t, block, "你之前的策略笔记", "no memory must not yield an empty memory heading")
+	require.NotContains(t, block, "对方的公开发言", "no opponent rows must not yield an empty opponent heading")
+	require.Contains(t, block, "## 当前信念状态", "M3: belief snapshot must come from the projection layer")
+	require.Contains(t, block, "0.62", "the projection-sourced belief value must be rendered")
 }
 
-func TestBuildEpisodicMemoryBlock_NilInputs_ReturnsEmpty(t *testing.T) {
+func TestBuildA2AContextBlock_NilInputs_ReturnsEmpty(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
 
-	// nil/empty inputs to buildEpisodicMemoryBlock must short-circuit
-	require.Equal(t, "", orch.buildEpisodicMemoryBlock(context.Background(), uuid.Nil, ""))
-	require.Equal(t, "", orch.buildEpisodicMemoryBlock(context.Background(), uuid.New(), ""))
+	// nil/empty inputs to buildA2AContextBlock must short-circuit
+	require.Equal(t, "", orch.buildA2AContextBlock(context.Background(), uuid.Nil, "", 0.5))
+	require.Equal(t, "", orch.buildA2AContextBlock(context.Background(), uuid.New(), "", 0.5))
 }
 
 // helper: write a single private memory row directly to the bus.
@@ -75,7 +81,7 @@ func memoryTypeForBus(kind string) string {
 	}
 }
 
-func TestBuildEpisodicMemoryBlock_FormatsAllRowsChronologically(t *testing.T) {
+func TestBuildA2AContextBlock_FormatsAllRowsChronologically(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
@@ -86,7 +92,7 @@ func TestBuildEpisodicMemoryBlock_FormatsAllRowsChronologically(t *testing.T) {
 	writePrivateMemo(t, bus, sessionID, "prosecutor", "strategy_note", 1, "下一轮攻击 E001 数据来源")
 	writePrivateMemo(t, bus, sessionID, "prosecutor", "opponent_weakness", 2, "辩方没反驳 E002")
 
-	block := orch.buildEpisodicMemoryBlock(context.Background(), sessionID, "prosecutor")
+	block := orch.buildA2AContextBlock(context.Background(), sessionID, "prosecutor", 0.5)
 	require.NotEmpty(t, block)
 	require.Contains(t, block, "你之前的策略笔记", "heading must be present")
 	require.Contains(t, block, "strategy_note")
@@ -102,7 +108,7 @@ func TestBuildEpisodicMemoryBlock_FormatsAllRowsChronologically(t *testing.T) {
 	require.Contains(t, block, "我之前论证 X 有误")
 }
 
-func TestBuildEpisodicMemoryBlock_OtherAgentsMemoryNotVisible(t *testing.T) {
+func TestBuildA2AContextBlock_OtherAgentsMemoryNotVisible(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
@@ -111,12 +117,12 @@ func TestBuildEpisodicMemoryBlock_OtherAgentsMemoryNotVisible(t *testing.T) {
 	writePrivateMemo(t, bus, sessionID, "defender", "strategy_note", 1, "DEFENDER SECRET MEMO")
 	writePrivateMemo(t, bus, sessionID, "prosecutor", "strategy_note", 1, "PROSECUTOR MEMO")
 
-	block := orch.buildEpisodicMemoryBlock(context.Background(), sessionID, "prosecutor")
+	block := orch.buildA2AContextBlock(context.Background(), sessionID, "prosecutor", 0.5)
 	require.Contains(t, block, "PROSECUTOR MEMO")
 	require.NotContains(t, block, "DEFENDER SECRET MEMO", "opposing-side private memory must NOT leak")
 }
 
-func TestBuildEpisodicMemoryBlock_MalformedPayloadSkipped(t *testing.T) {
+func TestBuildA2AContextBlock_MalformedPayloadSkipped(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
@@ -140,14 +146,14 @@ func TestBuildEpisodicMemoryBlock_MalformedPayloadSkipped(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	block := orch.buildEpisodicMemoryBlock(context.Background(), sessionID, "prosecutor")
+	block := orch.buildA2AContextBlock(context.Background(), sessionID, "prosecutor", 0.5)
 	require.Contains(t, block, "good memory")
 	require.NotContains(t, block, "not-valid-json")
 	// still only one bullet row
 	require.Equal(t, 1, strings.Count(block, "round="))
 }
 
-func TestBuildEpisodicMemoryBlock_LongContentTruncated(t *testing.T) {
+func TestBuildA2AContextBlock_LongContentTruncated(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
@@ -156,7 +162,7 @@ func TestBuildEpisodicMemoryBlock_LongContentTruncated(t *testing.T) {
 	longContent := strings.Repeat("这是很长的策略笔记。", 100) // 1000+ chars
 	writePrivateMemo(t, bus, sessionID, "prosecutor", "strategy_note", 1, longContent)
 
-	block := orch.buildEpisodicMemoryBlock(context.Background(), sessionID, "prosecutor")
+	block := orch.buildA2AContextBlock(context.Background(), sessionID, "prosecutor", 0.5)
 	require.Contains(t, block, "...")
 	// truncation should keep total block size bounded.
 	// 2026-10-10 Round 2：单行上限由 240 字节改为 memoryNoteMaxRunes(=800) rune，
@@ -186,6 +192,44 @@ func mustExtractContent(t *testing.T, payload string) string {
 	t.Helper()
 	c, _ := extractMemoryPayload(payload)
 	return c
+}
+
+// TestBuildA2AContextBlock_ConsumesProjectedOpponent_NotReasoning 是 M1 的注入式
+// 回归：提示词必须真的消费投影层产物 WorkingMemory（对方的公开发言），并且只看到
+// 投影后的字段 —— 对手 payload 里的 reasoning（推理链）绝不得进入提示词。
+//
+// 这条钉住"投影层不再是空转"：若有人把这段渲染删掉/绕过，测试会失败。
+func TestBuildA2AContextBlock_ConsumesProjectedOpponent_NotReasoning(t *testing.T) {
+	a2aRepo := a2a.NewInMemoryRepository(nil)
+	bus := a2a.NewBus(a2aRepo, nil)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
+
+	sessionID := uuid.New()
+	// 对手（defender）发一条**公开**发言，payload 里同时含 reasoning。
+	_, err := bus.Send(context.Background(), a2a.Message{
+		SessionID:   sessionID,
+		Round:       2,
+		Phase:       "cross_exam",
+		From:        "defender",
+		To:          "prosecutor",
+		MessageType: a2a.MessageTypeSpeech,
+		Visibility:  a2a.VisibilityPublic,
+		Payload: map[string]interface{}{
+			"content":       "OPPONENT-PUBLIC-CONTENT",
+			"reasoning":     "OPPONENT-SECRET-REASONING",
+			"stance":        "pro_b",
+			"confidence":    0.71,
+			"evidence_refs": []interface{}{"E002"},
+		},
+	})
+	require.NoError(t, err)
+
+	block := orch.buildA2AContextBlock(context.Background(), sessionID, "prosecutor", 0.5)
+	require.Contains(t, block, "对方的公开发言", "M1: 投影层产物必须被提示词消费")
+	require.Contains(t, block, "OPPONENT-PUBLIC-CONTENT", "对手的公开结论必须可见")
+	require.Contains(t, block, "E002", "对手引用的证据 ID 必须可见")
+	require.NotContains(t, block, "OPPONENT-SECRET-REASONING",
+		"对手的推理链绝不得进入提示词（隔离保证仍必须成立）")
 }
 
 // --- Integration: ProsecutorSpeakWithReAct injects memory into prompt ---

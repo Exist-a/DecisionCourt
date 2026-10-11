@@ -94,7 +94,7 @@ func TestBuildSpeakMaterials_IncludesMaterials_NoMetadataLeak(t *testing.T) {
 		Metadata:   `{"reasoning":"SECRET-REASONING-不得泄漏","agent_type":"defender"}`,
 	}}
 
-	got, err := buildSpeakMaterials(session, evidences, findings, messages, model.AgentProsecutor, model.AgentDefender)
+	got, err := buildSpeakMaterials(session, evidences, findings, messages, model.AgentProsecutor, model.AgentDefender, "## 对方的公开发言\nA2A-BLOCK-MARKER")
 	require.NoError(t, err)
 
 	require.Contains(t, got, "## 案件素材")
@@ -102,6 +102,7 @@ func TestBuildSpeakMaterials_IncludesMaterials_NoMetadataLeak(t *testing.T) {
 	require.Contains(t, got, "FINDING-SUMMARY-18个月内进入B轮比例41%", "调查发现必须进素材")
 	require.Contains(t, got, "TRANSCRIPT-BODY-对方主张B更稳", "庭审历史必须进素材")
 	require.Contains(t, got, "## 庭审历史")
+	require.Contains(t, got, "A2A-BLOCK-MARKER", "投影层区段必须进发言步素材（M1）")
 	require.NotContains(t, got, "SECRET-REASONING-不得泄漏",
 		"庭审历史只能走 ActionType+Content 白名单，Metadata.reasoning 不得进入素材")
 }
