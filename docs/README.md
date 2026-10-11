@@ -49,7 +49,7 @@
 | # | 决策 | 关联代码 |
 |---|---|---|
 | [0001](./adr/0001-mvp-tech-stack.md) | MVP 技术栈（Go + Next.js + PG + Redis + DeepSeek） | `backend/cmd/server/main.go` |
-| [0002](./adr/0002-a2a-private-channel.md) | 私有记忆底层迁移到 A2A 私有通道 | `internal/a2a/`、`internal/private_memory/` |
+| [0002](./adr/0002-a2a-private-channel.md) | 私有记忆底层迁移到 A2A 私有通道 | `internal/a2a/`（`internal/private_memory/` 已于 2026-10-10 删除） |
 | [0003](./adr/0003-contextview-projection.md) | LLM prompt 投影层（BuildContextView） | `internal/a2a/context_view.go` |
 | [0004](./adr/0004-bayesian-belief-engine.md) | v0.6 信念引擎升级（贝叶斯 log-odds + 锚定） | `internal/belief/engine_v06.go` |
 | [0005](./adr/0005-investigation-findings.md) | 调查发现独立表（与用户证据严格分离） | `internal/investigation/`、`investigation_findings` 表 |
@@ -107,6 +107,28 @@
 
 详细计划：[`roadmap/whitebox-roadmap.md`](./roadmap/whitebox-roadmap.md)
 
+### 5.6 Agent Gateway 预算计算完善计划（2026-10-09 拟定）
+
+2026-10-09 逐行代码核对发现预算能力的若干缺口：**成本维度预留未接线（`cost_usd` 恒 0、成本上限永不触发）、流式记账不记输入、无预留机制、仅 per-session 单进程、`MetricBudgetRatio` 是死指标**。Token 维度本身健全（多维 + 双窗口 + 分档 + fire-on-upgrade 预警）。
+
+分 4 阶段推进：P0 补齐可观测 → P1 成本接线 → P2 流式修正 → P3 可选预留。
+
+计划全文：[`AGENT-GATEWAY-BUDGET-PLAN.md`](./AGENT-GATEWAY-BUDGET-PLAN.md)
+
+### 5.7 可观测性「呈现层」建设计划（2026-10-09 拟定）
+
+白盒化的**采集**做得很足（`llm_calls` / `decision_events` / slog / JSON 文件日志 / 内存 metrics），但**呈现为零**：`/metrics` 是内存态 JSON 快照（无历史、无趋势、无告警、公开），看线上数据只能 SSH 进容器翻日志。ADR 0010 决策的 Prometheus + OTel 只落地了采集侧，roadmap 的 Phase C/D 被"规模"触发条件卡住——而"不用 SSH"这个收益在 N=1 时就成立。
+
+right-sized 四阶段：P0 应用内只读 `/ops` 面板（零新基建，复用 Caddy+auth+Postgres）→ P1 外部拨测告警 → P2 Prometheus/Alertmanager → P3 日志聚合（**建议永久不做**）。
+
+计划全文：[`OPS-DASHBOARD-PLAN.md`](./OPS-DASHBOARD-PLAN.md)
+
+### 5.8 Agent 输出「贴合实际」的决定因素分析（2026-10-09 拟定）
+
+用户提出「改造 prompt 最终要的是让每一方每一次输出都最贴合实际」后做的代码诊断。结论：**改 prompt 措辞不是决定性因素**——瓶颈在 (1) 素材管道（证据正文只进 prompt 200 字节 ≈ 66 汉字、调查发现是占位符从未注入）、(2) 校验粒度（四道护栏全是模式级，不能判断"有没有依据"）、(3) 可见面（只给结论不给论证）。且 (1)×(2) 耦合出恶性循环：护栏禁止无依据的具体数字，而证据只给 66 字 → 输出被推向模糊。
+
+分析全文：[`AGENT-GROUNDING-ANALYSIS.md`](./AGENT-GROUNDING-ANALYSIS.md)
+
 ---
 
 ## 4. 历史归档（[`archive/`](./archive/)）
@@ -143,7 +165,7 @@
 |---|---|---|
 | A2A 消息总线 + 路由 + 可见性隔离 | ✅ | `internal/a2a/bus.go`（12 项测试） |
 | ContextView 投影 + 4 种 private MessageType | ✅ | `internal/a2a/context_view.go`（10 项测试） |
-| 私有记忆池（Repository 接口 + InMemory/GORM） | ✅ | `internal/private_memory/`（9 项测试） |
+| 私有记忆池 | ✅ | **2026-10-10 收敛到 A2A 私有消息**（`internal/a2a/`）；原 `internal/private_memory/` 已删除 |
 | 调查发现独立表 + Service | ✅ | `internal/investigation/`（10 项测试） |
 | ReAct Runner（thought / tool_call / reflect / speak） | ✅ | `internal/agent/react_runner.go` |
 | Orchestrator Prompt 注入（ContextView + private memory） | ✅ | `internal/agent/orchestrator_context.go` |

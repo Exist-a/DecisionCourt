@@ -321,12 +321,17 @@ new_p          = sigmoid(logit(p)_{t+1}), clamp 到 [0.05, 0.95]
 
 #### 4.5.5 数据迁移（v0.4 → v0.5）
 
+> ✅ **已收口（2026-10-10）**：这张 legacy 表**已彻底删除**（删写 + 删表 + 删包），私有记忆的唯一权威源是 A2A 私有消息。删除依据：它的读路径在生产**零调用**（deferred-items-2026-10-09 §M2），双写过渡期本已跳过（决策 2026-07-01），再留着只是每场庭审多写一份无人读的数据。
+> **下表的 Expand-Contract 三阶段是历史计划记录，不再执行。**
+>
+> ⚠️ 顺带更正命名：文档里一直写的 `private_memory` 从不准确 —— GORM 对 `PrivateMemory` 的默认复数化结果是 **`private_memories`**（生产库与本地 dev 库均如此）。
+
 旧 `private_memories` 表保留 1 个版本周期的**双写过渡期**（PR 4 完成时启动），按业界 Expand-Contract 三阶段零停机迁移：
 
 ```
 Phase 1: 双写 1 周（验证两表一致性）
 Phase 2: 迁移历史 + 影子读对比
-Phase 3: 全量切读到 a2a_messages → drop 旧表
+Phase 3: 全量切读到 a2_a_messages → drop 旧表
 ```
 
 ---
@@ -365,7 +370,7 @@ Phase 3: 全量切读到 a2a_messages → drop 旧表
   - `verdict`：含 `summary` + `trial_summary` + 全文 `content`
   - `evidences`：所有用户提交证据
   - `messages`：完整庭审 transcript（含 agent_type 通过 JOIN agents 拿）
-  - `a2a_messages`：**只含 `ListVisibleTo("user")` 能看到的**（public + user 自己的 private memory）
+  - `a2_a_messages`：**只含 `ListVisibleTo("user")` 能看到的**（public + user 自己的 private memory）
 - **可见性保证**：通过 `a2a.Bus.ListVisibleTo(sessionID, "user")` 复用 SQL 隔离，**对家 private memory 不会泄漏到导出文件**
 
 #### PDF 导出
@@ -872,7 +877,7 @@ type SearchProvider interface {
 | `agent` | Agent 角色定义、prompt 管理、ReAct 循环、工具调度 |
 | `agent/tools` | 调查员搜索工具等可插拔工具 |
 | `a2a` | Agent 间消息协议、消息路由、访问控制 |
-| `private_memory` | 各 Agent 私有记忆池的 CRUD 与隔离 |
+| ~~`private_memory`~~ | **已删除（2026-10-10，M2）**：私有记忆改由 `a2a` 包承载（见 §4.5） |
 | `evidence` | **仅**用户证据的 CRUD 与影响评估 |
 | `investigation`（v0.3 新增） | 调查发现的 CRUD + 公开 A2A 集成 |
 | `search` | WebSearch 提供商抽象与实现（Bocha 默认） |
@@ -930,7 +935,7 @@ Agent Gateway 是位于 Agent Orchestration 与 LLM Provider 之间的中间层�
 
 > **v0.5+ 范围调整**：白盒子集（统一接入 + 审计落库 + trace 关联）已在 MVP 阶段实装。完整版（Prompt 压缩 / Token 预算 / 限流 / Fallback）已在 v0.5+ 实装，作为可开关的高级能力；模型路由 / 缓存仍留到第二阶段。
 >
-> **基线 benchmark（2026-07-01）**：v0.5+ Legacy keep-5 节省 **70.3%**（837 tokens / 12 轮庭审）；v2 Smart 评分压缩节省 **31.4%**（374 tokens / 12 轮庭审）；DecisionCourt 庭审场景推荐 Smart —— 见 `.trae/documents/compression-eval-baseline.md`。
+> **基线 benchmark（2026-07-01 初测 / 2026-10-09 复测）**：⚠️ **这是合成 fixture 微基准，不是生产实测** —— 输入是测试里手写的 12 轮假庭审（`compression_eval_test.go` 的 `fixedTrialTranscript()`，重复填充文本 + fake LLM + 人工灌预算到 throttle 档），且**真实庭审的预算峰值 69.4% 压在 70% 触发线之下、压缩从未触发**（见 `OBSERVABILITY.md` §8.6）。仅供**策略横向对比**：v0.5+ Legacy keep-5 保留 6 条、省 **70.3%**；v2 Smart 保留 **13**/19 条、省 **34.1%**（2026-10-09 复测；初测为 14 条 / 31.4%，随 v2.10 改用内容感知 token 估算的口径变化而漂移）。结论是**取舍方向**而非产品指标：Smart 用更低的节省率换事实链/推理锚点不丢。**真实节省率尚无数据**（原引用的 `.trae/documents/compression-eval-baseline.md` 已不存在）。
 
 #### 9.4.0 v0.5+ 已实装
 
@@ -1028,7 +1033,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 - [ ] 真实网络搜索/RAG 的高级语义检索
 - [ ] 用户注册与历史记录
 - [x] ❌ **不做**：LLM 调用审计可视化（前端）—— 后端 `llm_calls` 表 + `backend/logs/agent_gateway_*.log` 已足够；产品级 dashboard 不在 MVP 范围。决策 2026-07-01。
-- [x] ❌ **不做**：v0.5 数据迁移 Phase 1-3 —— 项目处于开发期，数据无保留价值；`private_memory` ↔ `a2a_messages` 双写不做正式切换。决策 2026-07-01。
+- [x] ❌ **不做**：v0.5 数据迁移 Phase 1-3 —— 项目处于开发期，数据无保留价值；`private_memory` ↔ `a2_a_messages` 双写不做正式切换。决策 2026-07-01。（**后续演进：2026-10-10 直接删除旧表，见 §4.5.5**）
 
 **v0.7+ 计划（不在 MVP）：**
 - [ ] ✅ **强制立场一致性检查**：v0.10.24 候选 1 落地, LLM-as-judge 打回重生成 + 2 次 retry + 老 isStanceConsistent 阈值 fast filter (pro_a < 0.45, pro_b > 0.45, 严格 > / <) (详见 §4.3.2)
@@ -1138,7 +1143,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 | 架构设计 | ✅ | A2A 协议、私有记忆池、信念引擎、ReAct、流式 写入 PRD/Agent/技术文档 |
 | **WebSearch（Bocha）** | ✅ | `internal/search/bocha.go` 实装,HTTP 200 实测。SearXNG/DuckDuckGo 已在 v0.8.3 删除 |
 | **A2A 消息总线** | ✅ | `internal/a2a` 包实装：Bus + Repository 接口 + InMemory/GORM 实现 + 12 项隔离测试。`A2AMessage` 表 + 公开/私有可见性 + Orchestrator `a2a.message` 审计广播 + `dispatch_investigator` / `investigation_report` 公开 |
-| **私有记忆池** | ✅ | `internal/private_memory` 包实装：Repository 接口 + InMemory/GORM 实现 + 9 项隔离测试。`PrivateMemory` 表 + 四类记忆 + Orchestrator `ProsecutorSpeak/DefenderSpeak` 自动写 `strategy_note` |
+| **私有记忆池** | ✅ | **2026-10-10 收敛到 A2A 私有消息**（`internal/a2a` + `ContextView`，四类记忆 + Orchestrator 自动写 `strategy_note`）。原独立 `private_memory` 包与 `private_memories` 表**已删除**（读路径生产零调用，deferred-items-2026-10-09 §M2） |
 | **ReAct 循环** | ✅ | `internal/agent/react_runner.go` 实装 ReAct 协议 + `OnIterStart` / `OnSpeakChunk` 钩子 + `ActionReflect` |
 | **LLM 流式** | ✅ | 后端 `llm.Client.StreamComplete` + `hub.Broadcast` sleep 30ms + 前端 `applySpeakChunk` 用 `flushSync` 强制 commit |
 | **调查发现独立表** | ✅ | `internal/investigation/` 包实装 + `investigation_findings` 表 + `GET /investigations` 端点 + 10 项测试。`evidence` 表**不**会被调查员搜索写入 |
@@ -1172,7 +1177,7 @@ func RouteModel(task TaskType, complexity float64, budget TokenBudget) ModelConf
 - ❌ Agent Gateway 完整版中的模型路由 / 响应缓存（留第二阶段）
 - ❌ 专家证人、陪审团、历史庭审、PDF 导出
 - ❌ **LLM 调用审计可视化（前端）**：后端 `llm_calls` 表 + `backend/logs/agent_gateway_*.log` 已足够；产品级 dashboard 不增加。决策 2026-07-01。
-- ❌ **v0.5 数据迁移 Phase 1-3**：项目处于开发期，数据无保留价值；`private_memory` ↔ `a2a_messages` 双写不做正式切换。决策 2026-07-01。详见 [memory-a2a-redesign.md §3](../.trae/documents/memory-a2a-redesign.md#3-双写迁移时间线pr-4-完成后启动)。
+- ❌ **v0.5 数据迁移 Phase 1-3**：项目处于开发期，数据无保留价值；`private_memory` ↔ `a2_a_messages` 双写不做正式切换。决策 2026-07-01。详见 [memory-a2a-redesign.md §3](../.trae/documents/memory-a2a-redesign.md#3-双写迁移时间线pr-4-完成后启动)。
 
 ### 15.4 当前阻塞
 

@@ -8,7 +8,7 @@
 
 v0.4 之前，私有记忆和 A2A 消息是两套独立基础设施：
 
-- **A2A** —— `a2a_messages` 表 + `Bus` + 可见性隔离
+- **A2A** —— `a2_a_messages` 表 + `Bus` + 可见性隔离
 - **Private Memory** —— `private_memories` 表 + `Repository` 接口
 
 两表存在三大差距：

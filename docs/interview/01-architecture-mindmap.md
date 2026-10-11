@@ -121,7 +121,7 @@
 [DeepSeek API] → response
    ▼
 [Bus.Publish]  ← Agent 间通信走这里
-   │ 1. 落库 a2a_messages
+   │ 1. 落库 a2_a_messages
    │ 2. 广播给 Hub (按可见性)
    │ 3. metric 计数
    ▼

@@ -248,7 +248,7 @@ func NewOTelTracer(cfg OTelConfig) (Tracer, error) {
 
 ### E.2 庭审回放系统
 
-- 基于 `decision_events` 表 + `a2a_messages` + `llm_calls` + `belief_diffs`
+- 基于 `decision_events` 表 + `a2_a_messages` + `llm_calls` + `belief_diffs`
 - 输入 `session_uuid` → 输出**可交互式时间线**
 - 关键节点：状态机迁移 / Agent 发言 / 调查员发现 / 法官判决
 

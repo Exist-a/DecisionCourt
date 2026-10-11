@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **生成日期** | 2026-10-07 |
-| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。<br>**2026-10-09（第二次上线）追加 R7–R13**：**R7**（`next build` 被 ESLint 死变量阻断，R4/R5 残留）、**R8**（`test.yml` 缺 job key → 依赖审计从未执行）、**R9**（ACR 拒收 BuildKit attestation index）、**R10**（`prompts/base.yaml` 未进 runtime 镜像 → 线上永久降级）、**R11**（Prompt Lab 4 条 REST 路由从未接线 → 恒 404）**五项已修并上线**；**R12**（FileLogger 因 uid 不匹配 + 宿主机 root 属主而写不进去）、**R13**（无 prompt 版本归因）**两项已修复并上线**（commit `edf232e`）——详见文末 R12 / R13 的「修复落地」小节；修复验证期间又发现并解决 **R15**（空 `systemPrompt` → 上游 422，Prompt Lab 的 LLM-as-judge 恒失败）与 **R17**（`deploy.yml` 从不同步 `docker-compose.yml` → compose 变更静默不生效，R12 因此白修一个部署周期）；**R14**（无 session 的调用不进 `llm_calls`）已按用户拍板的「显式无会话标记」方案修复并验证；仅 **R16**（semver 不随内容变，属已决策语义）属记录性条目，无需改动 |
+| **状态** | ✅ **D7–D26 全部收口（v2.12 + v2.13，2026-10-08）**，且 **docker + 浏览器双路径实测通过**：D7–D12 + D14 已实现并实跑验证；D13 已按授权实现（ADR 0045）；D15–D19 已修复并实跑 + 浏览器验证；**v2.13 收口 D20–D24 并 docker 实跑**；复验发现的 **D25 已按"覆盖式"修复**（API + 浏览器双验证）；浏览器实测发现的 **D26 已按"GET 自愈"修复并 curl 验收通过**。详见「v2.13 收口」一节。<br>**2026-10-09（第二次上线）追加 R7–R13**：**R7**（`next build` 被 ESLint 死变量阻断，R4/R5 残留）、**R8**（`test.yml` 缺 job key → 依赖审计从未执行）、**R9**（ACR 拒收 BuildKit attestation index）、**R10**（`prompts/base.yaml` 未进 runtime 镜像 → 线上永久降级）、**R11**（Prompt Lab 4 条 REST 路由从未接线 → 恒 404）**五项已修并上线**；**R12**（FileLogger 因 uid 不匹配 + 宿主机 root 属主而写不进去）、**R13**（无 prompt 版本归因）**两项已修复并上线**（commit `edf232e`）——详见文末 R12 / R13 的「修复落地」小节；修复验证期间又发现并解决 **R15**（空 `systemPrompt` → 上游 422，Prompt Lab 的 LLM-as-judge 恒失败）与 **R17**（`deploy.yml` 从不同步 `docker-compose.yml` → compose 变更静默不生效，R12 因此白修一个部署周期）；**R14**（无 session 的调用不进 `llm_calls`）已按用户拍板的「显式无会话标记」方案修复并验证；仅 **R16**（semver 不随内容变，属已决策语义）属记录性条目，无需改动。<br>**2026-10-09 核对生产日志时又新增 R18–R20（均未修）**：**R18** 流式调用不记 prompt/completion token 明细（1/4 的调用成本只能粗估）、**R19** 会话预算用量没有指标（"预算快烧完"在面板上看不到）、**R20** 文档写的 `a2a_messages` 表不存在（真实表名 `a2_a_messages`，照文档写 SQL 必失败） |
 | **触发** | 简历 5 条亮点逐条对照代码核对（配合 `.trae/documents/interview-answers-project-highlights.md`），发现「亮点描述成立、但支撑它的功能只做了一半」的缺口 |
 | **关联 PR** | 无（本批为新增发现，D7 起编号） |
 | **核对基线** | `main` @ `9db2e0a`（v2.10 之后） |
@@ -844,6 +844,14 @@ v2.13 收口后的浏览器实测暴露 3 个**新的运行时缺陷**，都是�
 
 **已知边界（未做）**：只有"按数量增量 FIFO 消占位"，没有做超时兜底 —— 若提交最终失败（例如后端拒绝），占位会一直停在「排队中」。失败路径要精确对应需要后端回一个可关联的 request_id，属后续增强。
 
+**R5-d 补漏（2026-10-09，用户实测反馈）**：R5-d 只给**证据板表单**那一条路径加了占位。庭审页底部输入栏（`Input` + 发送按钮）当时是**另一份** `submit_evidence` 发送逻辑（`handleSendInput`），没跟占位逻辑走 —— 于是"从底部输入框提交证据"看不到「排队中」，用户反馈为"没有显示排队中的图标"。
+
+**修法**：`handleSendInput` 不再自己发 action，改为调用 `handleSubmitEvidence(content, "fact")`，两条入口收敛到同一个函数（底部栏的类型固定 `fact` 不变，埋点字段与改前完全一致）。这样以后单点改动不会再漏掉其中一条。
+
+**同时记录的相邻问题（未修，留观察）**：
+1. `appeal` 阶段底部输入栏是**开启**的且 placeholder 写"可补充证据重新辩论"，但后端状态机 `submit_evidence` 明确禁止 `appeal`（要走 `reopen_trial`）→ 该阶段提交必然被拒，占位会永久停在「排队中」（命中上面那条已知边界）。当前 `appeal` 阶段后端没有任何代码会把 phase 置成它，实际不可达，故未改动；若将来启用该阶段，需同步 `usePhaseUI` 的 `inputDisabled`。
+2. `usePhaseUI.inputHelpText`（closing 阶段那句"如需补充证据，可点击「+ 提交证据」按钮"）在 `CourtroomScene` 里**从未被渲染**，是个死字段。
+
 ### R6 导出 JSON 401 + 导出 PDF 样式丢失（2026-10-08）
 
 **R6-a 导出 JSON 401**
@@ -1300,6 +1308,159 @@ prompt_version=1.0.3-pr1@dev#4ba89d0c | status=success
 
 **方法论（补一条）**：验证"流水线类改动"要看**它留下的痕迹**（文件 mtime / 戳文件 / 容器启动时间），
 而不是看 CI 是否全绿 —— CI 全绿恰恰是 R17 那类故障的伪装（镜像更新了、编排没更新，一切看起来正常）。
+
+---
+
+## 2026-10-09 核对生产日志时新发现（R18–R20）
+
+> 来源：用户在生产上跑了一场完整 quick 庭审后要求"查看日志并核对"。核对**做对了什么**见
+> [`docs/OBSERVABILITY.md`](../OBSERVABILITY.md) §8.6（含 41 行 FileLogger ↔ 41 行 `llm_calls`
+> 完全对齐的证据）；本节只登记**核对中发现的缺口**。
+
+### R18（P2）流式调用不记 prompt/completion token 明细 → 成本估算不准
+
+> ✅ **已修复（2026-10-10 第 3 轮）**：流式请求补 `stream_options.include_usage=true`，`StreamChunk` 透出末帧
+> usage，网关优先用真实 input/output 拆分（拿不到才估算，并把尺子从 `len/4` 换成 CJK 感知的 `EstimateTokens`、
+> 同时补记输入）。实测新代码下 `react_speak_stream` 行 `prompt_tokens > 0`。
+>
+> ⚠️ **同时纠正本文档原先的误诊**：本条目写的"流式**不记**输入"只对了一半 —— 真相是
+> **`react_speak_stream` 的 prompt 本来就只有 ~180 token**：`streamSpeakContent` 故意用一个 fresh 的极小
+> prompt（只喂 `论点/立场/置信度`，并显式"忽略之前的对话历史与任何系统协议"）。所以"speak token 远小于
+> think(5467)"不是记账 bug，而是**发言步根本不看案件素材** —— 这是一个比本条更重要的**接地性**发现，
+> 已登记为 `AGENT-GROUNDING-ANALYSIS.md` §8。
+
+**现象**：`llm_calls` 里 `react_speak_stream` 的 **10 行**（占该场 41 行的 **24%**）
+`prompt_tokens` 与 `completion_tokens` **全为 0**，只有 `total_tokens`；其余所有 `task_type`
+两个字段都正常（`react_think` 18 行 / `evidence_eval` 3 / `summary` 3 / `assess` 3 / `final` 1 /
+`verdict` 1 全部有明细）。
+
+**根因**（读代码确认，不是推测）：
+1. `internal/llm/client.go` 的 `StreamComplete` 构造请求时**没有传 `stream_options: {"include_usage": true}`**
+   （全包 grep `StreamOptions` / `include_usage` 零命中）→ 上游流式响应里根本不含 usage 明细；
+2. 于是网关只能拿一个总量，落库写 `Usage{TotalTokens: usage.TotalTokens}`（`gateway.go:458`），
+   两个拆分为零值。
+
+**影响**：占 1/4 的调用（且恰好是输出侧最"贵"的发言流式调用）**只能拿到估算总量** →
+这部分 `cost_usd|cny` 同样不准；做"prompt 占比 / 输出占比"优化分析时这里是数据洞。
+
+**修法**：流式请求加 `stream_options.include_usage = true`（go-openai 的 `ChatCompletionStreamOptions`），
+并解析**最后一帧**的 usage（OpenAI 兼容协议下 usage 在末帧、`choices` 为空）。
+⚠️ 先确认 DeepSeek 是否支持该参数；不支持则退路是流式结束后用 tokenizer 估算（要引依赖，不优先）。
+
+**验证**：跑一场含流式发言的庭审，断言 `llm_calls` 中 `react_speak_stream` 行 `prompt_tokens > 0`。
+
+**不做**：不在网关层"猜"拆分比例（那是造数据，比缺数据更坏）。
+
+### R19（P2）会话预算用量没有指标 → "预算快烧完"在面板上看不到
+
+> ✅ **已修复（2026-10-10 第 3 轮）**：新增 `llm_budget_used_tokens`（gauge 快照）并在每次记账后上报
+> `budget_ratio`（gauge，取**最高会话水位**，无 session_uuid label 以控基数）。实测 `/metrics` 出现
+> `budget_ratio=0.2076` / `llm_budget_used_tokens=41524`（此前两者完全不存在）。
+> **顺带**：同条目提到的 `llm_call_total.phase` label 语义错位（取自压缩策略）已改名为
+> `compression_strategy`。**剩下的一半**（Prometheus/Grafana 呈现层）见第 3 轮的另一半工作。
+
+**现象**：`/metrics` 里**没有任何** `TokenBudget` 相关的 gauge/counter（只有缓存、并发、
+LLM 时长/token）。预算用量只出现在 FileLogger JSON 的 `budget_used` / `budget_total` / `budget_ratio` 字段。
+
+**为什么值得修**：`AGENT_GATEWAY_TOKEN_BUDGET` 打开且 `REJECT_WHEN_EXHAUSTED=true` 时，
+**超预算是直接拒掉调用**（不是降级）→ 一场庭审跑到一半开始"判决被拒"。
+实测（2026-10-09 一场 quick：3 轮质证 + 3 份证据）：峰值 **138,790 / 200,000 = 69.4%**，
+已经贴近上限，再多几轮/几份就会撞线 —— 而这件事在监控上完全看不见，只能登机器翻日志。
+
+**修法**：在 `budgetSnapshot` / `AddUsage` 处上报 `llm_budget_used_tokens`（counter）与
+`llm_budget_ratio`（gauge，取当前最高会话比值）。标签应有界（model/agent）。
+
+**顺带（同一类"标签有名字没语义"）**：`llm_call_total` 的 `phase` label 观测值**恒为空** ——
+查代码它取自 `compInfo.Strategy`（压缩策略，`gateway.go:230`），**不是庭审阶段**。
+要么改名 `compression_strategy`，要么接真正的 phase。
+
+### R20（P3，文档与实现不一致）`a2a_messages` 表根本不存在，真实表名是 `a2_a_messages`
+
+**现象**：照文档写 SQL 直接失败（2026-10-09 实测踩到）：
+
+```
+ERROR:  relation "a2a_messages" does not exist
+```
+
+生产库里实际是 **`a2_a_messages`** —— GORM 对结构体 `A2AMessage` 的默认蛇形命名把 `A2A` 拆成 `a2_a`。
+
+**错在文档，不在代码**。写着 `a2a_messages` 的地方至少 5 处：`decisioncourt-prd.md`（3 处）、
+`decisioncourt-db-design.md` §4 的表清单、`decisioncourt-api-design.md`（导出 JSON 的字段名 +
+隔离说明）、`decisioncourt-tech-spec.md`（2 处）。
+
+**影响**：任何照文档写查询/排查的人或 Agent 都会踩同一个坑。注意 `api-design` 那处是
+**导出 JSON 的对外字段名**，属契约，不能跟着改；SQL/表名层面才是要修的。
+
+**修法（建议前者）**：
+1. **改文档**：把"表名 `a2a_messages`"统一为 `a2_a_messages`，并注明 `api-design` 的 JSON 字段名保持不变。
+2. 给模型加 `TableName() string { return "a2a_messages" }` 让代码迁就文档 —— 但**生产表已存在**，
+   需要迁移表名，收益不抵风险，不建议。
+
+**✅ 修复落地（2026-10-10，第 1 轮止血）**：
+
+1. **代码侧根因硬化**：`A2AMessage` 补 `TableName() string { return "a2_a_messages" }`
+   （`backend/internal/model/db.go`）—— 此前表名完全依赖 GORM 默认复数化，属"意外产物"；
+   与 `DecisionEvent` / `BeliefDiff` / `EvidenceRebuttalLink` 等已显式钉名的模型对齐。
+   新增 `backend/internal/model/a2a_message_test.go::TestA2AMessage_TableName` 钉住。
+   **未改表名**（生产表已存在，遵守修法 2 的"不建议"结论）。
+2. **文档侧统一**：`decisioncourt-prd.md` / `tech-spec.md` / `db-design.md` / `architecture/link-overview.md` /
+   `interview/*` / `adr/0001` `adr/0002` / `OBSERVABILITY.md` §8.4 / `roadmap/whitebox-roadmap.md` /
+   `observability/case-study-2026-07-02.md` 中的**表名**引用统一为 `a2_a_messages`。
+   `docs/archive/**` 作为历史快照**保留原文不动**（符合 AGENTS.md §6.2 对归档的定位）。
+3. **契约区分**：`decisioncourt-api-design.md` 的导出 JSON 字段名 `a2a_messages` **保持不变**（属对外契约），
+   并在该处 + `decisioncourt-db-design.md` §1 设计原则第 6 条显式注明"JSON 字段名 ≠ 表名"。
+
+---
+
+## 2026-10-10 第 2 轮 docker 实跑时新发现（R21）
+
+### R21（P2）无证据庭审：ReAct 连续检索到迭代上限 → 开场陈述直接失败
+
+**现象**（2026-10-10 第 2 轮 docker 业务验证实跑发现）：一场**未提交任何证据、也没填背景**的庭审，
+点「开庭」后开场陈述失败：
+
+```
+{"level":"ERROR","msg":"opening speeches failed","error":"react: max iterations (4) exceeded without speak"}
+```
+
+前端停在「庭审开场中」，此后无任何发言 —— 用户视角等于"这场庭审废了"，且**没有可操作提示**。
+
+**根因**（日志 + 代码确认）：控方 prompt 的策略第 1 条写着「如果当前证据列表为空或没有 A 相关证据，
+优先调用 investigator_search」。证据为空时模型照做，连续 4 次 `prosecutor → investigator (dispatch)`
+（日志可证），每次都因检索结果不足被判为"还不够"，**始终没走到 speak** → 触到 4 次迭代上限，
+`lawyerSpeakReAct` 把整轮判为失败。
+
+**定性**：**与本轮改动无关** —— 该 prompt 指令早于本轮；同环境下"有证据/有背景"的庭审均正常跑完
+（含 3 轮质证 + 判决）。属**输入相关的既有失败模式**：「零素材开庭」是允许的入口，但 prompt 又把它
+推向检索，两者相遇即死。
+
+**建议动作（未做）**：
+1. ReAct 加兜底：检索 N 次仍未发言 → **强制 speak**（用已有信息），而不是把整轮判失败；
+2. 或把「证据为空优先检索」改为软约束（「最多检索一次，之后必须发言」）；
+3. 前端在 `opening speeches failed` 时给出可操作提示（重试 / 补充证据），而不是静默停住。
+
+**复现**：立案时不填背景、不提交证据，直接点「开庭」。
+
+**✅ 修复落地（2026-10-10，三层）**：
+
+1. **错误 sentinel 未 wrap（真 bug）**：`react_runner.go` 触顶时返回的是**不带 `%w` 的新 `fmt.Errorf`**，
+   而 `courtroom.ClassifyError` 用 `errors.Is(err, agent.ErrReactMaxIterations)` 匹配它 → 那个
+   "3 个恢复动作（重启 / 跳过开场 / 直接判决）"分支**从未生效**（其单测手工构造了 wrapped error，
+   所以测试一直绿、生产一直不生效 —— 与 §silent-error 家族同源）。已改为
+   `fmt.Errorf("... (max=%d) ...: %w", n, ErrReactMaxIterations)`。
+2. **引擎兜底（不再有死路）**：`lawyerSpeakReAct` 在 `errors.Is(err, ErrReactMaxIterations)` 时
+   **降级到非 ReAct 单次发言路径**（同一 system prompt + 追加"必须现在发言"提醒、不绑工具），
+   复用 `o.speak`（自带 JSON 重试与最终兜底文案）→ 保证这一轮一定有发言并照常写 A2A side effects。
+   降级也失败才返回原始错误（走 UFE 恢复路径）。
+3. **提示词软约束**：`ProsecutorPrompt` / `DefenderPrompt` 战略第 1 条由"证据为空优先 investigator_search"
+   改为"**一次即可**，不要反复检索；随后必须给出你的主张"。
+
+**验收（2026-10-10）**：
+- 单测 `TestProsecutorSpeakWithReAct_DegradesToSpeakOnMaxIterations`（4×tool_call → 触顶 → 降级发言 + A2A side effects）；`go test ./...` **22 包全绿**。
+- **docker 实跑精确复现**（零素材开庭）：开场陈述**正常产出两方发言**（283 / 300 字），不再失败。
+  ⚠️ 如实说明：本次实跑是**软约束生效**（`react_think`×2 → `react_speak_stream`），
+  **降级兜底未触发**（WARN 计数 0）—— 降级本身由上面的单测覆盖。
+- 附带修好：开场失败时的 UFE 现在真的会带 3 个恢复按钮（此前静默降级为通用错误）。
 
 
 

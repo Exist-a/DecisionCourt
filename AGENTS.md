@@ -347,7 +347,7 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 |------|----------|----------|
 | 启动 dev 栈（首次/重建） | `docker compose -f docker-compose.dev.yml up -d --build` | 任何 docker 业务测试的起点 |
 | 启动 dev 栈（增量） | `docker compose -f docker-compose.dev.yml up -d` | 改完代码 HMR 自动生效 |
-| 查看容器状态 | `docker compose -f docker-compose.dev.yml ps` | 启动后看 4 个容器都 healthy |
+| 查看容器状态 | `docker compose -f docker-compose.dev.yml ps` | 启动后看 **6 个**容器：`dc_dev_postgres` / `dc_dev_redis` / `dc_dev_backend` / `dc_dev_frontend` / `dc_dev_prometheus` / `dc_dev_grafana`（观测栈自 2026-10-10 第 3 轮起**默认启动**） |
 | 查看 backend 日志 | `docker compose -f docker-compose.dev.yml logs --tail=50 backend` | 调试启动 / fail-fast |
 | 查看 frontend 日志 | `docker compose -f docker-compose.dev.yml logs --tail=30 frontend` | 浏览器看到异常时 |
 | 查看 postgres 日志 | `docker compose -f docker-compose.dev.yml logs --tail=20 postgres` | DB 连接问题 |
@@ -376,6 +376,9 @@ Agent 违反本规则导致 `.env` key 被清空 / 覆盖 / 泄露：
 docker compose -f docker-compose.dev.yml up -d --build
 docker compose -f docker-compose.dev.yml ps
 # 期望: dc_dev_postgres / dc_dev_redis / dc_dev_backend / dc_dev_frontend 都 healthy / running
+# 2026-10-10 第 3 轮起还有 dc_dev_prometheus / dc_dev_grafana（观测栈默认启动；
+#   Grafana http://localhost:3001 admin/admin、Prometheus http://localhost:9090，
+#   不想跑就 `docker compose -f docker-compose.dev.yml stop prometheus grafana`）
 
 # 2. 业务端点健康检查
 curl http://localhost:8180/health
@@ -387,10 +390,15 @@ curl http://localhost:8180/api/v1/health/llm | jq
 # 期望无 key: {"configured":false,...}
 
 # 4. v2.1 F5: metrics 翻动（需先建 1 个 trial）
-# 注意: 端点是 /metrics（顶层,白盒化时公开），不是 /api/v1/metrics（后者 404）。
+# 注意: 端点是 /metrics（顶层），不是 /api/v1/metrics（后者 404）。
 # 2026-10-08 v2.13 docker 验证实测修正。
+# 2026-10-10 第 3 轮：/metrics 不再无条件公开。
+#   - dev compose 显式设 OPS_METRICS_PUBLIC=true → 下面这条 curl 照旧可用；
+#   - 生产默认收紧（false），需带 OPS_METRICS_TOKEN：
+#       curl -H "Authorization: Bearer $OPS_METRICS_TOKEN" http://<host>/metrics
+#   - Prometheus 抓取用文本格式：curl 'http://localhost:8180/metrics?format=prometheus'
 curl http://localhost:8180/metrics | jq '.counters, .gauges'
-# 期望: agent_gateway_llm_total_tokens_per_call 在 500-2000
+# 期望: agent_gateway_llm_total_tokens_per_call 在 500-2000；budget_ratio / llm_budget_used_tokens 非 0
 
 # 5. 前端验证（用 web-gui-tester 或手动）
 # - 首页 http://localhost:3000 加载正常

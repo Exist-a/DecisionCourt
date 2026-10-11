@@ -31,7 +31,7 @@
 
 #### 哲学 2：A2A 总线 = 单一事实源
 
-不靠 prompt engineering 让 agent "自己记住"对方说了什么，而是把 **Agent 间通信**显式走 A2A 总线（[`internal/a2a/bus.go`](file:///d:/源码/FullStack/DecisionCourt/backend/internal/a2a/bus.go)），**所有消息都落库**到 `a2a_messages` 表，**有可见性隔离**（public / private / team_only）。
+不靠 prompt engineering 让 agent "自己记住"对方说了什么，而是把 **Agent 间通信**显式走 A2A 总线（[`internal/a2a/bus.go`](file:///d:/源码/FullStack/DecisionCourt/backend/internal/a2a/bus.go)），**所有消息都落库**到 `a2_a_messages` 表，**有可见性隔离**（public / private / team_only）。
 
 **好处**：
 - 审判长决策可追溯（"为什么 AI 法官采信了 A？" → 查 A2A 消息 + 信念轨迹）
@@ -148,7 +148,7 @@
 │  - llm_calls: LLM 调用审计                  │
 │  - verdicts: 判决                            │
 │  - decision_events: 业务事件（v0.8 新增）    │
-│  - a2a_messages: A2A 落库                   │
+│  - a2_a_messages: A2A 落库                   │
 │  - court_agents: Agent 注册                  │
 └─────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────┐
@@ -286,7 +286,7 @@ type Bus struct {
 }
 
 func (b *Bus) Publish(ctx, msg Message) error {
-    // 1. 写库 a2a_messages 表（无论可见性，都落库）
+    // 1. 写库 a2_a_messages 表（无论可见性，都落库）
     b.repo.Insert(msg)
 
     // 2. 广播（仅 public / team_only 广播；private 不广播）
@@ -392,7 +392,7 @@ belief_diffs         信念变化审计（v0.6）
 evidence_weaken_links 异构论辩图谱 weaken 边（v0.6）
 verdicts             判决
 llm_calls            LLM 调用审计（v0.5+ 47 字段）
-a2a_messages         A2A 消息全量（v0.5+）
+a2_a_messages         A2A 消息全量（v0.5+）
 decision_events      业务事件审计（v0.8 新增）
 ```
 

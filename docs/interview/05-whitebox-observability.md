@@ -29,7 +29,7 @@ L4  智能:   AIOps 异常检测 / eBPF 无侵入埋点 / 持续剖析
 
 - 三大支柱（slog / metrics / decision_events）**全链路打通**
 - 端到端 trace_id 串联（HTTP X-Request-ID → ctx.Trace → 业务事件 → 数据库）
-- 业务级 event 单独存表（`decision_events` / `belief_diffs` / `a2a_messages`）
+- 业务级 event 单独存表（`decision_events` / `belief_diffs` / `a2_a_messages`）
 
 ### 1.2 L3 预留 = 未来不返工
 
@@ -196,7 +196,7 @@ CREATE TABLE decision_events (
 | 实时指标 | 11 类业务指标 | **内存**（`GET /metrics` 返回） | ❌（接 Prometheus 才持久化） |
 | 业务审计 | decision_events | **PostgreSQL** | ✅ 持久化 |
 | LLM 审计 | llm_calls | **PostgreSQL** + **文件 JSON Lines** | ✅ 双写 |
-| 消息 | a2a_messages | **PostgreSQL** | ✅ 持久化 |
+| 消息 | a2_a_messages | **PostgreSQL** | ✅ 持久化 |
 
 **设计原则**：
 1. **结构化数据（业务事件）→ 永远进数据库**（可 SQL 查询、可索引）
@@ -364,7 +364,7 @@ v0.8 + v0.8.3 一共暴露 **5 个 bug**：
 
 AI 系统最大的风险是"**决策过程不可解释**"。**白盒化 = 让 AI 系统能解释自己**。
 
-我做的 decision_events 表 + belief_diffs 表 + a2a_messages 表 = **3 个审计 trail**——这一场庭审的所有决策、所有信念变化、所有 Agent 通信**完整入库**，**未来任何"为什么"都能查**。
+我做的 decision_events 表 + belief_diffs 表 + a2_a_messages 表 = **3 个审计 trail**——这一场庭审的所有决策、所有信念变化、所有 Agent 通信**完整入库**，**未来任何"为什么"都能查**。
 
 **这是 AI 系统区别于传统软件系统的核心**——传统软件 debug 看 stack trace，**AI 系统 debug 看 "这段 prompt 让 LLM 输出 X 的逻辑"**。**白盒化就是 AI 系统的 stack trace**。
 

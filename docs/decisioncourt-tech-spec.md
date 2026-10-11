@@ -221,7 +221,7 @@ backend/
 │   │   ├── message.go           # A2A 消息结构（含 dispatch_investigator / investigation_report）
 │   │   ├── bus.go               # 消息总线与路由
 │   │   └── access.go            # 访问控制（上下文隔离）
-│   ├── private_memory/
+│   ├── private_memory/          # 已删除（2026-10-10，M2）→ 私有记忆改存 a2_a_messages
 │   │   ├── model.go             # 私有记忆数据模型
 │   │   ├── store.go             # 按 Agent 隔离的 CRUD
 │   │   └── injector.go          # 记忆注入与相关性筛选
@@ -287,7 +287,7 @@ type Message struct {
 
 `a2a.Bus` 的核心职责：
 
-1. **路由**：根据 `To` 字段将消息分发给目标 Agent；持久化写入 `a2a_messages` 表。
+1. **路由**：根据 `To` 字段将消息分发给目标 Agent；持久化写入 `a2_a_messages` 表。
 2. **可见性隔离**：`Visibility = private` 的消息只能被 `To` 与 `From` 看到，orchestrator 看到全部用于审计。`SanitizedPayload()` 方法在投影给对手方前剥离 `reasoning` 字段。
 3. **审计广播**：每次 `Send` 触发 `a2a.message` WebSocket 事件；公开消息广播 payload，私有消息仅广播 envelope（不带 payload，避免泄漏）。
 4. **消息类型**（v0.5 扩展 4 个 private 类型）：
@@ -384,6 +384,8 @@ func (b *Bus) BuildContextView(
 
 #### 4.5.3 数据迁移（v0.5 双写过渡）
 
+> ✅ **已收口（2026-10-10）**：`private_memories` 表已**彻底删除**（删写 + 删表 + 删包），私有记忆唯一权威源是 A2A 私有消息。下面的三阶段迁移是历史计划，不再执行。见 `decisioncourt-prd.md` §4.5.5。
+
 `private_memories` 表在 v0.5 PR 4 完成时启动**双写过渡期**，按业界 Expand-Contract 三阶段零停机迁移：
 
 ```go
@@ -396,10 +398,10 @@ func (o *Orchestrator) recordSideEffects(...) {
 
 // Phase 2: 迁移历史 + 影子读
 // 后台脚本：SELECT * FROM private_memories WHERE session_id=X
-//   → INSERT INTO a2a_messages (visibility='private', payload=...)
+//   → INSERT INTO a2_a_messages (visibility='private', payload=...)
 // 影子读对比：每场庭审 assertion：strategy_note 数量两表相同
 
-// Phase 3: 全量切读 a2a_messages → drop 旧表
+// Phase 3: 全量切读 a2_a_messages → drop 旧表
 ```
 
 **详细迁移时间线** 参见 [memory-a2a-redesign.md §3](../../.trae/documents/memory-a2a-redesign.md)。
@@ -451,8 +453,8 @@ Prosecutor/Defender   courtroom.Service   a2a.Bus          investigation.Service
 - `messages`：庭审消息记录
 - `verdicts`：判决书
 - `belief_states`：信念状态快照
-- `a2a_messages`：Agent 间消息日志
-- `private_memories`：各 Agent 私有记忆
+- `a2_a_messages`：Agent 间消息日志
+- ~~`private_memories`~~：**已删除（2026-10-10，M2）** —— 私有记忆改存 `a2_a_messages`
 
 ### 5.2 Redis
 
@@ -537,7 +539,7 @@ Agent Gateway 需要输出可量化的成本优化数据：
 
 | 指标 | 定义 | 示例目标 |
 |---|---|---|
-| **Token 节省率** | （未优化 Token - 实际 Token）/ 未优化 Token | ≥ 30%（v0.5+ Legacy 实测 70.3%，v2 Smart 实测 31.4%——baseline 见 [compression-eval-baseline.md](../.trae/documents/compression-eval-baseline.md)） |
+| **Token 节省率** | （未优化 Token - 实际 Token）/ 未优化 Token | ≥ 30%⚠️ **尚无生产数据**：现有 70.3%（Legacy）/ 34.1%（Smart，2026-10-09 复测）均来自[合成 fixture 微基准](../backend/internal/agent_gateway/compression_eval_test.go)（假庭审 + 人工灌预算），真实庭审压缩从未触发。**该指标目前无法验收**，达成与否待真实触发后测 |
 | **模型降级率** | 简单任务使用轻量模型的比例 | ≥ 60% |
 | **缓存命中率** | 命中缓存的请求占比 | ≥ 20% |
 | **平均单次庭审成本** | 完整庭审的 LLM 调用成本 | ≤ 0.5 元 |
@@ -1030,8 +1032,8 @@ go test -short ./...
 |---|---|---|
 | **静默错误全局修复 v0.10.17** | ✅ 已实装 | `courtroom/errors.go` + `lib/errorBus.ts` + `Toast.tsx` + 4 catch 改造 + ErrorBoundary（详见 [ADR 0024 §2-§8](./adr/0024-silent-error-fix-pr1.md) + [release-notes/v0.10.17.md](./release-notes/v0.10.17.md)）|
 | 庭审 CRUD + WebSocket Hub | ✅ 已实装 | `internal/api/handler.go` + `internal/api/hub.go` |
-| A2A 消息总线 | ✅ 已实装 | `internal/a2a/` + `a2a_messages` 表 + 12 项隔离测试 |
-| 私有记忆池 | ✅ 已实装 | `internal/private_memory/` + `private_memories` 表 + 9 项隔离测试 |
+| A2A 消息总线 | ✅ 已实装 | `internal/a2a/` + `a2_a_messages` 表 + 12 项隔离测试 |
+| 私有记忆池 | ✅ 已收敛 | **2026-10-10 改由 A2A 私有消息承载**（`internal/a2a/`）；原 `internal/private_memory/` + `private_memories` 表已删除 |
 | 调查员派遣 | ✅ 已实装 | `internal/investigation/` + `investigation_findings` 表 + 10 项测试 |
 | ReAct runner | ✅ 已实装 | `internal/agent/react_runner.go` + OnIterStart / OnSpeakChunk 钩子 |
 | LLM 流式 | ✅ 已实装 | `internal/llm/client.go` StreamComplete + 后端 hub.Broadcast sleep 30ms + 前端 flushSync |

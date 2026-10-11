@@ -13,6 +13,7 @@
 | **改代码调试** | dev mode（带热重载） | `docker compose -f docker-compose.dev.yml up -d --build` |
 | **部署上线** | prod mode（用预构建镜像） | `docker compose up -d` |
 | **看运行状态** | 任一种 + 下面章节的命令 | |
+| **看趋势/面板** | Prometheus + Grafana（2026-10-10 第 3 轮起**默认随栈启动**） | dev 面板 <http://localhost:3001>（admin/admin）、抓取 <http://localhost:9090>；生产 Grafana 只绑 `127.0.0.1:3001`，走 SSH 隧道看。面板预置在 `deploy/ops/grafana/dashboards/`；详见 [OPS-DASHBOARD-PLAN](OPS-DASHBOARD-PLAN.md) §10 |
 
 dev 与 prod 可同时跑（容器名前缀不同 `dc_dev_*` vs `dc_*`，端口不冲突）。
 
@@ -329,7 +330,7 @@ cd /opt/DecisionCourt && docker compose up -d --force-recreate backend frontend 
 > 下面是修前的实测记录。
 
 **修前**：没有任何表记录「这次发言用的是哪版 prompt」——`llm_calls` 没有 prompt 版本列，
-`messages` / `a2a_messages` 也没有。`GET /api/v1/prompts/version` 返回 `semver` + `loaded_at`
+`messages` / `a2_a_messages` 也没有。`GET /api/v1/prompts/version` 返回 `semver` + `loaded_at`
 （实测 `git_sha` 为空），而 semver 要手工改 YAML 才变。后果：改完 `prompts/base.yaml` 之后
 **无法按版本归因做前后对比**，只能靠时间戳 + `loaded_at` 手工对齐。
 
@@ -413,6 +414,41 @@ curl -X POST "$B/prompts/eval" -b "dc_session=$SESS; XSRF-TOKEN=$RAW" -H "X-XSRF
 **结论**：这场庭审**该记的都在记**（业务动作 / 埋点 / LLM 调用 / token / 幻觉 / 回收 / 并发全部有），
 没有任何一类"静默丢失"。唯一需要留意的两处：**预算用量没有指标**（要看得登机器翻文件）、
 **`phase` label 未填**。
+
+#### 8.6.1 事后登机器核对（同一场庭审，2026-10-09）
+
+`/metrics` 只能看聚合。下面是**同一次庭审**在文件/DB 两侧的核对结果——
+**核对手法值得复用**：先比"两个通道的行数是否一致"，一致才说明没丢行。
+
+| 核对项 | 结果 | 说明 |
+|---|---|---|
+| **行数对齐（最有力的核对）** | FileLogger **41 行** ↔ `llm_calls` **41 行** | 两个通道逐次调用一一对应 → **没有丢行** |
+| 会话终态 | `current_phase=verdict`、`status=completed`、`current_round=3` | 完整走完 |
+| 转写内容 | `messages` 10 行、**空内容 0 行**、共 2989 字符 | D2 那类"发言内容为空"**没有复发** |
+| 判决真实性 | 正文 **676 字符**完整判决书（`# 决策判决书 / 一、双方主张 …`） | **不是兜底文案**；`verdict_evidence_accuracy=1` |
+| R12 产物 | `agent_gateway_2026-10-09.log` 34.9 KB / 41 行 / 属主 `10001`；`fileLogger.Write failed` **0 次** | 修前该文件写不出来 |
+| R13 归因覆盖 | **41/41** 行有 `prompt_version`；40/41 有 `session_uuid` | 那 1 行无 session 的是 Prompt Lab 的 eval（R14 预期行为） |
+| 前端埋点 | 13 条 `fe.*`；`phase_entered` 7 ↔ 后端 `state_transition` 7 | 两端**正好对齐**；`trial_started`/`trial_completed` 各 1 |
+| 预算峰值 | `budget_used` 峰值 **138,790 / 200,000 = 69.4%**，全程 `compressed=false` | 压缩触发线是预算的 70%，**刚好压在线下** → 不是压缩坏了（设计如此） |
+
+**这次核对查出的三个缺口**（已登记为 deferred R18/R19/R20，见
+[`docs/todo/deferred-items-2026-10-07.md`](./todo/deferred-items-2026-10-07.md)）：
+
+1. **提示词正文没落盘**（最重要）：`system_prompt` / `input_messages` / `output_content`
+   **0/41 行非空** —— 因为 `AGENT_GATEWAY_FILE_LOGGER_PROMPTS` 没设，默认 `metadata` 模式
+   （ADR 0042 的**隐私 opt-in**，默认不落盘 prompt 正文）。所以要拿"喂进去什么、出来什么"
+   **必须把该变量设成 `full`**（改服务器 `.env`，见 SECOND-LAUNCH §7）。
+2. **流式调用缺 token 明细**：`react_speak_stream` 10/41 行的 `prompt_tokens` /
+   `completion_tokens` 全为 0，只有估算的 total → 成本估算对这部分不准（deferred R18）。
+3. **预算用量没有指标**：只存在于 FileLogger 里（deferred R19）。
+
+**核对时我踩的两个坑（留作提醒，不是系统问题）**：
+
+- 表名：文档里写 `a2a_messages`，**真实表名是 `a2_a_messages`**（GORM 对 `A2AMessage` 的命名）→
+  照文档写 SQL 会 `relation does not exist`（deferred R20）。
+- `messages` 表**没有** `agent_type` 列（是 `agent_id` + `action_type`）—— 别凭印象猜列名，
+  先看 `docs/decisioncourt-db-design.md` §3.4。
+
 
 ---
 

@@ -14,6 +14,7 @@
 3. **支持实时状态恢复**：庭审状态以数据库为准，Redis 仅做缓存。
 4. **为 Agent Gateway 预留字段**：`llm_calls` 表提前记录 Token 和成本，为第二阶段优化做准备。
 5. **避免过度设计**：MVP 不需要用户表、权限表、组织表。
+6. **表名以模型显式声明的 `TableName()` 为准**（见 §3 各表 / `backend/internal/model/`）。⚠️ **唯一例外**：A2A 消息表叫 **`a2_a_messages`**，不是 `a2a_messages` —— GORM 默认复数化把 `A2AMessage` 拆成 `a2_a` + `messages`，该表名已存在于生产库，且模型已用 `TableName()` 显式钉住（2026-10-10，deferred-items R20）。**注意区分**：API 导出 JSON 的对外字段名仍是 `a2a_messages`（属契约，见 `decisioncourt-api-design.md` §导出），SQL / 表名层面才是 `a2_a_messages`。
 
 ---
 
@@ -539,7 +540,7 @@ ORDER BY agent_id, round;
 `decision_events` 表记录**业务级 span**的关闭事件，是 v0.8 白盒化的核心可观测性表。区别于：
 - `llm_calls` —— 仅 LLM 调用事件
 - `belief_diffs` —— 仅信念变化事件
-- `a2a_messages` —— 仅 A2A 消息路由事件
+- `a2_a_messages` —— 仅 A2A 消息路由事件
 
 `decision_events` 覆盖**所有业务事件**：
 - 状态机迁移（`event_type = "state_transition"`，如 `idle → opening`）

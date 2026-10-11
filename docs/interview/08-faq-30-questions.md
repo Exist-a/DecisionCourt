@@ -78,7 +78,7 @@
 ### Q11: 怎么做的 Multi-Agent 通信？
 > **in-process 消息总线模式**——5 个 Agent 通过 Bus 通信。**3 个关键设计**：
 > 1. **3 种可见性**（public / private / team_only）——控方草稿不能泄露给对方
-> 2. **必须落 `a2a_messages` 表**——庭审可回放
+> 2. **必须落 `a2_a_messages` 表**——庭审可回放
 > 3. **跨 Agent 状态同步**——状态机迁移是 5 个 Agent 共同感知的事实
 >
 > **业内对比**：不用 function call 直接调来调去，因为有**可见性 + 审计 + 跨 Agent 同步** 3 个硬需求，消息总线 ROI 为正。**详见 [`01-architecture-mindmap.md`](01-architecture-mindmap.md) §3 哲学 2（消息总线 = 单一事实源）**。
@@ -95,7 +95,7 @@
 > 1. **Belief Engine 数学约束**——LLM 不能"凭空"写判决书，必须基于 `belief_diffs` 表算出来的平均信念
 > 2. **私有策略笔记审计**——LLM 写"我刚才为什么这么回答"必须入库，可查
 > 3. **庭审回放**——LLM 输出 + 完整 prompt 都留 `llm_calls` 表，幻觉出现时能定位
-> 4. **审计 trail**——`a2a_messages` + `decision_events` 让每一步决策都可追溯
+> 4. **审计 trail**——`a2_a_messages` + `decision_events` 让每一步决策都可追溯
 >
 > **不幻想 0 幻觉**——LLM 总会有 hallucination，**关键是"出现幻觉时能快速发现 + 修复"**。
 
@@ -167,7 +167,7 @@
 > **10 张表 + 3 大约束**：
 > 1. **关系性优先** —— 外键约束（v0.8 bug 1 是外键失败的暴露，靠它立刻发现）
 > 2. **JSONB 保留灵活性** —— `decision_events.payload` / `verdicts.consensus_points`
-> 3. **审计 trail 独立** —— belief_diffs / a2a_messages / decision_events 都是 audit trail 表
+> 3. **审计 trail 独立** —— belief_diffs / a2_a_messages / decision_events 都是 audit trail 表
 >
 > **反范式设计**：`belief_diffs` 的 `prior_logit` / `posterior_logit` 是反范式（可计算但存表），**这是为了让审计行可自包含**，不需要 JOIN agents 表。
 
@@ -183,7 +183,7 @@
 ### Q25: 怎么保证庭审可重放？
 > **3 个 audit trail 表 = 完整重放能力**：
 > 1. **decision_events** —— 业务事件（状态迁移 + 业务级 span）
-> 2. **a2a_messages** —— Agent 通信
+> 2. **a2_a_messages** —— Agent 通信
 > 3. **llm_calls** —— LLM 调用
 > 4. **belief_diffs** —— 信念变化
 >

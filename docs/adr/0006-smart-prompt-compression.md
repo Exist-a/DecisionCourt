@@ -3,6 +3,8 @@
 > **状态**：✅ Accepted & Implemented (2026-07-01)  
 > **决策日期**：2026-07-01  
 > **影响范围**：`internal/agent_gateway/prompt_compressor.go`、新增 `prompt_scorer.go` / `prompt_atomic.go` / `prompt_greedy.go` / `prompt_summary.go`
+>
+> **状态更新（2026-10-09 复测）**：⚠️ **下表的数字（含本行复测值）是合成 fixture 微基准，不是生产实测** —— 输入是测试里手写的假庭审（重复填充文本 + fake LLM + 人工灌预算到 throttle 档，见 `compression_eval_test.go` 的 `fixedTrialTranscript()`），且真实庭审的预算峰值 69.4% 压在 70% 触发线下、压缩从未触发（`OBSERVABILITY.md` §8.6）。它**只能用于策略横向对比，不能当产品指标**。实跑 `go test ./internal/agent_gateway/ -run TestCompressionEval_StrategyComparison -v` 现为：Legacy 19→6 条 / **70.3%**（不变）；Smart 19→**13** 条 / **34.1%**（原子组 17 / 保留 9 / 最近强制 1）。差异来源：v2.10 [ADR 0044](0044-token-compression-strategy-review.md) #5 把预算单位从"字符数"换成内容感知 `EstimateTokens`（CJK 1.5 tok/char、ASCII 0.25 tok/char），保留组数由 10 变 9。另注意：该 eval 测试只断言下限（legacy ≥25%、smart >0、`atomicKept ≥ 9`），**不钉**节省率与保留条数 —— 见 [deferred-items-2026-10-09 §M6](../todo/deferred-items-2026-10-09.md)。
 
 ## 背景
 

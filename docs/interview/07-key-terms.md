@@ -67,7 +67,7 @@ Agent 间通信。**业内有 2 个含义**：
 **答面试要小心区分**。
 
 ### Bus（DecisionCourt 含义）
-进程内消息总线。**3 种可见性**（public / private / team_only）+ 落库审计。**核心约束**：所有 Agent 通信**必须有可见性标签 + 必须落 `a2a_messages` 表**。
+进程内消息总线。**3 种可见性**（public / private / team_only）+ 落库审计。**核心约束**：所有 Agent 通信**必须有可见性标签 + 必须落 `a2_a_messages` 表**。
 
 ---
 
@@ -92,7 +92,7 @@ logit 的逆运算：`1 / (1 + e^-x)`。DecisionCourt 用 `sigmoid(logit)` 把 l
 **4 个 Agent 信念高度一致 = 庭审收敛**。DecisionCourt 用 **3 信号 OR 逻辑**：variance 阈值（4 Agent 信念方差 < 0.01）/ delta 阈值（双方 logit 差异 > 2.0）/ 时间窗口（≥ 2 轮没新证据）。
 
 ### Audit Trail
-**审计 trail**——所有 belief 变化的历史记录。`belief_diffs` 表 = belief 的 audit trail；`a2a_messages` 表 = Agent 通信的 audit trail；`decision_events` 表 = 业务事件的 audit trail。**3 个独立 trail = DecisionCourt 核心可解释性来源**。
+**审计 trail**——所有 belief 变化的历史记录。`belief_diffs` 表 = belief 的 audit trail；`a2_a_messages` 表 = Agent 通信的 audit trail；`decision_events` 表 = 业务事件的 audit trail。**3 个独立 trail = DecisionCourt 核心可解释性来源**。
 
 ---
 
@@ -197,7 +197,7 @@ DecisionCourt 自定义——**保留关键约束**（system prompt / 角色历�
 | `evidences` | 证据 | evidence_id (varchar), content, credibility_score |
 | `agents` | Agent 配置 | agent_type, belief_a, belief_b, model |
 | `belief_diffs` | 信念变化 | prior_logit, posterior_logit, delta_belief_a, reason |
-| `a2a_messages` | Agent 通信 | from_agent, to_agent, message_type, visibility |
+| `a2_a_messages` | Agent 通信 | from_agent, to_agent, message_type, visibility |
 | `private_memories` | 私有策略笔记 | agent_id, type, content, linked_evidence_ids |
 | `investigation_findings` | 调查发现 | dispatcher, query, summary, source_provider |
 | `llm_calls` | LLM 调用审计 | total_tokens, latency_ms, status, cost_usd |

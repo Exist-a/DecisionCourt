@@ -38,7 +38,7 @@ DecisionCourt 是多 Agent 决策辅助平台 MVP，需要在 4-6 周内跑通�
 ### 关键理由
 
 - **Go 1.22 + Gin**：性能高、并发模型契合 WebSocket（gorilla）、部署简单（单一静态二进制）。Go 生态对 OpenAI 兼容客户端成熟（go-openai）。
-- **PostgreSQL + Redis**：PG 已是事实标准，支持 JSONB（evidences / messages / a2a_messages 都不需要额外 MongoDB）；Redis 仅用于缓存和 WebSocket 订阅管理。
+- **PostgreSQL + Redis**：PG 已是事实标准，支持 JSONB（evidences / messages / a2_a_messages 都不需要额外 MongoDB）；Redis 仅用于缓存和 WebSocket 订阅管理。
 - **Next.js 14 App Router**：支持 React Server Components + 流式渲染，与 shadcn/ui 契合度高。
 - **DeepSeek-V3 / R1**：中文能力 + 价格 + OpenAI 兼容。V3 处理常规轮次，R1 处理判决等关键推理轮次。
 - **Bocha**：国内可稳定访问 + API 简洁（替代反爬严重的 DuckDuckGo）。

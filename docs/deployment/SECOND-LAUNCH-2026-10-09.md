@@ -500,9 +500,33 @@ docker run --rm --user 10001:10001 -v /opt/DecisionCourt/logs/backend:/app/logs 
 | 1 | **把 CI 专用私钥贴进 GitHub Secret `ECS_SSH_KEY`** | 不影响部署（旧 `id_rsa` 仍在服务器允许清单里）；未换 = CI 与个人登录仍共用一把钥匙（泄露即双失，且无法单独吊销） | 3 步见 §6.2.1：记事本打开 `C:\Users\LENVOV\ci-deploy-decisioncourt` → 全选复制 → GitHub 仓库 Settings → Secrets and variables → Actions → `ECS_SSH_KEY` → Update → 粘贴 → Save。之后 Actions → Deploy → **Run workflow** 跑一次验证 |
 | 2 | **sshd 加固**（关口令登录 + 禁止 root 直登） | 22 端口继续对全网开放、口令登录可用；`lastb` 已有爆破记录 —— **这是云盾告警暴露出的真正暴露面** | 用户点头后由 Agent 按 §6.2.2 的五步执行（备份 → drop-in → `sshd -t` → `reload` → 另开会话验证，含回滚）。**2026-10-09 用户指示"先放文档里"，故未执行** |
 | 3 | （治标）云盾控制台把 GitHub Actions 的网段加进"常用登录地"，或把该告警标为预期行为 | 每条都收：**每次 CI 部署都会收到一条"登录地非常用"告警** —— 这是**登录地**判据（Azure ≠ 你的常用地），与用哪把钥匙无关，所以第 1 项**不会**消除它 | 阿里云控制台 → 云安全中心 / 云盾 → 登录安全告警设置 → 增加常用登录地或标记忽略 |
+| 4 | 要不要**把提示词正文落盘**（`AGENT_GATEWAY_FILE_LOGGER_PROMPTS=full`） | 不设 = 默认 `metadata`：FileLogger **只记元数据**，`system_prompt` / `input_messages` / `output_content` **全为空**（2026-10-09 实测 **0/41 行非空**）→ 拿不到"喂进去什么、出来什么"，prompt 调优只能靠猜 | ⚠️ **不能只改 `.env`** —— prod compose 用**显式 environment 列表且没有 `env_file`**（D15 同款坑），只在 `.env` 里写该变量**进不了容器**。正确做法两步：① 在 `docker-compose.yml` 的 backend `environment` 里加 `AGENT_GATEWAY_FILE_LOGGER_PROMPTS: ${AGENT_GATEWAY_FILE_LOGGER_PROMPTS:-metadata}`（仓库默认仍 metadata，随 CI 同步）；② 在服务器 `.env` 里写 `AGENT_GATEWAY_FILE_LOGGER_PROMPTS=full` → `docker compose up -d --force-recreate backend`。<br>**取舍**（ADR 0042）：prompt 正文属敏感内容，多用户场景落盘需评估隐私；单用户自用无碍。磁盘随之上升（每次调用数 KB）。 |
 
 **不在本节内的项**（已在其它文档登记）：R14（已修）/ R16（已决策语义，无需动作）见
 [`../todo/deferred-items-2026-10-07.md`](../todo/deferred-items-2026-10-07.md)；Caddyfile 的自动化已完成
 （§3.2 / §6 遗留项 8）。
+
+---
+
+## 附：2026-10-10 第 3 轮新增的部署前置（可观测栈默认启动）
+
+> ⏸️ **部署状态：暂缓（用户 2026-10-10 决定"部署先不"）**。
+> 截至该日，第 1–3 轮成果（止血 / 接地素材管道 + M2 删表 / 成本 + 可观测）**全部还在工作区，未提交、未部署**。
+> 下面这些前置是"**将来部署时**"才需要做的，不是现在要做的。
+
+从第 3 轮起，`docker-compose.yml` 把 **Prometheus + Grafana 作为默认启动服务**（不再是 opt-in profile）。
+所以下次部署前，服务器 `.env` 里**必须**多两行，否则：
+
+| 变量 | 不设的后果 |
+|---|---|
+| `GF_ADMIN_PASSWORD` | **compose 直接报错**（`required variable ... is missing a value`）—— 刻意 fail-fast，不给默认口令 |
+| `OPS_METRICS_TOKEN` | compose 能起，但 Prometheus 抓 `/metrics` 会 401（backend 默认收紧）→ 面板空。设一个随机串即可（`openssl rand -hex 24`），backend 与 Prometheus 共用同一个值 |
+
+内存影响（实测）：观测栈 ≈ **300–400 MB**（Prometheus ≈103、Grafana ≈194），生产机实测可用 **938 MB** →
+放得下；两个容器都已设 `mem_limit`（各 384m），不会挤垮应用。
+
+另外：生产 Grafana 只绑 `127.0.0.1:3001`（不对公网开端口），要看面板走 SSH 隧道
+（`ssh -L 3001:127.0.0.1:3001 admin@8.218.24.43`）或在 Caddy 里加一条反代。详见
+[`../OPS-DASHBOARD-PLAN.md`](../OPS-DASHBOARD-PLAN.md) §10。
 
 

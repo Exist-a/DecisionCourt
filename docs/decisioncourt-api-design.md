@@ -869,6 +869,7 @@ GET /api/v1/courtrooms/:session_uuid/export
 
 **关键约束**：
 1. **`a2a_messages` 字段只含 `ListVisibleTo("user")` 能看到的** —— 通过 `a2a.Bus.ListVisibleTo(sessionID, "user")` 复用 SQL 隔离，**对家 private memory（辩方/控方发给自己的）不会泄漏到导出文件**
+   > ⚠️ **命名区分（2026-10-10）**：这里的 `a2a_messages` 是**导出 JSON 的对外字段名，属契约，不得改**。底层**表名**是 **`a2_a_messages`**（GORM 对 `A2AMessage` 的默认命名，模型已用 `TableName()` 显式钉住）。写 SQL / 查库时用 `a2_a_messages`，读写 API 响应时用 `a2a_messages`。详见 `decisioncourt-db-design.md` §1 设计原则第 6 条。
 2. **`Content-Disposition: attachment; filename="decisioncourt-<uuid>-<ts>.json"`** —— 浏览器自动下载
 3. **失败返回 5xx**（code 1500）—— 用户在 verdict 页面看到"导出失败"提示
 

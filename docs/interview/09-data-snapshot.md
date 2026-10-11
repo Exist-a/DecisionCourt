@@ -108,7 +108,7 @@ WHERE session_uuid = '...';
 
 ```sql
 SELECT count(*), from_agent, to_agent, message_type, visibility
-FROM a2a_messages
+FROM a2_a_messages
 WHERE session_uuid = '...'
 GROUP BY from_agent, to_agent, message_type, visibility;
 ```
@@ -300,7 +300,7 @@ curl http://localhost:8080/metrics
 |---|---|---|
 | llm_calls | **37**（修复 bug 1 后） | LLM 调用 47 字段全审计 |
 | belief_diffs | **16**（修复 bug 4 后） | 信念变化全审计 |
-| a2a_messages | 33 | Agent 通信全审计 |
+| a2_a_messages | 33 | Agent 通信全审计 |
 | decision_events | **6** | 状态机迁移全审计 |
 | decision_events | 0 (span.X) | 业务级 span 未埋（v0.8.3 后续） |
 
@@ -427,7 +427,7 @@ https://github.com/Exist-a/DecisionCourt
 ### 11.2 "你们怎么验证 AI 输出正确？"
 
 > **直接回答**：
-> - **3 个 audit trail 表**（decision_events / belief_diffs / a2a_messages / llm_calls）
+> - **3 个 audit trail 表**（decision_events / belief_diffs / a2_a_messages / llm_calls）
 > - v0.8.3 真实庭审：16 条 belief_diff，对应 4 evidence × 4 agent，**LLM 输出不能凭空打分，必须基于 belief_diffs 表算出来的平均信念**
 > - LLM 输出和 belief engine 计算对账：本次庭审 A=0.56 vs B=0.44，**LLM 没推翻算式**
 

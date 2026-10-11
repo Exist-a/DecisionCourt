@@ -174,7 +174,7 @@ if sessionUUID == "" {
 
 - **当前**：消息依然推送（fallback 工作），但**房间可能错**
 - **业务表现**：前端可能收到"不属于自己的 session 的消息"（实际未发生，fallback 默认走 DB 主键，跟 hub 当前实现刚好兼容）
-- **审计**：审计 trail 落库不受影响（`a2a_messages` 表用 DB 主键）
+- **审计**：审计 trail 落库不受影响（`a2_a_messages` 表用 DB 主键）
 
 ### 4.4 处理
 
