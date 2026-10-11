@@ -1355,7 +1355,10 @@ func (r *ReActRunner) buildInitialMessages(transcript []model.Message) []llm.Mes
 	if len(transcript) > 0 {
 		var sb strings.Builder
 		sb.WriteString(system)
-		sb.WriteString("\n\n## 庭审历史（按时间顺序）\n")
+		// 区段标记必须与压缩器的"保最近砍最旧"切分一致（M8-2 A1）：单一来源在
+		// agent_gateway.TranscriptHistoryMarker，超长时压缩器据此只丢最旧的历史行，
+		// 保留契约头部与最新发言。
+		sb.WriteString(agent_gateway.TranscriptHistoryMarker)
 		for _, m := range transcript {
 			role := m.ActionType
 			if role == "" {

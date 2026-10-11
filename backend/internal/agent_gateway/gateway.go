@@ -223,6 +223,14 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 			Status:  StatusError,
 			Err:     err,
 		})
+		// v2.12 (M8-2 A3)：拒绝也必须落**文件日志**。
+		// 此前该分支只写 llm_calls 表、直接 return 不经过 writeFileLog ——
+		// 实测同一 session DB 35 行 vs 文件 33 条，差的正是被拒的 final/verdict。
+		// 运维只看"详细调用快照"文件时会漏掉"判决被拒"这一最关键事件
+		// （docs/COMPRESSION-REDESIGN-PROPOSAL.md §3.4）。
+		g.writeFileLog(ctx, tr, model, llm.Usage{}, 0, err,
+			CompressionInfo{BeforeCount: len(messages)}, ThrottleInfo{}, 0, bs,
+			systemPrompt, messages, "")
 		return "", llm.Usage{}, err
 	}
 
@@ -408,6 +416,20 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 				"stream": "true",
 			})
 		}
+		// v2.12 (M8-2 A3)：流式拒绝此前**既不落库也不落文件**（只在 channel 里
+		// emit 一个 error chunk），比非流式分支更糟 —— 拒绝完全无迹可查。
+		// 与 Complete 分支对齐：DB + 文件日志各一条。
+		g.recorder.Record(CallInput{
+			Trace:   tr,
+			Model:   model,
+			Usage:   Usage{},
+			Latency: 0,
+			Status:  StatusError,
+			Err:     err,
+		})
+		g.writeFileLog(ctx, tr, model, llm.Usage{}, 0, err,
+			CompressionInfo{BeforeCount: len(messages)}, ThrottleInfo{}, 0, bs,
+			systemPrompt, messages, "")
 		out <- llm.StreamChunk{Done: true, Err: err}
 		close(out)
 		cancel() // 预算耗尽路径提前 return:必须主动 cancel 防止 context leak (vet 警告)

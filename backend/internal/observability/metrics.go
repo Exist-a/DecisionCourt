@@ -99,6 +99,11 @@ const (
 	MetricLLMThrottleAppliedTotal      = "llm_throttle_applied_total"
 	MetricLLMThrottleExemptedTotal     = "llm_throttle_exempted_total"
 	MetricPromptCompressionRatio       = "prompt_compression_ratio"
+	// MetricPromptCompressionSavedRatio (v2.12 M8-2 A5)：压缩实际**节省率** =
+	// (before-after)/before，取值 0.0~1.0，0 = 一点没省。ratio 是 after/before，
+	// "省 0%" 时 = 1.0，看板不直观 —— 两者一起看：ratio 越接近 0 省得越多，
+	// saved_ratio 越接近 1 省得越多。
+	MetricPromptCompressionSavedRatio  = "prompt_compression_saved_ratio"
 	MetricPromptCompressionDuration    = "prompt_compression_duration_seconds"
 	MetricPromptCompressionSummaryTotal = "prompt_compression_summary_inserted_total"
 	MetricBudgetWarningTotal           = "budget_warning_total"

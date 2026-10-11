@@ -359,7 +359,7 @@ func buildAgentGatewayConfig() AgentGatewayConfig {
 		// Prompt Compression v2 (评分 / 原子组 / 贪心打包)
 		SmartCompression:       resolveGatewayChild("AGENT_GATEWAY_SMART_COMPRESSION", gwEnabled),
 		KeepRecentForcedN:      envOrDefaultInt("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3),
-		SummaryInsertThreshold: envOrDefaultInt("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 5),
+		SummaryInsertThreshold: envOrDefaultInt("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 3),
 		ScoreThreshold:         envOrDefaultFloat("AGENT_GATEWAY_SCORE_THRESHOLD", 0.3),
 		// v2.10 ADR 0044 #6: abstractive 摘要默认关 (成本 opt-in, 不继承总开关)
 		SmartCompressionAbstractiveSummary: envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION_ABSTRACTIVE_SUMMARY", false),

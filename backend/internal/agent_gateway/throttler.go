@@ -58,6 +58,9 @@ func NewThrottler(metrics observability.Metrics) *Throttler { return &Throttler{
 
 // Apply 根据预算状态返回限流后的 CompletionOptions。
 // taskType 命中豁免列表时保留原 max_tokens 不变，仅记录 Exempted=true。
+//
+// v2.12 (M8-2 A2)：**JSON 输出同样豁免 max_tokens 压缩**（理由见下方注释）——
+// 决策步输出必须能被 json.Unmarshal 解析，截断的 JSON 是不可用产物。
 func (th *Throttler) Apply(opts llm.CompletionOptions, bs BudgetSnapshot, taskType string) (llm.CompletionOptions, ThrottleInfo) {
 	info := ThrottleInfo{
 		MaxTokensBefore:   opts.MaxTokens,
@@ -68,17 +71,20 @@ func (th *Throttler) Apply(opts llm.CompletionOptions, bs BudgetSnapshot, taskTy
 	}
 	// 关键任务豁免：保留 max_tokens
 	if ThrottleExemptTaskTypes[taskType] {
-		info.Applied = false
-		info.Exempted = true
-		info.ExemptReason = "task_type=" + taskType + " is critical output"
-		info.MaxTokensAfter = opts.MaxTokens
-		// temperature 仍可降，鼓励确定性格式
-		out := opts
-		out.Temperature = 0.2
-		if th.metrics != nil {
-			th.metrics.IncCounter(observability.MetricLLMThrottleExemptedTotal, map[string]string{"task_type": taskType})
-		}
-		return out, info
+		return th.exempt(opts, info, taskType, "task_type="+taskType+" is critical output")
+	}
+	// v2.12 (M8-2 A2)：JSON 输出豁免。
+	//
+	// react_think / react_reflect 等决策步输出是一整份 JSON（action + reasoning +
+	// content + evidence_refs …），而限流公式 `max(100, base*remaining*2)` 会把 500
+	// 砍到 297/247/196/147/100 —— 100 token（中文 ≈60 字）几乎必然把 JSON 截断 →
+	// json.Unmarshal 失败 → 触发 react_think_retry（同样被砍到 100）→ 再次失败则
+	// return error 打断整轮。实测该场限流省下的输出额度 ~1.4k，疑似引发的重试
+	// ~29k（占全场 14%），净负（docs/COMPRESSION-REDESIGN-PROPOSAL.md §3.1）。
+	//
+	// 截断的 JSON 是**不可用**产物，与"关键输出"同类：保留 max_tokens，仅降 temperature。
+	if opts.JSONMode {
+		return th.exempt(opts, info, taskType, "json_output: truncated JSON is unusable")
 	}
 	info.Applied = true
 
@@ -102,6 +108,20 @@ func (th *Throttler) Apply(opts llm.CompletionOptions, bs BudgetSnapshot, taskTy
 
 	if th.metrics != nil {
 		th.metrics.IncCounter(observability.MetricLLMThrottleAppliedTotal, map[string]string{"task_type": taskType})
+	}
+	return out, info
+}
+
+// exempt 实现"保留 max_tokens、仅降 temperature"的豁免路径（关键任务 / JSON 输出共用）。
+func (th *Throttler) exempt(opts llm.CompletionOptions, info ThrottleInfo, taskType, reason string) (llm.CompletionOptions, ThrottleInfo) {
+	info.Applied = false
+	info.Exempted = true
+	info.ExemptReason = reason
+	info.MaxTokensAfter = opts.MaxTokens
+	out := opts
+	out.Temperature = 0.2
+	if th.metrics != nil {
+		th.metrics.IncCounter(observability.MetricLLMThrottleExemptedTotal, map[string]string{"task_type": taskType})
 	}
 	return out, info
 }

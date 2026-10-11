@@ -1,12 +1,21 @@
 package agent_gateway
 
 import (
+	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/observability"
 )
+
+// TranscriptHistoryMarker 是 ReAct system 消息里"庭审历史区段"的分隔标记。
+//
+// 压缩器据此把 system 消息拆成 [契约头部] / [历史区段] 两段：头部是 baseRules
+// + 工具协议（绝不能丢），历史区段按时间顺序追加在末尾。**单一来源** —— agent 包
+// buildInitialMessages 也引用本常量，避免两处字面量漂移。
+const TranscriptHistoryMarker = "\n\n## 庭审历史（按时间顺序）\n"
 
 // cutBytesRuneSafe 取 s 的前 n 字节，保证结果是合法 UTF-8。
 //
@@ -44,17 +53,92 @@ func msgTruncateLimits(m llm.Message) (limit, target int) {
 // 这是压缩管道的最后一步（原实现在 legacy / scored 早返回 / scored 主路径
 // 各抄了一份）。抽出来一是消重，二是保证三条路径对 system 的处理一致 ——
 // v2.10 之前的 bug 正是三处都无条件截断 system。
+//
+// v2.12 (M8-2 A1)：system 走 truncateSystemContent（保契约头、丢最旧历史），
+// 普通消息仍走"保留头部"的旧行为。
 func truncateOversizedMessages(msgs []llm.Message) int {
 	total := 0
 	for i := range msgs {
 		limit, target := msgTruncateLimits(msgs[i])
 		if len(msgs[i].Content) > limit {
-			keep := target - len(compressTruncateMark)
-			msgs[i].Content = cutBytesRuneSafe(msgs[i].Content, keep) + compressTruncateMark
+			if msgs[i].Role == "system" {
+				msgs[i].Content = truncateSystemContent(msgs[i].Content, target)
+			} else {
+				keep := target - len(compressTruncateMark)
+				msgs[i].Content = cutBytesRuneSafe(msgs[i].Content, keep) + compressTruncateMark
+			}
 		}
 		total += len(msgs[i].Content)
 	}
 	return total
+}
+
+// truncateSystemContent 截断超长 system 消息，**保留契约头部完整，只从最旧的
+// 庭审历史行开始丢弃**。
+//
+// v2.12 (M8-2 A1) 修复"保留方向反了"：旧实现 `cutBytesRuneSafe(content, keep)`
+// 取前 N 字节，而 ReAct 的 system 拼接顺序是
+//
+//	[契约] baseRules + 工具协议 → [素材] ## 庭审历史（时间升序追加在末尾）
+//
+// 于是 system > 24000 字节时被砍掉的恰是**最新发言** —— 正是"回应对方最新论点"
+// 最需要的部分（见 docs/COMPRESSION-REDESIGN-PROPOSAL.md §3.2）。
+//
+// 策略：
+//   - 无历史标记（非 ReAct 拼接 / 本就没有历史）→ 退回"保留头部"：宁可丢尾部素材
+//     也不能丢指令，与 legacy 行为一致。
+//   - 有历史标记 → 头部（含标记行）原样保留；历史行从**最新往旧**装，装不下就丢
+//     最旧的，并在历史区顶部插入省略计数。
+//   - 头部本身已超目标 → 只能保留头部（再砍就会丢契约），仍加压缩标记。
+func truncateSystemContent(content string, target int) string {
+	idx := strings.Index(content, TranscriptHistoryMarker)
+	if idx < 0 {
+		keep := target - len(compressTruncateMark)
+		return cutBytesRuneSafe(content, keep) + compressTruncateMark
+	}
+
+	head := content[:idx+len(TranscriptHistoryMarker)]
+	history := content[idx+len(TranscriptHistoryMarker):]
+
+	// 预留给"省略计数"与压缩标记的空间；头部本身不可省。
+	noteReserve := len("（已省略较早的 000 条庭审历史）\n")
+	budget := target - len(head) - len(compressTruncateMark) - noteReserve
+	if budget <= 0 {
+		return head + compressTruncateMark
+	}
+
+	lines := strings.SplitAfter(history, "\n")
+	totalLines := 0
+	for _, ln := range lines {
+		if ln != "" {
+			totalLines++
+		}
+	}
+
+	// 从最新（末尾）往前装。
+	kept := make([]string, 0, len(lines))
+	used := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i] == "" {
+			continue
+		}
+		if used+len(lines[i]) > budget {
+			break
+		}
+		kept = append(kept, lines[i])
+		used += len(lines[i])
+	}
+	dropped := totalLines - len(kept)
+	if dropped <= 0 {
+		return content
+	}
+
+	// kept 从末尾往前收集，反转回时间升序。
+	for i, j := 0, len(kept)-1; i < j; i, j = i+1, j-1 {
+		kept[i], kept[j] = kept[j], kept[i]
+	}
+	note := fmt.Sprintf("（已省略较早的 %d 条庭审历史）\n", dropped)
+	return head + note + strings.Join(kept, "") + compressTruncateMark
 }
 
 // PromptCompressor 在 token 预算紧张时压缩历史上下文。MVP 策略简单：
@@ -130,7 +214,8 @@ func NewPromptCompressor(cfg SmartCompressionConfig, metrics observability.Metri
 		cfg.KeepRecentForcedN = 3
 	}
 	if cfg.SummaryInsertThreshold <= 0 {
-		cfg.SummaryInsertThreshold = 5
+		// v2.12 M8-2 A4：默认 3（原 5 在 ReAct 路径 droppable ≤ 5 下永不触发）。
+		cfg.SummaryInsertThreshold = 3
 	}
 	if cfg.ScoreThreshold <= 0 {
 		cfg.ScoreThreshold = 0.3
@@ -176,6 +261,9 @@ func (pc *PromptCompressor) Compress(messages []llm.Message, bs BudgetSnapshot) 
 		if info.BeforeLength > 0 {
 			ratio := float64(info.AfterLength) / float64(info.BeforeLength)
 			pc.metrics.ObserveHistogram(observability.MetricPromptCompressionRatio, labels, ratio)
+			// v2.12 (M8-2 A5)：同时记录"实际节省率" = 1 - ratio（0 = 一点没省）。
+			// 原 ratio 的语义是 after/before，"省 0%" → 1.0，看板不直观。
+			pc.metrics.ObserveHistogram(observability.MetricPromptCompressionSavedRatio, labels, 1-ratio)
 		}
 		if info.SummarizedBlocks > 0 {
 			pc.metrics.IncCounter(observability.MetricPromptCompressionSummaryTotal, labels)

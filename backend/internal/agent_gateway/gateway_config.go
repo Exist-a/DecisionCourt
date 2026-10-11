@@ -50,6 +50,12 @@ type GatewayConfig struct {
 	// KeepRecentForcedN 评分策略下，强制保留最近 N 条，不参与评分淘汰。
 	KeepRecentForcedN int
 	// SummaryInsertThreshold 丢弃数量超过该阈值时插入一条"earlier context"摘要。
+	//
+	// v2.12 (M8-2 A4)：默认由 5 下调到 3。原值 5 在 ReAct 路径上**永不触发**：
+	// MaxIterations=4 → 非 system 消息 ≤ 8，KeepRecentForcedN=3 强制保留最近 3 条
+	// → droppable ≤ 5，而条件是 `> threshold`；实测 droppable 最大为 4
+	// （docs/COMPRESSION-REDESIGN-PROPOSAL.md §3.5）。下调到 3 后，droppable ≥ 4
+	// 即插入摘要，兜底真正生效。
 	SummaryInsertThreshold int
 	// ScoreThreshold 低于该分不进入保留集。
 	ScoreThreshold float64
@@ -239,7 +245,7 @@ func (c GatewayConfig) Normalize() GatewayConfig {
 		out.KeepRecentForcedN = 3
 	}
 	if out.SummaryInsertThreshold <= 0 {
-		out.SummaryInsertThreshold = 5
+		out.SummaryInsertThreshold = 3 // v2.12 M8-2 A4：见 SummaryInsertThreshold 注释
 	}
 	if out.ScoreThreshold <= 0 {
 		out.ScoreThreshold = 0.3

@@ -453,14 +453,38 @@ task=react_think_retry  msgs 2->2  chars 20850->20850  saved=0.0%  ratio=0.999
 3. **P2 可见面**：**先出方案文档** —— 见 [`docs/P2-VISIBILITY-PROPOSAL.md`](../P2-VISIBILITY-PROPOSAL.md)
    （澄清了"论证其实已可见、P2 真正问的是要不要给推理链"，推荐维持现状）。
 
+### ✅ 2026-10-11 第 1 轮修复落地（M8-2 A1–A5）
+
+用户 2026-10-11 追加拍板：**压缩重构 M8-2 立项做完整重构**（第 2 轮），**先修 4 项附带异常 + 补度量**（本轮）。本轮 **5 项全部落地并通过单测 + 真实 docker/浏览器链路验证**：
+
+| 编号 | 修复 | 关键改动 | 回归测试 |
+|---|---|---|---|
+| **A1** | 兜底截断方向：由"砍尾部"改为"**保最近、砍最旧**"（保留契约头 + 最新历史） | `prompt_compressor.go` 新增 `truncateSystemContent` + `TranscriptHistoryMarker`（单一来源）；`react_runner.go` 引用该常量 | `prompt_truncate_direction_test.go`（5 例）、`react_runner_history_marker_test.go` |
+| **A2** | 限流不再砍 JSON 输出：`react_think/reflect` 决策 JSON 纳入"关键输出"豁免（保留 max_tokens，仅降 temperature） | `throttler.go` 新增 `opts.JSONMode` 豁免分支 + `exempt()` 抽取 | `throttler_json_exempt_a2_test.go` |
+| **A3** | 预算拒绝补文件日志（**含流式分支**，此前流式连 DB 都不写） | `gateway.go` Complete / StreamComplete 两个拒绝分支各补 `writeFileLog`（流式另补 `recorder.Record`） | `gateway_reject_filelog_test.go` |
+| **A4** | 兜底摘要死分支：默认阈值 **5 → 3**（ReAct 实测 droppable 上限 4，原阈值永不触发） | `config.go` + `gateway_config.go` + `prompt_compressor.go` 三处默认值 + `.env.example` | `prompt_summary_reachability_a4_test.go` |
+| **A5** | 新增"压缩实际节省率"指标 `prompt_compression_saved_ratio`（= 1 − after/before，0 = 没省） | `observability/metrics.go` + `prompt_compressor.go` 埋点 | `prompt_compressor_saved_ratio_a5_test.go` |
+
+**真实链路验证证据**（dev compose + IAB 浏览器跑标准庭审；临时小预算 override 逼出各档，验证后已删、未入仓）：
+
+- **A3**：预算耗尽时文件日志出现 `"status":"error"` + `error_msg="agent_gateway: token budget exhausted … ratio=1.44"`（修复前仅 DB 有、文件无）。
+- **A2**：`react_think`（ratio 0.617）与 `react_speak_stream`（ratio 0.975）日志显示 `throttle_exempted=true` + `throttle_exempt_reason="json_output: truncated JSON is unusable"`，`max_tokens` 保留 500/1000 不被砍；`llm_throttle_exempted_total` 计数出现。
+- **A1/A5**：`compressed=true, strategy=scored` 正常执行、无异常；`/metrics` 出现 `prompt_compression_saved_ratio`（本次短调用节省率 ≈ 0，与审计结论一致）。
+- **A4**：默认阈值 3 已生效（`AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD=3`），replacement 可达性由单测护栏钉住。
+- 业务链路无回归：标准庭审开场陈述正常生成、零 ERROR、`retry_count=0`；`budget_total=300000` 确认 M8-1 默认值生效。
+
+**仍待第 2 轮**：M8-2 主重构（system 拆「契约块 + 素材块」，§2.2）—— 属行为变更，需 A/B 同题对跑 + 注入式回归 + §11 docker/浏览器实测。
+
 ### 建议动作（需用户决策）
 
 1. **预算**：把 `AGENT_GATEWAY_BUDGET_PER_SESSION` 默认值上调（如 200000 → 300000），
    或按庭审模式（quick/standard/deep）分档；至少要让 standard 不再必然踩线。
 2. **压缩**：让压缩真正作用于 system prompt（token 大头），或**明确限定"压缩只对
    message 列表生效"并下调对外宣称**——不能让"≥30% 节省"继续挂在文档里。
+   → **2026-10-11 第 1 轮已完成附带修（A1–A4）；主重构（system 拆分）第 2 轮立项实施中。**
 3. **度量**：补一条"压缩实际节省率"指标（现有 `prompt_compression_ratio` 是
-   after/before **长度比**，0% 节省时值为 1.0，不直观）。
+   after/before **长度比**，0% 节省时值为 1.0，不直观）。→ **2026-10-11 第 1 轮 A5 已完成**
+   （`prompt_compression_saved_ratio`）。
 
 ### 关联
 
