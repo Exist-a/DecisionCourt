@@ -91,6 +91,7 @@ func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg Gat
 			Enabled:                cfg.IsSmartCompressionEnabled(),
 			KeepRecentForcedN:      cfg.KeepRecentForcedN,
 			SummaryInsertThreshold: cfg.SummaryInsertThreshold,
+			MaterialKeepRecentN:    cfg.MaterialKeepRecentN,
 			ScoreThreshold:         cfg.ScoreThreshold,
 			AbstractiveSummary:     cfg.IsSmartCompressionAbstractiveSummaryEnabled(),
 			SummaryGen:             summaryGen,

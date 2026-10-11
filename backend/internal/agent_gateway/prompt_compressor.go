@@ -179,6 +179,8 @@ type CompressionInfo struct {
 	AtomicGroups         int
 	AtomicGroupsKept     int
 	RecentForcedKept     int
+	// MaterialForcedKept (v2.12 M8-2 第 2 轮) 记录"素材下限"强制保留的素材条数。
+	MaterialForcedKept   int
 	SummarizedBlocks     int
 	ScoreThreshold       float64
 	ScoreAvgBefore       float64
@@ -197,7 +199,11 @@ type SmartCompressionConfig struct {
 	Enabled                bool
 	KeepRecentForcedN      int
 	SummaryInsertThreshold int
-	ScoreThreshold         float64
+	// MaterialKeepRecentN (v2.12 M8-2 第 2 轮)：素材下限 —— 强制保留**最新** N 条
+	// 素材（庭审历史/证据），防止预算紧张时把整段庭审历史一次丢光。旧素材仍可被
+	// 贪心丢弃以省 token。0 → 取默认 6。
+	MaterialKeepRecentN int
+	ScoreThreshold      float64
 	// v2.10 ADR 0044 #6: abstractive 摘要（opt-in）。
 	// AbstractiveSummary 为 false 或 SummaryGen 为 nil 时保持 extractive 行为。
 	// 这里把 generator 放在 config 上（而非 CompressScored 的额外入参），是为了
@@ -216,6 +222,10 @@ func NewPromptCompressor(cfg SmartCompressionConfig, metrics observability.Metri
 	if cfg.SummaryInsertThreshold <= 0 {
 		// v2.12 M8-2 A4：默认 3（原 5 在 ReAct 路径 droppable ≤ 5 下永不触发）。
 		cfg.SummaryInsertThreshold = 3
+	}
+	if cfg.MaterialKeepRecentN <= 0 {
+		// v2.12 M8-2 第 2 轮：素材下限默认 6。
+		cfg.MaterialKeepRecentN = 6
 	}
 	if cfg.ScoreThreshold <= 0 {
 		cfg.ScoreThreshold = 0.3
@@ -274,15 +284,18 @@ func (pc *PromptCompressor) Compress(messages []llm.Message, bs BudgetSnapshot) 
 
 // CompressLegacy 保留 v0.5+ 的 "system + 最近 5 条 + 超长截断" 行为；
 // 行为不变以保证向后兼容。
+//
+// v2.12 (M8-2 第 2 轮)：system 拆分后会有多条 system（契约 + 素材），
+// 旧实现只保留**第一条** system、把其余丢进 nonSystem 参与"最近 5 条"淘汰 ——
+// 会把素材块当普通消息误删。改为**保留全部 system**（契约 + 素材）。
 func CompressLegacy(messages []llm.Message, info CompressionInfo) ([]llm.Message, CompressionInfo) {
 	info.Strategy = "legacy"
-	var system *llm.Message
+	systems := make([]llm.Message, 0, 2)
 	nonSystem := make([]llm.Message, 0, len(messages))
 	for _, m := range messages {
 		info.BeforeLength += len(m.Content)
-		if m.Role == "system" && system == nil {
-			cp := m
-			system = &cp
+		if m.Role == "system" {
+			systems = append(systems, m)
 		} else {
 			nonSystem = append(nonSystem, m)
 		}
@@ -291,10 +304,8 @@ func CompressLegacy(messages []llm.Message, info CompressionInfo) ([]llm.Message
 		info.DroppedCount = len(nonSystem) - compressKeepHistory
 		nonSystem = nonSystem[len(nonSystem)-compressKeepHistory:]
 	}
-	out := make([]llm.Message, 0, len(nonSystem)+1)
-	if system != nil {
-		out = append(out, *system)
-	}
+	out := make([]llm.Message, 0, len(nonSystem)+len(systems))
+	out = append(out, systems...)
 	out = append(out, nonSystem...)
 	info.AfterCount = len(out)
 	info.AfterLength = truncateOversizedMessages(out)
@@ -304,48 +315,55 @@ func CompressLegacy(messages []llm.Message, info CompressionInfo) ([]llm.Message
 // CompressScored 走"评分 + 原子组 + 贪心打包 + 兜底摘要"四阶段。
 // 详细规则参见 .trae/documents/prompt-compression-courtscenario.md。
 //
-// 对 system 消息的处理：始终强制保留（与 legacy 一致）；非 system 才进评分。
+// v2.12 (M8-2 第 2 轮)：system 分两态 ——
+//   - **契约块**（`IsContractSystemMessage`，含未标记的旧式 system）：永不评分、
+//     永不丢弃（压它 → 模型编造证据）；
+//   - **素材块**（`IsMaterialMessage`）：与普通消息同台参与评分/原子组/贪心，
+//     旧素材可被丢弃以省 token，但由 `MaterialKeepRecentN` 保证最新 N 条不丢。
 func CompressScored(messages []llm.Message, bs BudgetSnapshot, cfg SmartCompressionConfig, info CompressionInfo) ([]llm.Message, CompressionInfo) {
 	info.Strategy = "scored"
 	for _, m := range messages {
 		info.BeforeLength += len(m.Content)
 	}
 
-	// 分离 system / 非 system
-	var system []llm.Message
-	nonSystem := make([]llm.Message, 0, len(messages))
+	// 分离三态：契约（保留）/ 素材（进 pool）/ 普通非 system（进 pool）。
+	contract := make([]llm.Message, 0, 2)
+	pool := make([]llm.Message, 0, len(messages))
+	isMaterial := make([]bool, 0, len(messages))
 	for _, m := range messages {
-		if m.Role == "system" {
-			system = append(system, m)
-		} else {
-			nonSystem = append(nonSystem, m)
+		if IsContractSystemMessage(m) {
+			contract = append(contract, m)
+			continue
 		}
+		isMaterial = append(isMaterial, IsMaterialMessage(m))
+		pool = append(pool, m)
 	}
 
-	if len(nonSystem) == 0 {
-		out := append([]llm.Message{}, system...)
+	if len(pool) == 0 {
+		out := append([]llm.Message{}, contract...)
 		info.AfterLength = truncateOversizedMessages(out)
 		info.AfterCount = len(out)
 		return out, info
 	}
 
 	// Stage 1: 评分
-	scored := ScoreMessages(nonSystem, bs)
+	scored := ScoreMessages(pool, bs)
 
 	// Stage 2: 原子组识别
-	groups := BuildAtomicGroups(nonSystem, scored)
+	groups := BuildAtomicGroups(pool, scored)
 
 	// Stage 3: 贪心打包（recentForced 由 CompressScored 自己计算，避免双重计数）
 	// v2.10 ADR 0044 #2: 传入 ScoreThreshold 激活死配置
 	keepSet, keptGroupCount, _ := GreedyPack(groups, bs, cfg.ScoreThreshold)
 
-	// 强制保留最近 N 条（不论分数）
 	keepMap := map[int]bool{}
 	for _, idx := range keepSet {
 		keepMap[idx] = true
 	}
+
+	// 强制保留最近 N 条（不论分数）
 	var recentForced int
-	for i := len(nonSystem) - cfg.KeepRecentForcedN; i < len(nonSystem); i++ {
+	for i := len(pool) - cfg.KeepRecentForcedN; i < len(pool); i++ {
 		if i < 0 {
 			continue
 		}
@@ -355,10 +373,34 @@ func CompressScored(messages []llm.Message, bs BudgetSnapshot, cfg SmartCompress
 		}
 	}
 
+	// 素材下限：强制保留**最新** MaterialKeepRecentN 条素材，防止预算紧张时把
+	// 整段庭审历史一次性丢光。素材在 pool 中位于最前（历史先于本轮追加消息），
+	// 故取"素材位置最靠后的 N 个"= 最新 N 条。旧素材仍可被贪心丢弃 → 省 token。
+	var materialForced int
+	{
+		materialPos := make([]int, 0, len(pool))
+		for i := range pool {
+			if isMaterial[i] {
+				materialPos = append(materialPos, i)
+			}
+		}
+		start := len(materialPos) - cfg.MaterialKeepRecentN
+		if start < 0 {
+			start = 0
+		}
+		for _, i := range materialPos[start:] {
+			if !keepMap[i] {
+				keepMap[i] = true
+				materialForced++
+			}
+		}
+	}
+	info.MaterialForcedKept = materialForced
+
 	// 按原顺序输出
 	var kept []llm.Message
 	var droppedCount int
-	for i, m := range nonSystem {
+	for i, m := range pool {
 		if keepMap[i] {
 			kept = append(kept, m)
 		} else {
@@ -372,27 +414,27 @@ func CompressScored(messages []llm.Message, bs BudgetSnapshot, cfg SmartCompress
 
 	// 兜底摘要
 	if droppedCount > cfg.SummaryInsertThreshold {
-		summary := BuildEarlierSummary(groups, keepMap, nonSystem)
+		summary := BuildEarlierSummary(groups, keepMap, pool)
 		// v2.10 ADR 0044 #6: opt-in abstractive 摘要 —— 在 extractive 锚点基础上
 		// 再补一段保留推理链的自然语言摘要；失败自动回退到 extractive 结果。
 		if cfg.AbstractiveSummary && cfg.SummaryGen != nil {
-			dropped := CollectDroppedMessages(groups, keepMap, nonSystem)
+			dropped := CollectDroppedMessages(groups, keepMap, pool)
 			summary = BuildAbstractiveSummary(cfg.SummaryGen, dropped, summary)
 		}
 		if summary != "" {
-			// 插到非 system 区段的最前面（保留 system 在最前）
-			summaryMsg := llm.Message{
+			// 摘要本质是"被丢素材的锚点"，标记为素材，使其后续仍可被压缩。
+			summaryMsg := MarkMaterial(llm.Message{
 				Role:    "system",
 				Content: summary,
-			}
+			})
 			kept = append([]llm.Message{summaryMsg}, kept...)
 			info.SummarizedBlocks = 1
 		}
 	}
 
 	// 单条超长截断（保留 legacy 的最后一步；system 走单独上限）
-	out := make([]llm.Message, 0, len(kept)+len(system))
-	out = append(out, system...)
+	out := make([]llm.Message, 0, len(contract)+len(kept))
+	out = append(out, contract...)
 	out = append(out, kept...)
 	info.AfterLength = truncateOversizedMessages(out)
 	info.AfterCount = len(out)

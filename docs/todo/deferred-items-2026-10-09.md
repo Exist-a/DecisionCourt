@@ -475,6 +475,19 @@ task=react_think_retry  msgs 2->2  chars 20850->20850  saved=0.0%  ratio=0.999
 
 **仍待第 2 轮**：M8-2 主重构（system 拆「契约块 + 素材块」，§2.2）—— 属行为变更，需 A/B 同题对跑 + 注入式回归 + §11 docker/浏览器实测。
 
+### 🚧 2026-10-11 第 2 轮（M8-2 主重构）—— 代码完成，**真实链路验证未完成**
+
+**已落地（本地提交，未 push）**：
+
+- `message_section.go`：新增区块标记常量（`MessageSectionContract` / `MessageSectionMaterial`）+ `MarkContract/MarkMaterial/IsContractSystemMessage/IsMaterialMessage`。未标记的旧式 system 一律视作契约（保持"system 强制保留"旧行为）。
+- `react_runner.go::buildInitialMessages`：system 拆为「契约块（baseRules + 工具协议，不可压）」+「素材块（历史区段标记 + 逐条历史行，可压）」多条消息。
+- `prompt_compressor.go`：`CompressScored` 分离三态 —— 契约永不评分/丢弃；素材与普通消息同台参与评分/原子组/贪心；新增 `MaterialKeepRecentN`（默认 6）素材下限，保证最新 N 条历史不丢、旧素材可丢弃省 token。`CompressLegacy` 改为保留**全部** system（旧实现只留第一条，拆分后会误删素材）。
+- `prompt_scorer.go`：素材块给中性权重 1.0（否则沿用 system 的 2.0 永不被丢弃，"旧素材可丢"失效）。
+- 配置：`AGENT_GATEWAY_MATERIAL_KEEP_RECENT_N`（默认 6）贯通 config → gateway_config → compressor。
+- 回归测试：`compression_section_split_test.go`（契约永不丢 / 素材下限保最近弃最旧 / legacy 保留全部 system）。
+
+**验证状态**：`go build` + `go test -count=1 ./...` 全绿；真实庭审 docker + IAB 实测**进行到一半被用户叫停**（庭审已启动，未及分析日志/指标）。**第 2 轮的真实链路验证与 A/B 同题对跑尚未完成**，明天继续。**行为变更，在 A/B 完成前不应上线。**
+
 ### 建议动作（需用户决策）
 
 1. **预算**：把 `AGENT_GATEWAY_BUDGET_PER_SESSION` 默认值上调（如 200000 → 300000），

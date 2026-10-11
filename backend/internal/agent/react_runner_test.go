@@ -346,13 +346,20 @@ func TestReActRunner_TranscriptContextInjected(t *testing.T) {
 	defer mu.Unlock()
 	var foundSystem bool
 	for _, msgs := range capturedCalls {
+		// v2.12 (M8-2 第 2 轮)：system 拆成「契约块 + 素材块（逐条历史行）」，
+		// 历史内容不再集中在单条 system 里 —— 拼接所有 system 消息后断言。
+		var sysAll strings.Builder
 		for _, m := range msgs {
-			if m.Role == "system" && strings.Contains(m.Content, "对方说 A 是垃圾") && strings.Contains(m.Content, "我之前说 B 才正确") {
-				foundSystem = true
+			if m.Role == "system" {
+				sysAll.WriteString(m.Content)
 			}
 		}
+		joined := sysAll.String()
+		if strings.Contains(joined, "对方说 A 是垃圾") && strings.Contains(joined, "我之前说 B 才正确") {
+			foundSystem = true
+		}
 	}
-	require.True(t, foundSystem, "transcript 应被注入到 system prompt 或单独的 system 消息")
+	require.True(t, foundSystem, "transcript 应被注入到 system 消息（契约块 + 素材块）")
 }
 
 // captureLLMScripted 是 scriptedLLM 的变体，能在调用前把 messages 抓出来供测试断言。

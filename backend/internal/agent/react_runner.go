@@ -1351,26 +1351,36 @@ func hexNibble(c byte) uint32 {
 }
 
 func (r *ReActRunner) buildInitialMessages(transcript []model.Message) []llm.Message {
-	system := r.systemBase + r.ToolsDescription()
-	if len(transcript) > 0 {
-		var sb strings.Builder
-		sb.WriteString(system)
-		// 区段标记必须与压缩器的"保最近砍最旧"切分一致（M8-2 A1）：单一来源在
-		// agent_gateway.TranscriptHistoryMarker，超长时压缩器据此只丢最旧的历史行，
-		// 保留契约头部与最新发言。
-		sb.WriteString(agent_gateway.TranscriptHistoryMarker)
-		for _, m := range transcript {
-			role := m.ActionType
-			if role == "" {
-				role = "message"
-			}
-			fmt.Fprintf(&sb, "- [%s] %s\n", role, truncateForPrompt(m.Content, reactHistoryLineMaxRunes))
+	// v2.12 (M8-2 第 2 轮)：system 拆成「契约块 + 素材块」两条语义消息，
+	// 让压缩器能压素材（token 大头）而永不动契约（baseRules + 工具协议）：
+	//   - 契约块（MarkContract）：永不评分、永不丢弃。
+	//   - 素材块（MarkMaterial）：历史区段标记 + 每条历史行一条消息，可参与评分/贪心，
+	//     由 MaterialKeepRecentN 保证最新 N 条不丢，旧的可被丢弃省 token。
+	contract := agent_gateway.MarkContract(llm.Message{
+		Role:    "system",
+		Content: r.systemBase + r.ToolsDescription(),
+	})
+	if len(transcript) == 0 {
+		return []llm.Message{contract}
+	}
+
+	// 区段标记必须与压缩器的"保最近砍最旧"切分一致（M8-2 A1）：单一来源在
+	// agent_gateway.TranscriptHistoryMarker。
+	msgs := make([]llm.Message, 0, len(transcript)+2)
+	msgs = append(msgs, contract)
+	msgs = append(msgs, agent_gateway.MarkMaterial(llm.Message{
+		Role:    "system",
+		Content: agent_gateway.TranscriptHistoryMarker,
+	}))
+	for _, m := range transcript {
+		role := m.ActionType
+		if role == "" {
+			role = "message"
 		}
-		system = sb.String()
+		line := fmt.Sprintf("- [%s] %s\n", role, truncateForPrompt(m.Content, reactHistoryLineMaxRunes))
+		msgs = append(msgs, agent_gateway.MarkMaterial(llm.Message{Role: "system", Content: line}))
 	}
-	return []llm.Message{
-		{Role: "system", Content: system},
-	}
+	return msgs
 }
 
 // reportHallucination 触发可选的 OnHallucination 观察者 (v2.13, deferred D24)。

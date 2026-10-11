@@ -39,6 +39,8 @@ type AgentGatewayConfig struct {
 	KeepRecentForcedN       int     `mapstructure:"AGENT_GATEWAY_KEEP_RECENT_FORCED_N"`
 	SummaryInsertThreshold  int     `mapstructure:"AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD"`
 	ScoreThreshold          float64 `mapstructure:"AGENT_GATEWAY_SCORE_THRESHOLD"`
+	// MaterialKeepRecentN (v2.12 M8-2 第 2 轮)：素材块下限（保留最新 N 条历史）。
+	MaterialKeepRecentN int `mapstructure:"AGENT_GATEWAY_MATERIAL_KEEP_RECENT_N"`
 	// SmartCompressionAbstractiveSummary (v2.10 ADR 0044 #6): 用轻量 LLM 生成
 	// 保留推理链的 abstractive 摘要。默认 false —— 每次 trial 多一次 LLM 调用，
 	// 属成本 opt-in。开启后 LLM 失败自动回退 extractive。
@@ -361,6 +363,7 @@ func buildAgentGatewayConfig() AgentGatewayConfig {
 		KeepRecentForcedN:      envOrDefaultInt("AGENT_GATEWAY_KEEP_RECENT_FORCED_N", 3),
 		SummaryInsertThreshold: envOrDefaultInt("AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", 3),
 		ScoreThreshold:         envOrDefaultFloat("AGENT_GATEWAY_SCORE_THRESHOLD", 0.3),
+		MaterialKeepRecentN:    envOrDefaultInt("AGENT_GATEWAY_MATERIAL_KEEP_RECENT_N", 6),
 		// v2.10 ADR 0044 #6: abstractive 摘要默认关 (成本 opt-in, 不继承总开关)
 		SmartCompressionAbstractiveSummary: envOrDefaultBool("AGENT_GATEWAY_SMART_COMPRESSION_ABSTRACTIVE_SUMMARY", false),
 

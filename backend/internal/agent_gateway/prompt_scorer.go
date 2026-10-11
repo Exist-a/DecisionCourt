@@ -103,6 +103,12 @@ func ScoreMessages(messages []llm.Message, bs BudgetSnapshot) []MessageScore {
 // roleWeightFor 按 role / metadata.agent_type 推导权重。
 // 规则：先看 m.Metadata["agent_type"]（更精确），否则按 m.Role 推断。
 func roleWeightFor(m llm.Message) float64 {
+	// v2.12 (M8-2 第 2 轮)：素材块虽然 role=system，但语义是"素材"而非"指令" ——
+	// 若沿用 system 的 2.0 权重，它会永远压过近期发言而被保留，"旧素材可丢弃"失效。
+	// 故素材块给中性权重 1.0，与普通内容同台竞争。
+	if IsMaterialMessage(m) {
+		return 1.0
+	}
 	if m.Role == "system" {
 		return 2.0
 	}

@@ -59,6 +59,9 @@ type GatewayConfig struct {
 	SummaryInsertThreshold int
 	// ScoreThreshold 低于该分不进入保留集。
 	ScoreThreshold float64
+	// MaterialKeepRecentN (v2.12 M8-2 第 2 轮)：素材块下限 —— 强制保留最新 N 条
+	// 素材（庭审历史/证据），防止预算紧张时丢光整段历史。默认 6。
+	MaterialKeepRecentN int
 	// SmartCompressionAbstractiveSummary (v2.10 ADR 0044 #6) 启用 abstractive 摘要：
 	// 丢弃消息成段时不再只做 extractive anchor 拼接，而是额外调一次轻量 LLM
 	// 生成保留推理链的摘要。默认 false（每次 trial 多一次 LLM 调用，需用户 opt-in）。
@@ -249,6 +252,9 @@ func (c GatewayConfig) Normalize() GatewayConfig {
 	}
 	if out.ScoreThreshold <= 0 {
 		out.ScoreThreshold = 0.3
+	}
+	if out.MaterialKeepRecentN <= 0 {
+		out.MaterialKeepRecentN = 6 // v2.12 M8-2 第 2 轮
 	}
 	if out.LLMTimeoutSec <= 0 {
 		out.LLMTimeoutSec = 90
