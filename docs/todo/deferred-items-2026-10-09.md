@@ -486,7 +486,20 @@ task=react_think_retry  msgs 2->2  chars 20850->20850  saved=0.0%  ratio=0.999
 - 配置：`AGENT_GATEWAY_MATERIAL_KEEP_RECENT_N`（默认 6）贯通 config → gateway_config → compressor。
 - 回归测试：`compression_section_split_test.go`（契约永不丢 / 素材下限保最近弃最旧 / legacy 保留全部 system）。
 
-**验证状态**：`go build` + `go test -count=1 ./...` 全绿；真实庭审 docker + IAB 实测**进行到一半被用户叫停**（庭审已启动，未及分析日志/指标）。**第 2 轮的真实链路验证与 A/B 同题对跑尚未完成**，明天继续。**行为变更，在 A/B 完成前不应上线。**
+**验证状态**：`go build` + `go test -count=1 ./...` 全绿。**2026-10-11 真实验证已补完**（dev compose + IAB 浏览器，临时小预算 override 逼出压缩，验证后已删）：
+
+- **拆分结构已在真实请求中确认**：full 文件日志的 `input_messages` 显示
+  `[0] system 6992B`（契约块，开头即 baseRules）→ `[1] system 17B`（历史区段标记）→
+  `[2] system 314B`（单条历史行）—— 契约与素材确实分成多条 system，且压缩器对契约不评分。
+- **素材下限真实生效**：长庭审里出现 `compression_material_forced=2`（新字段已入 LogEntry）。
+- **无回归**：多场标准庭审开场/质证正常，零 ERROR、`retry_count=0`；`compressed=true` 时
+  `strategy=scored`、无异常。
+- **诚实边界**：短/中庭审的 `before_count → after_count` 实测**未发生丢弃**（消息少、token 小，
+  greedy 的 target 足以容纳全部）——与既有审计"短庭审省 0%"一致。**"旧素材真正被丢弃"这一路
+  由单测 `TestCompressScored_MaterialFloorKeepsNewestDropsOldest` 覆盖**，真实长庭审未复现丢弃
+  （需极长会话，本轮未做）。
+- **A/B 同题对跑**：本轮**未做**（对照质量需长庭审 + 多次跑，成本高）。行为变更的"质量不降"
+  结论仍待补；在补完前不宜上线。
 
 ### 建议动作（需用户决策）
 
