@@ -326,20 +326,13 @@ type A2AMessage struct {
 	CreatedAt   time.Time
 }
 
-// PrivateMemory stores per-agent private notes that are never visible to
-// other agents. Only the owning agent and the orchestrator can read these.
-type PrivateMemory struct {
-	ID                uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	SessionID         uuid.UUID `gorm:"type:uuid;index;not null"`
-	AgentID           uuid.UUID `gorm:"type:uuid;index;not null"`
-	MemoryUUID        string    `gorm:"type:varchar(36);uniqueIndex;not null"`
-	Round             int       `gorm:"default:0"`
-	Type              string    `gorm:"type:varchar(50);not null"`
-	Content           string    `gorm:"type:text;not null"`
-	LinkedEvidenceIDs  StringSlice `gorm:"type:jsonb;default:'[]'"`
-	LinkedMessageUUIDs StringSlice `gorm:"type:jsonb;default:'[]'"`
-	CreatedAt         time.Time
-}
+// TableName explicitly pins the SQL table name (mirrors the convention of the
+// other model files). GORM's default pluraliser turns A2AMessage into
+// "a2_a_messages" — that is the name already deployed in production, so it is
+// pinned here to make the dependency explicit rather than accidental.
+// Do NOT rename it: the production table exists under this name, and the
+// exported JSON field "a2a_messages" (api-design) is a separate contract.
+func (A2AMessage) TableName() string { return "a2_a_messages" }
 
 // User 记录匿名身份。user_id 由前端在 localStorage 生成(UUIDv4)首次访问
 // 时通过 POST /api/v1/auth/anon 报到后端；后端用 user_id 签发 JWT,后续
@@ -406,7 +399,6 @@ func Connect() error {
 		&LLMCall{},
 		&SearchLog{},
 		&A2AMessage{},
-		&PrivateMemory{},
 		&InvestigationFinding{},
 		// v0.8 白盒化：业务级 span / 状态机迁移审计
 		&DecisionEvent{},

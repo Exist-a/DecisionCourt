@@ -501,6 +501,10 @@ func TestApplySpeakerLengthLimit_IdempotentOnAlreadyTruncated(t *testing.T) {
 }
 // v2.10: truncateForPrompt 用于把庭审历史逐行压进 system prompt（buildInitialMessages）。
 // 旧实现裸 s[:max] 会把中文行切成半个汉字，产出的非法 UTF-8 被塞进 LLM 请求。
+//
+// 2026-10-10 Round 2：max 的语义由**字节**改为 **rune**（中文可见量 ×3），
+// 断言随之由 len(body) 改为 RuneCountInString(body)；用例 4 输入加长到 400 rune
+// 以保持"确实超过 240 上限"的测试意图（旧语义下 240 rune=720 字节本就超限）。
 func TestTruncateForPrompt_RuneSafe(t *testing.T) {
 	cases := []struct {
 		name string
@@ -510,7 +514,7 @@ func TestTruncateForPrompt_RuneSafe(t *testing.T) {
 		{"中文切在 rune 中间", strings.Repeat("证据", 10), 7},
 		{"中文正好落边界", strings.Repeat("证据", 10), 6},
 		{"中英混合", "abc证据def证据", 5},
-		{"超长纯中文", strings.Repeat("法庭规则", 60), 240},
+		{"超长纯中文", strings.Repeat("法庭规则", 100), 240},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -518,7 +522,7 @@ func TestTruncateForPrompt_RuneSafe(t *testing.T) {
 			require.True(t, utf8.ValidString(got), "截断结果必须是合法 UTF-8: %q", got)
 			require.True(t, strings.HasSuffix(got, "..."))
 			body := strings.TrimSuffix(got, "...")
-			require.LessOrEqual(t, len(body), tc.max)
+			require.LessOrEqual(t, utf8.RuneCountInString(body), tc.max)
 		})
 	}
 }

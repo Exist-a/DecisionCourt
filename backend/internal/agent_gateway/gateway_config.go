@@ -29,6 +29,20 @@ type GatewayConfig struct {
 	// BudgetSlidingWindowSec budget sliding 时间窗（秒），0 → 默认 300。
 	BudgetSlidingWindowSec int
 
+	// === Token Budget v2：成本维度（2026-10-10 第 3 轮接线）===
+	//
+	// BudgetCostLimitUSD 每个 session 的美元成本上限；0 = 不限（默认）。
+	// 成本参与档位判定的方式：与 token 维度**共用** 70/80/100 阈值，取较严一档
+	// （决策：成本只做"另一把同向的尺子"，不引入第二套状态机）。
+	BudgetCostLimitUSD float64
+	// PricingJSON 是模型单价表（JSON 字符串），在 NewWithConfig 里解析为
+	// PricingTable。用字符串而不是 map[string]ModelPricing 是为了让
+	// cmd/server 的映射反射护栏（填 "x" 断言非零）继续成立，也避免 config 层
+	// 反向依赖本包（config 不能 import agent_gateway）。
+	//
+	// 形如：{"deepseek-chat":{"input_per_1m":0.27,"output_per_1m":1.10}}
+	PricingJSON string
+
 	// === Prompt Compression v2 扩展 ===
 	// SmartCompression 启用"评分 + 原子组 + 贪心打包 + 兜底摘要"四阶段。
 	// 默认 false → 保持 v0.5+ 的 keep-5 旧策略。

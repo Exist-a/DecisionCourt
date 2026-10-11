@@ -586,7 +586,13 @@ streamSucceeded := false
 		}
 	}
 
-	return Speaker{}, steps, fmt.Errorf("react: max iterations (%d) exceeded without speak", r.cfg.MaxIterations)
+	// 必须 wrap sentinel（2026-10-10 R21 修复）：这里原先用不带 %w 的 fmt.Errorf，
+	// 导致两处 errors.Is(ErrReactMaxIterations) 永远不会命中 ——
+	//   1) courtroom.ClassifyError 的"3 个恢复动作"分支（其单测手工构造了 wrapped
+	//      error，所以测试一直绿、生产一直不生效）；
+	//   2) lawyerSpeakReAct 的"降级为单次发言"兜底。
+	return Speaker{}, steps, fmt.Errorf("react: max iterations (%d) exceeded without speak: %w",
+		r.cfg.MaxIterations, ErrReactMaxIterations)
 }
 
 func (r *ReActRunner) emitStep(step Step) {
@@ -1330,7 +1336,7 @@ func (r *ReActRunner) buildInitialMessages(transcript []model.Message) []llm.Mes
 			if role == "" {
 				role = "message"
 			}
-			fmt.Fprintf(&sb, "- [%s] %s\n", role, truncateForPrompt(m.Content, 240))
+			fmt.Fprintf(&sb, "- [%s] %s\n", role, truncateForPrompt(m.Content, reactHistoryLineMaxRunes))
 		}
 		system = sb.String()
 	}
@@ -1382,17 +1388,17 @@ func (r *ReActRunner) validateSpeak(o *AgentOutput) error {
 	return nil
 }
 
-func truncateForPrompt(s string, max int) string {
-	if len(s) <= max {
+func truncateForPrompt(s string, maxRunes int) string {
+	if maxRunes < 0 {
 		return s
 	}
-	// v2.10: 回退到 rune 起始边界再切 —— 旧实现裸 s[:max] 会把中文行切成
-	// 半个汉字，产出的非法 UTF-8 片段被拼进 system prompt 送给 LLM。
-	n := max
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
+	if utf8.RuneCountInString(s) <= maxRunes {
+		return s
 	}
-	return s[:n] + "..."
+	// 2026-10-10 Round 2：统一为 rune 语义。原实现按**字节**切（靠回退 rune 边界
+	// 避免切出半个汉字，但不解决"上限含义是字节"——中文下可见量少 3 倍）。
+	runes := []rune(s)
+	return string(runes[:maxRunes]) + "..."
 }
 
 // truncateForLog 截断字符串到 n 字节, 末尾追加 "...(truncated, total=NB)".

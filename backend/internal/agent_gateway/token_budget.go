@@ -49,6 +49,37 @@ func NewTokenBudgetWithStore(store BudgetStore, metrics observability.Metrics) *
 	return &TokenBudget{store: store, metrics: metrics}
 }
 
+// maxRatioStore / usedTokensStore 是 BudgetStore 的可选扩展（2026-10-10 第 3 轮）。
+// 只有内存实现 MemStore 提供；Redis / 持久化实现可后续补。未实现时返回 ok=false，
+// 上层的指标就退化为"不上报"，而不是报假数据。
+type maxRatioStore interface{ MaxRatio() float64 }
+type usedTokensStore interface{ UsedTokens() int }
+
+// MaxRatio 返回所有活跃 session 的最大水位比（含成本口径，取较严）。
+// 仅供 /metrics 观察；store 未实现该能力时返回 (0,false)。
+func (tb *TokenBudget) MaxRatio() (float64, bool) {
+	if tb == nil || tb.store == nil {
+		return 0, false
+	}
+	s, ok := tb.store.(maxRatioStore)
+	if !ok {
+		return 0, false
+	}
+	return s.MaxRatio(), true
+}
+
+// UsedTokens 返回所有活跃 session 的累计 token 总量；store 未实现时 (0,false)。
+func (tb *TokenBudget) UsedTokens() (int, bool) {
+	if tb == nil || tb.store == nil {
+		return 0, false
+	}
+	s, ok := tb.store.(usedTokensStore)
+	if !ok {
+		return 0, false
+	}
+	return s.UsedTokens(), true
+}
+
 // AddUsage 记录一次 LLM 调用的用量；调用 Gateway.Complete 内层返回后触发。
 //   - 负数与 0 用量被忽略。
 //   - 空 sessionUUID 忽略（保持现状；OOM 防护）

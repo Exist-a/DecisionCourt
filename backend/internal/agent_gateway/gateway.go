@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/decisioncourt/backend/internal/llm"
@@ -31,6 +32,8 @@ type Gateway struct {
 	breaker      *LLMBreaker    // v0.9 (ADR 0013 §决策 3),可为 nil
 	cfg          GatewayConfig
 	defaultModel string
+	// pricing（2026-10-10 第 3 轮）模型单价表；未配置时 CostUSD 恒 0（带一次性 WARN）。
+	pricing *PricingTable
 	// v2.3 (ADR 0037) 注入 observability.Metrics，cache / breaker / compressor / throttler /
 	// budget / retryer 共用同一实例。nil 时所有埋点都是 no-op（不依赖 metrics）。
 	metrics observability.Metrics
@@ -56,10 +59,24 @@ func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg Gat
 		cache      *ResponseCache
 		breaker    *LLMBreaker
 	)
+	// 2026-10-10 第 3 轮（成本接线）：解析定价表。非法 JSON 只 WARN 不 fail-fast
+	// —— 定价缺失不该阻断庭审，但也不能静默（否则"成本上限"永远不触发）。
+	pricing := NewPricingTable(nil)
+	if prices, perr := ParsePricingJSON(cfg.PricingJSON); perr != nil {
+		slog.Error("agent_gateway: invalid AGENT_GATEWAY_PRICING_JSON; cost will be recorded as 0",
+			"err", perr)
+	} else {
+		pricing = NewPricingTable(prices)
+		if pricing.HasPrices() {
+			slog.Info("agent_gateway: pricing table loaded",
+				"models", len(prices), "cost_limit_usd", cfg.BudgetCostLimitUSD)
+		}
+	}
+
 	if cfg.IsTokenBudgetEnabled() {
 		// v2：构造 MemStore 时携带 limit + cost + 阈值 + sliding 时长
 		slidingWindow := time.Duration(cfg.BudgetSlidingWindowSec) * time.Second
-		store := NewMemStore(cfg.BudgetPerSession, 0, cfg.CompressionThreshold, cfg.ThrottlingThreshold, slidingWindow)
+		store := NewMemStore(cfg.BudgetPerSession, cfg.BudgetCostLimitUSD, cfg.CompressionThreshold, cfg.ThrottlingThreshold, slidingWindow)
 		budget = NewTokenBudgetWithStore(store, metrics)
 	}
 	if cfg.IsPromptCompressionEnabled() {
@@ -111,6 +128,7 @@ func NewWithConfig(inner llm.Client, rec *Recorder, defaultModel string, cfg Gat
 		breaker:      breaker,
 		cfg:          cfg,
 		defaultModel: defaultModel,
+		pricing:      pricing,
 		metrics:      metrics,
 	}
 }
@@ -224,11 +242,14 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 	// v2.3 (ADR 0037) 进入 LLM call 阶段埋点：发起计数。
 	if g.metrics != nil {
 		g.metrics.IncCounter(observability.MetricLLMCallTotal, map[string]string{
-			"model":    model,
-			"agent":    tr.AgentType,
-			"task":     tr.TaskType,
-			"phase":    string(compInfo.Strategy),
-			"cache":    "miss",
+			"model": model,
+			"agent": tr.AgentType,
+			"task":  tr.TaskType,
+			// 2026-10-10（deferred R19 顺带）：这个 label 原先叫 "phase"，但取值一直是
+			// 压缩策略（compInfo.Strategy），观测值恒为空 —— 名字与语义不符会让看板读错。
+			// 改名为 compression_strategy（庭审阶段另有 state_transition 指标可查）。
+			"compression_strategy": string(compInfo.Strategy),
+			"cache":                "miss",
 		})
 	}
 	start := time.Now()
@@ -300,12 +321,15 @@ func (g *Gateway) Complete(ctx context.Context, systemPrompt string, messages []
 		}
 	}
 
-	// 5. 记录使用到预算
+	// 5. 记录使用到预算（含成本维度，2026-10-10 第 3 轮接线）
 	if g.budget != nil && tr.SessionUUID != "" {
+		cost := g.pricing.CostUSD(model, usage.PromptTokens, usage.CompletionTokens)
 		g.budget.AddUsage(ctx, tr.SessionUUID, BudgetUsage{
 			InputTokens:  usage.PromptTokens,
 			OutputTokens: usage.CompletionTokens,
+			CostUSD:      cost,
 		})
+		g.reportBudgetMetrics()
 	}
 
 	// 6. 审计落库
@@ -410,9 +434,13 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 		defer close(out)
 		var firstErr error
 		var totalContent string
+		var streamUsage *llm.Usage
 		for chunk := range src {
 			if chunk.Err != nil && firstErr == nil {
 				firstErr = chunk.Err
+			}
+			if chunk.Usage != nil {
+				streamUsage = chunk.Usage
 			}
 			totalContent += chunk.Content
 			out <- chunk
@@ -420,16 +448,27 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 		latency := time.Since(start)
 
 		usage := llm.Usage{}
+		estimateOutput := false
 		if g.budget != nil && tr.SessionUUID != "" {
-			// 流式返回没有 token 计数，按输出字符数估算 1 token ≈ 4 字符。
-			// v2 多维：把估算值全部记到 OutputTokens（LLM 没办法在流上拿到真实 usage）。
-			approx := len(totalContent) / 4
-			if approx < 1 {
-				approx = 0
+			// 2026-10-10（deferred R18 修复）：优先用末帧返回的**真实 usage**
+			// （input + output 拆分齐全）。拿不到时才退回估算 —— 并且**补记输入**
+			// （此前只记输出、且用 len/4 当尺子，中文下低估约 3 倍，与压缩层的
+			// CJK 感知 EstimateTokens 是"两把尺子"）。
+			if streamUsage != nil && streamUsage.TotalTokens > 0 {
+				usage = *streamUsage
+			} else {
+				estimateOutput = true
+				usage.PromptTokens = EstimateTokens(systemPrompt + messagesText(messages))
+				usage.CompletionTokens = EstimateTokens(totalContent)
+				usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 			}
-			usage.TotalTokens = approx
-			usage.CompletionTokens = approx
-			g.budget.AddUsage(ctx, tr.SessionUUID, BudgetUsage{OutputTokens: approx})
+			cost := g.pricing.CostUSD(model, usage.PromptTokens, usage.CompletionTokens)
+			g.budget.AddUsage(ctx, tr.SessionUUID, BudgetUsage{
+				InputTokens:  usage.PromptTokens,
+				OutputTokens: usage.CompletionTokens,
+				CostUSD:      cost,
+			})
+			g.reportBudgetMetrics()
 		}
 
 		// v2.3 (ADR 0037) 流式出口埋点：duration + tokens + status。
@@ -445,17 +484,34 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 				"stream": "true",
 			}
 			g.metrics.ObserveHistogram(observability.MetricLLMCallDuration, durLabels, latency.Seconds())
+			// 2026-10-10（R18）：真实 usage 与估算要能区分开，否则看板分不清
+			// "真值"与"估算值"。同时补记输入（此前流式完全不记输入）。
+			outType := "output"
+			inType := "input"
+			if estimateOutput {
+				outType = "output_stream_estimated"
+				inType = "input_stream_estimated"
+			}
 			g.metrics.AddCounter(observability.MetricLLMCallTokens, map[string]string{
 				"model":  model,
-				"type":   "output_stream_estimated",
+				"type":   outType,
 				"stream": "true",
 			}, float64(usage.CompletionTokens))
+			if usage.PromptTokens > 0 {
+				g.metrics.AddCounter(observability.MetricLLMCallTokens, map[string]string{
+					"model":  model,
+					"type":   inType,
+					"stream": "true",
+				}, float64(usage.PromptTokens))
+			}
 		}
 
 		g.recorder.Record(CallInput{
-			Trace:   tr,
-			Model:   model,
-			Usage:   Usage{TotalTokens: usage.TotalTokens},
+			Trace: tr,
+			Model: model,
+			// 2026-10-10（R18）：带上 input/output 拆分 —— 此前只写 TotalTokens，
+			// 导致 llm_calls 里流式行的 prompt_tokens/completion_tokens 全为 0。
+			Usage:   Usage{PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens, TotalTokens: usage.TotalTokens},
 			Latency: latency,
 			Status:  toStatus(firstErr),
 			Err:     firstErr,
@@ -465,12 +521,50 @@ func (g *Gateway) StreamComplete(ctx context.Context, systemPrompt string, messa
 	return out
 }
 
+// messagesText 把消息历史拼成一段文本，仅供估算输入 token 用
+// （不发送给上游，只做 EstimateTokens 的输入）。
+func messagesText(messages []llm.Message) string {
+	if len(messages) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, m := range messages {
+		sb.WriteString(m.Content)
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
+
 // budgetSnapshot 返回当前预算快照；预算未启用时返回 normal 零值。
 func (g *Gateway) budgetSnapshot(ctx context.Context, sessionUUID string) BudgetSnapshot {
 	if g.budget == nil {
 		return BudgetSnapshot{Status: StatusNormal}
 	}
 	return g.budget.Check(ctx, sessionUUID)
+}
+
+// reportBudgetMetrics 上报"预算水位"指标（2026-10-10 第 3 轮，deferred R19）。
+//
+// 为什么需要：预算耗尽 + REJECT_WHEN_EXHAUSTED=true 会**直接拒掉**后续调用
+// （实测一场 quick 庭审峰值已到 69.4%），而在此之前 /metrics 上完全看不见这件事，
+// 只能 SSH 进容器翻 FileLogger 的 budget_used 字段。
+//
+// 口径：用 store 的"最高会话水位"而不是当前会话——会话数无上界，绝不能用
+// session_uuid 作 label（会把指标基数打爆）；一个无 label 的标量+一个总量 counter
+// 足以回答"现在最紧的那个会话还剩多少 / 累计烧了多少"。
+// store 未实现该能力（如未来的 Redis 实现）时静默跳过，不报假数据。
+func (g *Gateway) reportBudgetMetrics() {
+	if g.metrics == nil || g.budget == nil {
+		return
+	}
+	if ratio, ok := g.budget.MaxRatio(); ok {
+		g.metrics.SetGauge(observability.MetricBudgetRatio, nil, ratio)
+	}
+	if used, ok := g.budget.UsedTokens(); ok {
+		// counter 是累计语义：这里上报的是"当前活跃会话的累计值"作为**快照基准**，
+		// 不用 AddCounter（会重复累加）。当 store 提供增量接口时再切 IncCounter。
+		g.metrics.SetGauge(observability.MetricBudgetUsedTokens, nil, float64(used))
+	}
 }
 
 // Release 释放某个 session 在网关侧占用的进程内资源。

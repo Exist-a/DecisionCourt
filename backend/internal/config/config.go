@@ -26,6 +26,13 @@ type AgentGatewayConfig struct {
 	// === Token Budget v2 ===
 	RejectWhenExhausted     bool `mapstructure:"AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED"`
 	BudgetSlidingWindowSec  int  `mapstructure:"AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC"`
+	// === Token Budget v2 成本维度（2026-10-10 第 3 轮）===
+	// BudgetCostLimitUSD 每 session 美元成本上限；0 = 不限（默认）。
+	// PricingJSON 模型单价表（JSON 字符串，形如
+	// {"deepseek-chat":{"input_per_1m":0.27,"output_per_1m":1.10}}）；
+	// 留空 = 不配定价 → cost 记 0 并一次性 WARN（不静默）。
+	BudgetCostLimitUSD float64 `mapstructure:"AGENT_GATEWAY_BUDGET_COST_LIMIT_USD"`
+	PricingJSON        string  `mapstructure:"AGENT_GATEWAY_PRICING_JSON"`
 
 	// === Prompt Compression v2 ===
 	SmartCompression        bool    `mapstructure:"AGENT_GATEWAY_SMART_COMPRESSION"`
@@ -160,6 +167,15 @@ type Config struct {
 	// 设计动机：2026-07 安全审计 P1-7 (AGENTS.md §6.2d 已 deferred 至 v2.4)。
 	AppEnv string `mapstructure:"APP_ENV"`
 
+	// === /metrics 访问控制（2026-10-10 第 3 轮）===
+	// MetricsPublic：/metrics 是否免凭证开放。默认 false（收紧）。
+	//   dev 由 docker-compose.dev.yml 显式设 true（保持 `curl /metrics` 的既有习惯）；
+	//   生产应保持 false 并配 MetricsToken 给 Prometheus scraper。
+	// MetricsToken：scraper 专用凭证（`Authorization: Bearer <t>` 或 `X-Metrics-Token`）。
+	// 两者都空且 Public=false 时 /metrics 一律 401 —— 启动会打 WARN 提示（不静默锁死）。
+	MetricsPublic bool   `mapstructure:"OPS_METRICS_PUBLIC"`
+	MetricsToken  string `mapstructure:"OPS_METRICS_TOKEN"`
+
 	AgentGateway AgentGatewayConfig `mapstructure:",squash"`
 }
 
@@ -250,6 +266,10 @@ func Load() {
 		// 合法值: "dev" / "staging" / "prod"，其他 → fail-fast 启动拒绝。
 		AppEnv: envOrDefaultString("APP_ENV", "dev"),
 
+		// /metrics 访问控制（2026-10-10 第 3 轮）：默认收紧（false + 空 token）。
+		MetricsPublic: envOrDefaultBool("OPS_METRICS_PUBLIC", false),
+		MetricsToken:  envOrDefaultString("OPS_METRICS_TOKEN", ""),
+
 		// Agent Gateway（子开关「显式 env 优先，否则继承总开关」见 buildAgentGatewayConfig）
 		AgentGateway: buildAgentGatewayConfig(),
 	}
@@ -326,6 +346,9 @@ func buildAgentGatewayConfig() AgentGatewayConfig {
 		// Token Budget v2 — REJECT_WHEN_EXHAUSTED 默认 true (v0.10.18 改)
 		RejectWhenExhausted:    envOrDefaultBool("AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", true),
 		BudgetSlidingWindowSec: envOrDefaultInt("AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC", 300),
+		// 成本维度（2026-10-10 第 3 轮）：默认不配上限也不配定价 —— 不硬编码猜测单价。
+		BudgetCostLimitUSD: envOrDefaultFloat("AGENT_GATEWAY_BUDGET_COST_LIMIT_USD", 0),
+		PricingJSON:        envOrDefaultString("AGENT_GATEWAY_PRICING_JSON", ""),
 
 		// Prompt Compression v2 (评分 / 原子组 / 贪心打包)
 		SmartCompression:       resolveGatewayChild("AGENT_GATEWAY_SMART_COMPRESSION", gwEnabled),
@@ -370,6 +393,7 @@ var diagnosticEnvKeys = []string{
 	"AGENT_GATEWAY_BUDGET_PER_SESSION", "AGENT_GATEWAY_COMPRESSION_THRESHOLD",
 	"AGENT_GATEWAY_THROTTLING_THRESHOLD", "AGENT_GATEWAY_LOG_DIR",
 	"AGENT_GATEWAY_REJECT_WHEN_EXHAUSTED", "AGENT_GATEWAY_BUDGET_SLIDING_WINDOW_SEC",
+	"AGENT_GATEWAY_BUDGET_COST_LIMIT_USD", "AGENT_GATEWAY_PRICING_JSON",
 	"AGENT_GATEWAY_SMART_COMPRESSION", "AGENT_GATEWAY_KEEP_RECENT_FORCED_N",
 	"AGENT_GATEWAY_SUMMARY_INSERT_THRESHOLD", "AGENT_GATEWAY_SCORE_THRESHOLD",
 	"AGENT_GATEWAY_SMART_COMPRESSION_ABSTRACTIVE_SUMMARY",

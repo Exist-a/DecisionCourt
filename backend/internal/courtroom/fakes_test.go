@@ -20,7 +20,6 @@ import (
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/google/uuid"
 )
@@ -204,7 +203,6 @@ func (s *spyEvidenceSvc) Creates() []evidenceCreateCall {
 func buildDispatchService(t *testing.T, results []search.Result) (*Service, *spyEvidenceSvc, *a2a.InMemoryRepository, *investigation.InMemoryRepository, *stubSearcher) {
 	t.Helper()
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
 	innerEvSvc := evidence.NewService(nil, nopLLM{})
@@ -213,7 +211,7 @@ func buildDispatchService(t *testing.T, results []search.Result) (*Service, *spy
 	invRepo := investigation.NewInMemoryRepository(nil)
 	invSvc := investigation.NewService(invRepo, bus, searcher)
 
-	orchestrator := agent.NewOrchestratorLegacy(nopLLM{}, bus, memRepo)
+	orchestrator := agent.NewOrchestratorLegacy(nopLLM{}, bus)
 
 	svc := &Service{
 		db:               nil,
@@ -236,13 +234,12 @@ func buildDispatchService(t *testing.T, results []search.Result) (*Service, *spy
 func buildStreamingSpeakService(t *testing.T, chunks []string) *Service {
 	t.Helper()
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	evSvc := evidence.NewService(nil, nopLLM{})
 
 	decision := `{"action":"speak","reasoning":"控方主张 A 长期收益更稳健","content":"","stance":"pro_a","confidence":0.85,"evidence_refs":[]}`
 	llmClient := &streamingLLM{decisionJSON: decision, streamChunks: chunks}
-	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus)
 
 	invRepo := investigation.NewInMemoryRepository(nil)
 	invSvc := investigation.NewService(invRepo, bus, &stubSearcher{})

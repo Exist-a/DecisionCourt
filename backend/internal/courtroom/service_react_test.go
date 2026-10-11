@@ -10,7 +10,6 @@ import (
 	"github.com/decisioncourt/backend/internal/agent/tools"
 	"github.com/decisioncourt/backend/internal/evidence"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +31,6 @@ import (
 // so we assert the orchestrator-side side effects instead.
 func TestServiceSpeakWithReAct_FullFlow(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
 	llmClient := &reactScriptedLLM{scripts: []string{
@@ -40,7 +38,7 @@ func TestServiceSpeakWithReAct_FullFlow(t *testing.T) {
 		speakJSON("基于搜索证据的论点", "pro_a", 0.85),
 	}}
 
-	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus)
 	searcher := &stubSearcher{results: nil} // 0 results keeps DB-less path clean
 	evidenceSvc := evidence.NewService(nil, llmClient)
 
@@ -118,11 +116,15 @@ func TestServiceSpeakWithReAct_FullFlow(t *testing.T) {
 	}
 	require.Equal(t, 1, speech)
 
-	// 5) Private memory 写入了一条 strategy_note
-	notes, err := memRepo.List(context.Background(), session.ID, agentID, "agent:"+agentID.String())
-	require.NoError(t, err)
-	require.Len(t, notes, 1)
-	require.Equal(t, string(private_memory.TypeStrategyNote), notes[0].Type)
+	// 5) 私有策略笔记写入 A2A 私有通道
+	// 2026-10-10（M2）：原断言 legacy private_memory 表；表已删除，改钉 A2A。
+	var noteCount int
+	for _, r := range rows {
+		if r.MessageType == string(a2a.MessageTypeStrategyNote) {
+			noteCount++
+		}
+	}
+	require.Equal(t, 1, noteCount, "应写入一条 private strategy_note 到 A2A 私有通道")
 }
 
 // TestServiceSpeakWithReAct_NilDispatchNeverCallsInvestigator verifies that
@@ -130,13 +132,12 @@ func TestServiceSpeakWithReAct_FullFlow(t *testing.T) {
 // completes via direct speak without panicking.
 func TestServiceSpeakWithReAct_NilDispatchNeverCallsInvestigator(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
 	llmClient := &reactScriptedLLM{scripts: []string{
 		speakJSON("直接陈述", "pro_a", 0.7),
 	}}
-	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus)
 
 	svc := &Service{
 		db:           nil,

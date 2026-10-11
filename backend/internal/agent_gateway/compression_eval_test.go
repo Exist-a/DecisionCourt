@@ -257,7 +257,7 @@ func TestCompressionEval_StrategyComparison(t *testing.T) {
 		allStats[2].summarizedBlocks)
 
 	// 关键断言：Smart 保留的是"语义价值"而非"尽可能丢消息"。
-	//   数字上 Smart 节省 < Legacy 是预期行为（Smart 故意留 14 条 vs Legacy 留 6 条）。
+	//   数字上 Smart 节省 < Legacy 是预期行为（Smart 故意留 13 条 vs Legacy 留 6 条）。
 	//   真实验证 Smart 没退化：所有 LogEntry 字段必须合理。
 	if allStats[1].tokensSaved < baselineTokens/4 {
 		t.Errorf("legacy 应该至少节省 25%%（= %d tokens），got %d (%.1f%%)",
@@ -278,6 +278,22 @@ func TestCompressionEval_StrategyComparison(t *testing.T) {
 	if allStats[2].msgsAfter <= allStats[1].msgsAfter {
 		t.Errorf("smart 应保留更多消息（含证据/法官推理），got smart=%d legacy=%d",
 			allStats[2].msgsAfter, allStats[1].msgsAfter)
+	}
+	// 数字护栏（deferred-items-2026-10-09 §M6 问题 3）：上面几条只断言"方向"
+	// （legacy ≥25%、smart >0、atomicKept ≥9），节省率掉到 5% 仍会 PASS —— 对外宣称
+	// 的数字没有护栏。这里把 tech-spec 声明的 ≥30% 目标与 smart 保留条数下限钉住。
+	// 只钉 floor、不钉精确值：既允许口径演进（v2.10 换 EstimateTokens 后由 14 条漂到 13 条），
+	// 又让任何"跌破 30% / 保留不足 12 条"的改动在 CI 显式失败。
+	const (
+		smartSavingsFloorPct = 30.0
+		smartMsgsAfterFloor  = 12
+	)
+	if allStats[2].savingsPercent < smartSavingsFloorPct {
+		t.Errorf("smart 节省率跌破护栏 %.1f%%（tech-spec 目标 ≥30%%），got %.1f%%",
+			smartSavingsFloorPct, allStats[2].savingsPercent)
+	}
+	if allStats[2].msgsAfter < smartMsgsAfterFloor {
+		t.Errorf("smart 保留条数跌破护栏 %d，got %d", smartMsgsAfterFloor, allStats[2].msgsAfter)
 	}
 	// 信息密度对比
 	if allStats[2].msgsAfter > 0 && allStats[1].msgsAfter > 0 {

@@ -11,7 +11,6 @@ import (
 	"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -120,9 +119,8 @@ func validVerdictJSON() string {
 func newTestOrchestratorWithLLM(t *testing.T, llmClient llm.Client) *Orchestrator {
 	t.Helper()
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	return NewOrchestratorLegacy(llmClient, bus, memRepo)
+	return NewOrchestratorLegacy(llmClient, bus)
 }
 
 func makeSessionForVerdict() (model.CourtSession, model.Agent) {
@@ -308,9 +306,8 @@ func TestJFV2Retry_OneShotLimit(t *testing.T) {
 	require.NotNil(t, llmClient.retryCallCtx, "retry should have happened")
 }
 
-// 占位: 不让 a2a / private_memory / time 等 imports 报警.
+// 占位: 不让 a2a / time 等 imports 报警.
 var (
 	_ = a2a.AddressOrchestrator
-	_ = private_memory.NewInMemoryRepository
 	_ = time.Second
 )

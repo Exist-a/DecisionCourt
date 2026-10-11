@@ -29,7 +29,6 @@ import (
 	"github.com/decisioncourt/backend/internal/evidence"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
@@ -182,7 +181,6 @@ func newLockTestService(t *testing.T) (*Service, *gorm.DB, *[]Event, *stubSearch
 	}
 
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
 	evSvc := evidence.NewService(db, nopLLM{})
@@ -190,7 +188,7 @@ func newLockTestService(t *testing.T) (*Service, *gorm.DB, *[]Event, *stubSearch
 	searcher := &stubSearcher{}
 	invSvc := investigation.NewService(invRepo, bus, searcher)
 
-	orch := agent.NewOrchestratorLegacy(nopLLM{}, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(nopLLM{}, bus)
 
 	var mu sync.Mutex
 	events := &[]Event{}

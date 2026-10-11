@@ -58,6 +58,10 @@ const (
 	MetricLLMCallTokens          = "llm_call_tokens_total"
 	MetricBudgetRatio            = "budget_ratio"
 	MetricBudgetRejectedTotal    = "budget_rejected_total"
+	// MetricBudgetUsedTokens（2026-10-10 第 3 轮，deferred R19）：会话预算累计用量。
+	// 无 label（会话数无上界，禁止用 session_uuid 作 label）。budget_ratio gauge 看
+	// "还剩多少"，本 gauge 看"累计烧了多少"（当前活跃会话的快照值）。
+	MetricBudgetUsedTokens = "llm_budget_used_tokens"
 	MetricA2AThroughputTotal     = "a2a_message_throughput_total"
 	MetricBeliefDiffTotal        = "belief_diff_total"
 	MetricCompressionApplied     = "compression_applied_total"

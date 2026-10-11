@@ -26,10 +26,15 @@ type CompletionOptions struct {
 
 // StreamChunk 是流式输出的一次增量。Content 是相对上一次的新片段；
 // Done=true 时本批为最后一块；Err 仅在 Done=true 时可能携带错误。
+//
+// Usage（2026-10-10，deferred R18）：当请求带 stream_options.include_usage 时，
+// 上游会在**末帧**返回 usage（此时 choices 为空）。仅 Done=true 的块可能非 nil；
+// 上游不支持该参数时保持 nil，调用方退回估算。
 type StreamChunk struct {
 	Content string
 	Done    bool
 	Err     error
+	Usage   *Usage
 }
 
 type Client interface {
@@ -205,6 +210,10 @@ func (c *openAIClient) StreamComplete(
 			Messages:    chatMessages,
 			Temperature: opts.Temperature,
 			MaxTokens:   opts.MaxTokens,
+			// 2026-10-10（deferred R18）：请求末帧 usage 明细。此前不传此参数，
+			// 导致流式调用只能拿到"总量"（网关按字符数估算），input/output 拆分
+			// 全为 0 —— 占 1/4 的调用成本算不准。上游不支持时该字段被忽略。
+			StreamOptions: &openai.StreamOptions{IncludeUsage: true},
 		})
 		if err != nil {
 			// v2.11 (deferred D8): 同样带上状态码（流式不重试，但错误分类
@@ -230,18 +239,29 @@ func (c *openAIClient) StreamComplete(
 		}()
 		defer stream.Close()
 
+		// streamUsage 捕获末帧 usage（include_usage=true 时 OpenAI 兼容协议在最后一帧
+		// 返回 usage 且 choices 为空 —— 必须在下面 skip 空 choices **之前** 取）。
+		var streamUsage *Usage
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
 				// io.EOF 是正常结束
 				if err.Error() == "EOF" {
-					out <- StreamChunk{Done: true}
+					out <- StreamChunk{Done: true, Usage: streamUsage}
 					return
 				}
-				out <- StreamChunk{Done: true, Err: fmt.Errorf("stream recv: %w", err)}
+				out <- StreamChunk{Done: true, Err: fmt.Errorf("stream recv: %w", err), Usage: streamUsage}
 				return
 			}
-			// 跳过空 choice（DeepSeek / OpenAI 流式偶尔返回 placeholder）
+			if resp.Usage != nil && resp.Usage.TotalTokens > 0 {
+				streamUsage = &Usage{
+					PromptTokens:     resp.Usage.PromptTokens,
+					CompletionTokens: resp.Usage.CompletionTokens,
+					TotalTokens:      resp.Usage.TotalTokens,
+				}
+			}
+			// 跳过空 choice（DeepSeek / OpenAI 流式偶尔返回 placeholder；
+			// 末帧 usage 也是 choices 为空）
 			if len(resp.Choices) == 0 {
 				continue
 			}

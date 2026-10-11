@@ -123,14 +123,21 @@ func (h *Handler) WithMetrics(m observability.Metrics) {
 	h.metrics = m
 }
 
-// RegisterMetricsRoute 注册 GET /metrics 端点（JSON 格式的指标快照）。
-// 未来如需 Prometheus 兼容导出，可在此处增加 ?format=prometheus 分支。
-func (h *Handler) RegisterMetricsRoute(r *gin.Engine) {
-	r.GET("/metrics", h.MetricsHandler)
+// RegisterMetricsRoute 注册 GET /metrics 端点。
+//   - 默认（无 format 参数）：JSON 快照，供人看 / 脚本解析。
+//   - ?format=prometheus：Prometheus 文本暴露格式，供 Prometheus 抓取（2026-10-10 第 3 轮）。
+//
+// guards 是可选的前置中间件（2026-10-10 第 3 轮：`/metrics` 收访问控制 —— 见
+// middleware.MetricsAccess）。不传则完全公开（向后兼容既有调用方 / 测试）。
+func (h *Handler) RegisterMetricsRoute(r *gin.Engine, guards ...gin.HandlerFunc) {
+	handlers := append(append([]gin.HandlerFunc{}, guards...), h.MetricsHandler)
+	r.GET("/metrics", handlers...)
 }
 
 // MetricsHandler 返回当前所有指标快照，JSON 格式：
 //   { "timestamp": "...", "counters": {...}, "gauges": {...}, "histograms": {...} }
+//
+// ?format=prometheus 时返回 text/plain 的 Prometheus 暴露格式（0.0.4）。
 //
 // 不走 TraceMiddleware 的 metrics 路径（path=/metrics 不会被 MetricsMiddleware 多次计数，
 // 因为 Gin's metrics middleware 已经覆盖）。但 trace 仍然生效，便于在日志中关联。
@@ -143,6 +150,11 @@ func (h *Handler) MetricsHandler(c *gin.Context) {
 		return
 	}
 	snap := h.metrics.Snapshot()
+	if c.Query("format") == "prometheus" {
+		c.Data(http.StatusOK, "text/plain; version=0.0.4; charset=utf-8",
+			[]byte(observability.RenderPrometheus(snap)))
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": snap,

@@ -32,7 +32,6 @@ import (
 	"github.com/decisioncourt/backend/internal/evidence"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -128,8 +127,7 @@ func setupFixture(t *testing.T) *testFixture {
 
 	db := model.DB
 	bus := a2a.NewBus(a2a.NewGormRepository(db), nil)
-	memRepo := private_memory.NewGormRepository(db)
-	orchestrator := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orchestrator := agent.NewOrchestratorLegacy(llmClient, bus)
 	evidenceSvc := evidence.NewService(db, llmClient)
 	searcher, err := search.NewProvider(config.AppConfig.SearchProvider, config.AppConfig.BochaAPIKey)
 	require.NoError(t, err)

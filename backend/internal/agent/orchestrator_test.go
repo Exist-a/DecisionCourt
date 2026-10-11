@@ -8,7 +8,6 @@ import (
 	"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -43,17 +42,16 @@ func validOutputJSON() string {
 	return string(b)
 }
 
-func newTestOrchestrator(t *testing.T) (*Orchestrator, *a2a.InMemoryRepository, *private_memory.InMemoryRepository) {
+func newTestOrchestrator(t *testing.T) (*Orchestrator, *a2a.InMemoryRepository) {
 	t.Helper()
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	llmClient := &stubLLM{output: validOutputJSON()}
-	return NewOrchestratorLegacy(llmClient, bus, memRepo), a2aRepo, memRepo
+	return NewOrchestratorLegacy(llmClient, bus), a2aRepo
 }
 
 func TestOrchestrator_ProsecutorSpeak_PublishesA2AMessage(t *testing.T) {
-	orch, a2aRepo, _ := newTestOrchestrator(t)
+	orch, a2aRepo := newTestOrchestrator(t)
 	ctx := context.Background()
 	sessionID := uuid.New()
 
@@ -136,14 +134,18 @@ func TestOrchestrator_ProsecutorSpeak_PublishesA2AMessage(t *testing.T) {
 		"defender visibility filter must hide private strategy_note from opponent")
 }
 
+// A2A 版回归：speak 后 private strategy_note 必须落在 A2A 私有通道，内容带立场与推理。
+//
+// 2026-10-10（M2）：原用例断言 legacy private_memory 表的写入；该表已按记录在案的
+// 决策删除（生产零读取方），断言改钉在**存活的同一机制**（A2A 私有消息 = 前端
+// MemoryAuditPanel 的唯一数据源）上 —— 是同一保证换实现，不是删覆盖。
 func TestOrchestrator_ProsecutorSpeak_WritesPrivateStrategyNote(t *testing.T) {
-	orch, _, memRepo := newTestOrchestrator(t)
+	orch, a2aRepo := newTestOrchestrator(t)
 	ctx := context.Background()
 	sessionID := uuid.New()
-	agentID := uuid.New()
 
 	ag := model.Agent{
-		ID:        agentID,
+		ID:        uuid.New(),
 		AgentType: model.AgentProsecutor,
 		BeliefA:   0.75,
 	}
@@ -152,24 +154,35 @@ func TestOrchestrator_ProsecutorSpeak_WritesPrivateStrategyNote(t *testing.T) {
 	speaker, err := orch.ProsecutorSpeak(ctx, ag, session, nil, nil, nil)
 	require.NoError(t, err)
 
-	// Orchestrator 应只让本人可见自己的私有记忆
-	memRows, err := memRepo.List(ctx, sessionID, agentID, "agent:"+agentID.String())
+	rows, err := a2aRepo.ListVisibleTo(ctx, sessionID, a2a.AddressOrchestrator)
 	require.NoError(t, err)
-	require.Len(t, memRows, 1)
-	require.Equal(t, string(private_memory.TypeStrategyNote), memRows[0].Type)
-	require.Contains(t, memRows[0].Content, "立场=pro_a")
-	require.Contains(t, memRows[0].Content, speaker.Reasoning)
+	require.Len(t, rows, 2, "1 public speech + 1 private strategy_note")
+
+	var note map[string]interface{}
+	for _, row := range rows {
+		if row.MessageType == string(a2a.MessageTypeStrategyNote) {
+			payload, err := a2a.DecodePayload(row)
+			require.NoError(t, err)
+			note = payload
+		}
+	}
+	require.NotNil(t, note, "private strategy_note row must exist")
+	require.Equal(t, "strategy_note", note["memory_type"])
+	require.Equal(t, "pro_a", note["stance"], "私有笔记必须带立场")
+	require.Equal(t, speaker.Reasoning, note["reasoning"], "私有笔记必须带推理链")
 }
 
+// A2A 版隔离回归：辩方的 private strategy_note 不能被控方读到。
+//
+// 2026-10-10（M2）：原用例断言 legacy private_memory 的 ErrNotOwned；表已删除，
+// 隔离断言改钉在 A2A 可见性过滤（ListVisibleTo）上 —— 同一保证换实现。
 func TestOrchestrator_DefenderSpeak_OtherAgentCannotReadStrategyNote(t *testing.T) {
-	orch, _, memRepo := newTestOrchestrator(t)
+	orch, a2aRepo := newTestOrchestrator(t)
 	ctx := context.Background()
 	sessionID := uuid.New()
-	defenderID := uuid.New()
-	otherAgentID := uuid.New()
 
 	def := model.Agent{
-		ID:        defenderID,
+		ID:        uuid.New(),
 		AgentType: model.AgentDefender,
 		BeliefA:   0.25,
 	}
@@ -178,15 +191,24 @@ func TestOrchestrator_DefenderSpeak_OtherAgentCannotReadStrategyNote(t *testing.
 	_, err := orch.DefenderSpeak(ctx, def, session, nil, nil, nil)
 	require.NoError(t, err)
 
-	// 辩方的私有 memory，控方 (otherAgentID) 不能读
-	_, err = memRepo.List(ctx, sessionID, defenderID, "agent:"+otherAgentID.String())
-	require.ErrorIs(t, err, private_memory.ErrNotOwned)
-
-	// 辩方自己可以读
-	rows, err := memRepo.List(ctx, sessionID, defenderID, "agent:"+defenderID.String())
+	// 辩方自己能读到自己的私有策略笔记
+	selfRows, err := a2aRepo.ListVisibleTo(ctx, sessionID, "defender")
 	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, string(private_memory.TypeStrategyNote), rows[0].Type)
+	hasPrivate := false
+	for _, row := range selfRows {
+		if row.Visibility == string(a2a.VisibilityPrivate) {
+			hasPrivate = true
+		}
+	}
+	require.True(t, hasPrivate, "辩方应能读到自己的 private strategy_note")
+
+	// 控方（对方）看不到辩方的任何私有笔记
+	oppRows, err := a2aRepo.ListVisibleTo(ctx, sessionID, "prosecutor")
+	require.NoError(t, err)
+	for _, row := range oppRows {
+		require.NotEqual(t, string(a2a.VisibilityPrivate), row.Visibility,
+			"控方不得看到辩方的 private strategy_note")
+	}
 }
 
 // uuidOutputJSON 让 stubLLM 返回 LLM "误把 DB UUID 当 evidence_refs" 的
@@ -207,16 +229,17 @@ func uuidOutputJSON(uuidStr string) string {
 
 // TestOrchestrator_ProsecutorSpeak_NormalizesUUIDRefs 是 v0.6 evidence_id
 // 显示成 UUID 根因 bug 的端到端回归测试。LLM 返回 DB UUID 时，speak 路径
-// 写出的 public speech A2A 消息 + private strategy_note + private_memory
-// 表，三处 linked_evidence_ids / evidence_refs / LinkedEvidenceIDs 都必须
-// 是 display_id（"E001"），不能是裸 UUID。
+// 写出的 A2A public speech + private strategy_note 两处 evidence_refs /
+// linked_evidence_ids 都必须是 display_id（"E001"），不能是裸 UUID。
+//
+// 2026-10-10（M2）：legacy private_memory 表已删除，原先的第三处断言
+// （表列 LinkedEvidenceIDs）随之移除。
 func TestOrchestrator_ProsecutorSpeak_NormalizesUUIDRefs(t *testing.T) {
 	evidenceUUID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 	llmClient := &stubLLM{output: uuidOutputJSON(evidenceUUID.String())}
-	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus)
 
 	sessionID := uuid.New()
 	agentID := uuid.New()
@@ -258,24 +281,10 @@ func TestOrchestrator_ProsecutorSpeak_NormalizesUUIDRefs(t *testing.T) {
 				"private strategy_note linked_evidence_ids must be display_id, not UUID")
 		}
 	}
-
-	// 2) private_memory 表：LinkedEvidenceIDs 也必须是 display_id。
-	memRows, err := memRepo.List(context.Background(), sessionID, agentID, "agent:"+agentID.String())
-	require.NoError(t, err)
-	require.Len(t, memRows, 1)
-	require.Equal(t, model.StringSlice{"E001"}, memRows[0].LinkedEvidenceIDs,
-		"private_memory LinkedEvidenceIDs must be display_id, not UUID")
 }
 
 func TestOrchestrator_NewOrchestrator_PanicsWithoutBus(t *testing.T) {
 	require.Panics(t, func() {
-		NewOrchestratorLegacy(&stubLLM{}, nil, private_memory.NewInMemoryRepository(nil))
-	})
-}
-
-func TestOrchestrator_NewOrchestrator_PanicsWithoutMemory(t *testing.T) {
-	require.Panics(t, func() {
-		bus := a2a.NewBus(a2a.NewInMemoryRepository(nil), nil)
-		NewOrchestratorLegacy(&stubLLM{}, bus, nil)
+		NewOrchestratorLegacy(&stubLLM{}, nil)
 	})
 }

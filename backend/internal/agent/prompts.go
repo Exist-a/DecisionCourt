@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/promptlab"
 )
@@ -186,7 +187,26 @@ func toolBlockForPrompt(toolMap map[string]Tool) string {
 	return sb.String()
 }
 
-func ProsecutorPrompt(agent model.Agent, session model.CourtSession, evidences []model.Evidence, toolsBlock string) (string, error) {
+// 提示词素材可见度上限（rune 计数）。
+//
+// 2026-10-10 Round 2「接地素材管道」（docs/AGENT-GROUNDING-ANALYSIS.md §3 P0）：
+// 此前证据正文只以 200 **字节**进 prompt（中文≈66 字），一条满额证据（提交上限
+// 4096 字符）对辩手的可见度 ≈1.6% —— 模型看不到细节、又被反幻觉护栏禁止补充
+// 细节，只能输出"损失金额较大"这类空洞结论（这正是"不贴合实际"的直接机制）。
+// 这里把上限改到与提交上限同量纲并给足全文；真正的 token 预算由 agent_gateway
+// 压缩层兜底（AGENT_GATEWAY_SMART_COMPRESSION，超预算才压缩），prompt 构造层
+// 不再替模型"预先节食"。
+const (
+	evidenceContentMaxRunes  = 4096 // 证据正文：与 HTTP 提交上限 4096 字符对齐（给足全文）
+	historyLineMaxRunes      = 600  // 公共转写单行（原 200/300 字节）
+	opponentLatestMaxRunes   = 2000 // 对手最新发言（发言本身已被 300 rune 硬限，此值等价"全文"）
+	selfLatestMaxRunes       = 800  // 自己上次发言
+	userInterruptMaxRunes    = 2000 // 用户最新补充（必须优先可见）
+	reactHistoryLineMaxRunes = 800  // ReAct 路径庭审历史单行（原 240 字节）
+	memoryNoteMaxRunes       = 800  // 私有策略笔记单行（原 240 字节）
+)
+
+func ProsecutorPrompt(agent model.Agent, session model.CourtSession, evidences []model.Evidence, toolsBlock string, findings []investigation.Finding) (string, error) {
 	var b strings.Builder
 	b.WriteString(baseRules(toolsBlock))
 	b.WriteString("\n\n## 角色\n")
@@ -199,7 +219,7 @@ func ProsecutorPrompt(agent model.Agent, session model.CourtSession, evidences [
 	b.WriteString(fmt.Sprintf("## 当前信念度\n对选项 A（%s）的信念度：%.2f\n对选项 B（%s）的信念度：%.2f\n",
 		session.OptionA, agent.BeliefA, session.OptionB, agent.BeliefB))
 	b.WriteString("## 策略\n")
-	b.WriteString("1. 主动寻找支持选项 A 的证据。如果当前证据列表为空或没有 A 相关证据，优先调用 investigator_search。\n")
+	b.WriteString("1. 主动寻找支持选项 A 的证据。如果当前证据列表为空或没有 A 相关证据，优先调用 investigator_search（**一次即可**，不要反复检索；随后必须给出你的主张）。\n")
 	b.WriteString("2. 对选项B代表提出的反例进行有力反驳。如果对方已发言、且论点你没完全消化，先 action=\"reflect\" 拆解对方逻辑再定稿。\n")
 	b.WriteString("3. 强调选项 A 的收益、机会、长期价值；用具体数据或案例，避免空话。\n")
 	b.WriteString("4. 初始信念度是 0.75，你对选项 A 有较强倾向；但当对方论据确实更强时，允许通过 reflect 把信念度小幅下调。\n")
@@ -208,11 +228,11 @@ func ProsecutorPrompt(agent model.Agent, session model.CourtSession, evidences [
 		return "", err
 	}
 	b.WriteString(ctx)
-	b.WriteString(buildInvestigationContext(session))
+	b.WriteString(buildInvestigationContext(session, findings))
 	return b.String(), nil
 }
 
-func DefenderPrompt(agent model.Agent, session model.CourtSession, evidences []model.Evidence, toolsBlock string) (string, error) {
+func DefenderPrompt(agent model.Agent, session model.CourtSession, evidences []model.Evidence, toolsBlock string, findings []investigation.Finding) (string, error) {
 	var b strings.Builder
 	b.WriteString(baseRules(toolsBlock))
 	b.WriteString("\n\n## 角色\n")
@@ -224,7 +244,7 @@ func DefenderPrompt(agent model.Agent, session model.CourtSession, evidences []m
 	b.WriteString(fmt.Sprintf("## 当前信念度\n对选项 A（%s）的信念度：%.2f\n对选项 B（%s）的信念度：%.2f\n",
 		session.OptionA, agent.BeliefA, session.OptionB, agent.BeliefB))
 	b.WriteString("## 策略\n")
-	b.WriteString("1. 主动寻找选项 B 的优势、选项 A 的风险和成本。如果当前证据列表为空或没有 B 相关证据，优先调用 investigator_search。\n")
+	b.WriteString("1. 主动寻找选项 B 的优势、选项 A 的风险和成本。如果当前证据列表为空或没有 B 相关证据，优先调用 investigator_search（**一次即可**，不要反复检索；随后必须给出你的主张）。\n")
 	b.WriteString("2. 对选项A代表提出的证据进行质证，指出来源问题或逻辑漏洞。若对方刚抛出新论点，先 action=\"reflect\" 拆解再反击。\n")
 	b.WriteString("3. 强调选项 B 的稳定性、确定性、风险控制；用可验证的事实，避免空话。\n")
 	b.WriteString("4. 初始信念度是 0.75，你对选项 B 有较强倾向；但当对方论据确实更强时，允许通过 reflect 把信念度小幅下调。\n")
@@ -233,7 +253,7 @@ func DefenderPrompt(agent model.Agent, session model.CourtSession, evidences []m
 		return "", err
 	}
 	b.WriteString(ctx)
-	b.WriteString(buildInvestigationContext(session))
+	b.WriteString(buildInvestigationContext(session, findings))
 	return b.String(), nil
 }
 
@@ -281,7 +301,7 @@ func ClerkPrompt(session model.CourtSession, evidences []model.Evidence, message
 	b.WriteString(ctx)
 	b.WriteString("\n## 庭审记录\n")
 	for _, m := range messages {
-		line, err := renderTranscriptLine(m, 200)
+		line, err := renderTranscriptLine(m, historyLineMaxRunes)
 		if err != nil {
 			return "", err
 		}
@@ -338,7 +358,7 @@ func ClerkSummaryPrompt(session model.CourtSession, evidences []model.Evidence, 
 		if m.Round != round {
 			continue
 		}
-		line, err := renderTranscriptLine(m, 300)
+		line, err := renderTranscriptLine(m, historyLineMaxRunes)
 		if err != nil {
 			return "", err
 		}
@@ -377,7 +397,7 @@ func JudgePrompt(session model.CourtSession, evidences []model.Evidence, message
 	b.WriteString(ctx)
 	b.WriteString("\n## 最近庭审记录（按时间顺序）\n")
 	for _, m := range messages {
-		line, err := renderTranscriptLine(m, 300)
+		line, err := renderTranscriptLine(m, historyLineMaxRunes)
 		if err != nil {
 			return "", err
 		}
@@ -435,7 +455,7 @@ func JudgeFinalPrompt(session model.CourtSession, evidences []model.Evidence, me
 	b.WriteString(ctx)
 	b.WriteString("\n## 庭审完整记录\n")
 	for _, m := range messages {
-		line, err := renderTranscriptLine(m, 300)
+		line, err := renderTranscriptLine(m, historyLineMaxRunes)
 		if err != nil {
 			return "", err
 		}
@@ -541,7 +561,7 @@ func ClerkPromptWithJudgeDecision(session model.CourtSession, evidences []model.
 	b.WriteString(ctx)
 	b.WriteString("\n## 庭审记录\n")
 	for _, m := range messages {
-		line, err := renderTranscriptLine(m, 200)
+		line, err := renderTranscriptLine(m, historyLineMaxRunes)
 		if err != nil {
 			return "", err
 		}
@@ -565,7 +585,7 @@ func buildContext(session model.CourtSession, evidences []model.Evidence) string
 		for _, e := range evidences {
 			b.WriteString(fmt.Sprintf("- %s [source=%s submitted_by=%s credibility=%.2f type=%s]: %s (A影响%.1f, B影响%.1f)\n",
 				e.EvidenceID, sourceLabel(e.Source), e.SubmittedBy, e.CredibilityScore, e.Type,
-				truncate(e.Content, 200), e.ImpactOnOptionA, e.ImpactOnOptionB))
+				truncateRunes(e.Content, evidenceContentMaxRunes), e.ImpactOnOptionA, e.ImpactOnOptionB))
 		}
 	} else {
 		b.WriteString("## 当前证据\n当前尚无证据。你必须基于背景信息和对方观点进行分析，evidence_refs 必须为空数组 []。\n")
@@ -638,21 +658,34 @@ func buildContextSafe(session model.CourtSession, evidences []model.Evidence) (s
 //       当前证据 = 用户提交 (evidence_refs 来源)
 //       调查活动 = ReAct tool_call 结果 (绝不能套到 E00X)
 //
-// 当前实现是占位 — 未来版本可在 ProsecutorSpeak / DefenderSpeak 调用时通过
-// investigation.Repository.ListBySession(session.ID) 注入真实 finding 列表。
-// 该函数现已存在于 prompts.go 但默认不查 DB,避免 prompts.go 直接依赖 DB 层
-// (prompts.go 是纯字符串拼接包)。
+// 2026-10-10（Round 2 接地素材管道）：此前是**占位实现** —— 只输出一行
+// "[由 ... 注入]"字样，真实的 InvestigationFinding 从未进过 prompt（模型
+// 手里没有任何累积调查事实）。现在 findings 由 Orchestrator 经
+// InvestigationLister 拉取后传入并真正渲染。prompts.go 仍不直接查 DB
+// （保持纯字符串拼接），只接收已取到的数据。
 //
 // 测试覆盖: TestProsecutorPrompt_ShouldHaveFindingSection_WhenFindingsExist
 // 验证本函数总是输出 "## 调查活动" header (即使没有 findings),保证 prompt 视觉
 // 一致性。
-func buildInvestigationContext(session model.CourtSession) string {
+func buildInvestigationContext(session model.CourtSession, findings []investigation.Finding) string {
 	var b strings.Builder
 	b.WriteString("## 调查活动\n")
 	b.WriteString("注意:本节是「调查活动」section (InvestigationFinding 表内容),与「当前证据」独立。\n")
 	b.WriteString("- 调查发现由 ReAct tool_call (investigator_search) 触发,基于用户授权的搜索 API (Bocha AI Search / SearXNG) 生成,不是用户提交。\n")
 	b.WriteString("- 调查发现可被双方律师引用为论据,但**绝不能**挂到 evidence_refs 的用户证据 ID 上。引用调查发现必须用「调查员发现...」「调研显示...」等语义前缀。\n")
-	b.WriteString("- 当前 session 调查活动列表: [由 ProsecutorSpeak / DefenderSpeak 在调用时通过 investigation.Repository.ListBySession 注入]\n")
+	if len(findings) == 0 {
+		b.WriteString("- 当前 session 尚无调查发现。\n")
+	} else {
+		b.WriteString(fmt.Sprintf("- 当前 session 调查活动列表（共 %d 条，按时间顺序；可引为论据，但不要挂 evidence_refs）:\n", len(findings)))
+		for i, f := range findings {
+			inv := f.Investigator
+			if inv == "" {
+				inv = f.Dispatcher
+			}
+			b.WriteString(fmt.Sprintf("  %d. [调查员=%s 搜索=%q 结果数=%d] %s\n",
+				i+1, inv, truncateRunes(f.Query, 120), f.ResultCount, truncateRunes(f.Summary, 300)))
+		}
+	}
 	if session.SessionUUID != "" {
 		b.WriteString(fmt.Sprintf("- 当前 session UUID: %s\n", session.SessionUUID))
 	}
@@ -674,11 +707,14 @@ func sourceLabel(source string) string {
 	}
 }
 
+// truncate 按 rune（字符）截断并在末尾追加 "..."。
+//
+// 2026-10-10（Round 2 接地素材管道）：原实现用 len()/s[:max] 按**字节**切 ——
+// 中文 UTF-8 下 200 字节只有 ≈66 字（与提交上限 4096 字符差一个数量级），
+// 且会把汉字切成半个（产出非法 UTF-8 再拼进 prompt）。这里统一为 rune 语义，
+// 与 truncateRunes 对齐，消除"同一包两套单位"。
 func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
+	return truncateRunes(s, max)
 }
 
 // truncateRunes 按 rune (字符) 截断字符串, 末尾追加 "..."。

@@ -19,7 +19,6 @@ import (
 	"github.com/decisioncourt/backend/internal/evidence"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -101,9 +100,8 @@ func newFinishTrialTestService(t *testing.T) (*Service, *gorm.DB) {
 	}
 
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	orch := agent.NewOrchestratorLegacy(nopLLM{}, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(nopLLM{}, bus)
 	searcher := &stubSearcher{}
 
 	svc := &Service{

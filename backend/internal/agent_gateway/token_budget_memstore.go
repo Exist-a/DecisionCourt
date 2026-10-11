@@ -164,9 +164,18 @@ func (m *MemStore) Check(ctx context.Context, sessionUUID string) (BudgetSnapsho
 	if slidingRatio > totalRatio {
 		slidingRatio = totalRatio
 	}
+	// 成本维度（2026-10-10 第 3 轮）：与 token 维度共用 70/80/100 阈值，取较严一档。
+	// 只按累计口径（不做成本滑窗），与"成本是另一把同向的尺子"的决策一致。
+	costRatio := 0.0
+	if m.limitCost > 0 {
+		costRatio = s.costUSD / m.limitCost
+	}
 	snap.Ratio = totalRatio
+	if costRatio > snap.Ratio {
+		snap.Ratio = costRatio
+	}
 
-	status, level := m.classify(totalRatio, slidingRatio)
+	status, level := m.classify(totalRatio, slidingRatio, costRatio)
 	snap.Status = status
 
 	// WarningLevel fire-on-upgrade：比上次更严才返回新值
@@ -180,19 +189,24 @@ func (m *MemStore) Check(ctx context.Context, sessionUUID string) (BudgetSnapsho
 	return snap, nil
 }
 
-// classify 给定 total / sliding 两个 ratio，按"较严"给出 status 与 warning level。
+// classify 给定 total / sliding / cost 三个 ratio，按"较严"给出 status 与 warning level。
 // 规则：
 //   - 任一 ≥ 1.0          → exhausted_100
 //   - 任一 ≥ throttleRatio → throttle  + warning_80
 //   - 任一 ≥ compressRatio → compress  + warning_70
 //   - 否则 normal
 //
+// costR 在 limitCost==0（未配成本上限）时恒为 0，等价于"成本维度不参与"。
+//
 // warning level 与 status 不完全 1-1：当 sliding 触发了 throttle 而 total 还在
 // compress 时，status=throttle，level=warning_80（按"较严"原则）。
-func (m *MemStore) classify(totalR, slidingR float64) (status string, level string) {
+func (m *MemStore) classify(totalR, slidingR, costR float64) (status string, level string) {
 	r := totalR
 	if slidingR > r {
 		r = slidingR
+	}
+	if costR > r {
+		r = costR
 	}
 	switch {
 	case r >= 1.0:
@@ -204,6 +218,45 @@ func (m *MemStore) classify(totalR, slidingR float64) (status string, level stri
 	default:
 		return StatusNormal, WarningLevelNone
 	}
+}
+
+// MaxRatio 返回所有活跃 session 中"累计口径"水位比的最高值（含成本口径，取较严）。
+//
+// 用途（2026-10-10 第 3 轮，deferred R19）：让 /metrics 上能看见"预算快烧完"，
+// 而不是只能登机器翻文件日志。刻意**不加 session_uuid label**（会话数无上界，会
+// 打爆指标基数），所以取"最高水位"这一个有界标量。
+//
+// 与 Check 的差别：这里不清理 sliding 历史、不触发 warning，只做只读聚合。
+func (m *MemStore) MaxRatio() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	max := 0.0
+	for _, s := range m.sessions {
+		r := 0.0
+		if m.limitTotal > 0 {
+			r = float64(s.inputTokens+s.outputTokens) / float64(m.limitTotal)
+		}
+		if m.limitCost > 0 {
+			if cr := s.costUSD / m.limitCost; cr > r {
+				r = cr
+			}
+		}
+		if r > max {
+			max = r
+		}
+	}
+	return max
+}
+
+// UsedTokens 返回所有活跃 session 的累计 token 总量（供 counter 指标）。
+func (m *MemStore) UsedTokens() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	total := 0
+	for _, s := range m.sessions {
+		total += s.inputTokens + s.outputTokens
+	}
+	return total
 }
 
 // Reset 清空 session；warning level 同步复位。

@@ -156,6 +156,12 @@ func NewService(
 	}
 	invRepo := investigation.NewGormRepository(db)
 	invSvc := investigation.NewService(invRepo, a2aBus, searcher)
+	// 2026-10-10 Round 2（接地素材管道）：把调查发现读取器接进 orchestrator，
+	// 让控辩提示词的"## 调查活动"section 真正渲染本场累积的 InvestigationFinding
+	// （此前是占位符，模型手里没有任何调查事实）。
+	if orchestrator != nil {
+		orchestrator.SetInvestigationLister(invSvc)
+	}
 	return &Service{
 		db:              db,
 		stateMachine:    NewStateMachine(),
@@ -319,6 +325,38 @@ func (s *Service) recordConcurrencyMetric(acquired bool) {
 	cur, max, _ := s.concurrencyLimiter.Stats()
 	s.metrics.SetGauge(observability.MetricGlobalConcurrencyCurrent, nil, float64(cur))
 	s.metrics.SetGauge(observability.MetricGlobalConcurrencyMax, nil, float64(max))
+}
+
+// refreshActiveSessionsGauge 用 DB 真值刷新 courtroom_active_sessions。
+//
+// 2026-10-10 第 3 轮接线：这个指标常量存在很久但**从来没有写入方**（死指标），
+// 做 Grafana 仪表盘时才发现（面板挂它只会永远 No data）。
+//
+// 语义：**status='active' 且已离开 idle 的会话数** = "真正在庭审中的场次"。
+//   - 不把 phase='idle' 算进来：立案后一直没点开庭的会话会长期停留 active，
+//     若按 status 单条件统计，这个 gauge 会随着"僵尸立案"越涨越高，反而误导。
+//   - 与 global_concurrency_current（当前占用的并发槽）不是同一口径：那个是
+//     "此刻正在跑 LLM 的庭审数"，这个是"处于进行中阶段的庭审数"，两者都保留。
+//
+// 实现选择：**每次重算 count，而不是 +1/-1 增量维护**。原因是庭审有
+// reopen / recovery / cancel 多条出口，增量维护迟早漂移，而"漂移的指标"比
+// "没有指标"更坏（会让人做错判断）。代价是一次带索引的 count（低频调用点）。
+//
+// 调用时机：开庭（离开 idle）/ 判决落库 / 重开 / 启动恢复扫描完成。
+// nil-safe：s.metrics 为 nil 时静默跳过（测试场景）。
+func (s *Service) refreshActiveSessionsGauge(ctx context.Context) {
+	if s.metrics == nil || s.db == nil {
+		return
+	}
+	var n int64
+	if err := s.db.WithContext(ctx).
+		Model(&model.CourtSession{}).
+		Where("status = ? AND current_phase <> ?", model.StatusActive, model.PhaseIdle).
+		Count(&n).Error; err != nil {
+		slog.Warn("refresh active sessions gauge failed", "err", err)
+		return
+	}
+	s.metrics.SetGauge(observability.MetricActiveSessions, nil, float64(n))
 }
 
 // InvestigationService exposes the investigation.Service the courtroom
@@ -536,6 +574,8 @@ func (s *Service) TransitionToOpening(ctx context.Context, sessionUUID string) (
 	if err := s.transitionPhase(&session, model.PhaseOpening, 0); err != nil {
 		return session, err
 	}
+	// 2026-10-10：离开 idle → 计入 active sessions（面板口径见 refreshActiveSessionsGauge）
+	s.refreshActiveSessionsGauge(ctx)
 	return session, nil
 }
 
@@ -863,6 +903,8 @@ func (s *Service) reopenTrial(ctx context.Context, session model.CourtSession) e
 		}
 		fresh.Status = model.StatusActive
 	}
+	// 2026-10-10：重开 = 重新回到进行中 → 刷新 active sessions
+	s.refreshActiveSessionsGauge(ctx)
 
 	s.broadcastEvent(session.SessionUUID, Event{
 		Type: "trial.reopened",
@@ -1914,6 +1956,8 @@ func (s *Service) finishTrial(ctx context.Context, session model.CourtSession) e
 	if err := s.db.Model(&session).Update("status", model.StatusCompleted).Error; err != nil {
 		return err
 	}
+	// 2026-10-10：判决落库 = 这场不再"进行中" → 刷新 active sessions
+	s.refreshActiveSessionsGauge(ctx)
 
 	s.broadcastEvent(session.SessionUUID, Event{
 		Type: "verdict.ready",

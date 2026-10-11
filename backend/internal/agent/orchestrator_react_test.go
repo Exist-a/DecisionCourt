@@ -12,7 +12,6 @@ import (
 	"github.com/decisioncourt/backend/internal/agent/tools"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -102,10 +101,9 @@ func TestProsecutorSpeakWithReAct_DispatchesSearchThenSpeaks(t *testing.T) {
 		speakOutputJSON("搜完了，整理发言", "基于证据的论点", "pro_a", 0.85),
 	}}
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus)
 
 	dispatch := &reactDispatch{fid: "finding-fake-1", summary: "[1] A; [2] B"}
 	hook := &captureHook{}
@@ -170,10 +168,9 @@ func TestProsecutorSpeakWithReAct_DirectSpeakProducesSameSideEffects(t *testing.
 		speakOutputJSON("思考", "直接陈述", "pro_a", 0.8),
 	}}
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus)
 	ag := model.Agent{ID: uuid.New(), AgentType: model.AgentProsecutor, BeliefA: 0.75}
 	session := model.CourtSession{ID: uuid.New(), SessionUUID: "sess-direct", OptionA: "A", OptionB: "B"}
 
@@ -197,10 +194,9 @@ func TestProsecutorSpeakWithReAct_NilDispatchRunsWithoutTool(t *testing.T) {
 		speakOutputJSON("思考", "直接发言", "pro_a", 0.8),
 	}}
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus)
 	ag := model.Agent{ID: uuid.New(), AgentType: model.AgentDefender, BeliefA: 0.25, BeliefB: 0.75}
 	session := model.CourtSession{ID: uuid.New(), SessionUUID: "sess-nil", OptionA: "A", OptionB: "B"}
 
@@ -219,10 +215,9 @@ func TestProsecutorSpeakWithReAct_DispatchErrorDoesNotAbort(t *testing.T) {
 		speakOutputJSON("搜不到就硬上", "虽然没有新证据...", "pro_a", 0.5),
 	}}
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := NewOrchestratorLegacy(llmClient, bus)
 	dispatch := &reactDispatch{err: assertError("search provider unavailable")}
 	hook := &captureHook{}
 
@@ -241,13 +236,14 @@ func TestProsecutorSpeakWithReAct_DispatchErrorDoesNotAbort(t *testing.T) {
 }
 
 // T5: 私有策略笔记应在最终发言时写入，与单次调用一致
+// 2026-10-10（M2）：legacy private_memory 表已删除，断言改钉存活的 A2A 私有通道。
 func TestProsecutorSpeakWithReAct_WritesPrivateStrategyNoteAfterSpeak(t *testing.T) {
 	llmClient := &reactScriptedLLM{scripts: []string{
 		speakOutputJSON("思考", "论点", "pro_a", 0.8),
 	}}
-	memRepo := private_memory.NewInMemoryRepository(nil)
-	bus := a2a.NewBus(a2a.NewInMemoryRepository(nil), nil)
-	orch := NewOrchestratorLegacy(llmClient, bus, memRepo)
+	a2aRepo := a2a.NewInMemoryRepository(nil)
+	bus := a2a.NewBus(a2aRepo, nil)
+	orch := NewOrchestratorLegacy(llmClient, bus)
 
 	agID := uuid.New()
 	ag := model.Agent{ID: agID, AgentType: model.AgentDefender, BeliefA: 0.25}
@@ -259,10 +255,15 @@ func TestProsecutorSpeakWithReAct_WritesPrivateStrategyNoteAfterSpeak(t *testing
 	)
 	require.NoError(t, err)
 
-	rows, err := memRepo.List(context.Background(), session.ID, agID, "agent:"+agID.String())
+	rows, err := a2aRepo.ListVisibleTo(context.Background(), session.ID, a2a.AddressOrchestrator)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(rows), 1)
-	require.Equal(t, string(private_memory.TypeStrategyNote), rows[0].Type)
+	var noteFound bool
+	for _, r := range rows {
+		if r.MessageType == string(a2a.MessageTypeStrategyNote) {
+			noteFound = true
+		}
+	}
+	require.True(t, noteFound, "ReAct 发言后应写入一条 private strategy_note 到 A2A 私有通道")
 }
 
 // assertError is a tiny helper to build a typed error without importing
@@ -282,10 +283,9 @@ func TestProsecutorSpeakWithReAct_RespectsTimeout(t *testing.T) {
 		toolOutputJSON("永远查 5", "investigator_search", map[string]interface{}{"query": "Q5"}),
 	}}
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
-	_ = NewOrchestratorLegacy(llmClient, bus, memRepo)
+	_ = NewOrchestratorLegacy(llmClient, bus)
 	dispatch := &reactDispatch{fid: "finding-fake-1"}
 	hook := &captureHook{}
 
@@ -321,4 +321,48 @@ func TestAgentOutput_ToolCallFieldsRoundTrip(t *testing.T) {
 	require.Equal(t, ActionToolCall, out.Action)
 	require.Equal(t, "investigator_search", out.Tool)
 	require.Equal(t, "Q", out.ToolInput["query"])
+}
+
+// R21 兜底（2026-10-10）：ReAct 连续检索到迭代上限时，必须**降级到非 ReAct 单次发言**，
+// 而不是让整轮失败 —— 否则零素材庭审（不填背景、不提证据）的开场陈述会直接失败、
+// 庭审卡死在 opening 且用户无从下手。
+//
+// 脚本设计：前 4 次调用（ReAct 的 4 个 iter）都返回 tool_call → 触发
+// ErrReactMaxIterations；第 5 次调用来自降级路径，返回合法 speak。
+func TestProsecutorSpeakWithReAct_DegradesToSpeakOnMaxIterations(t *testing.T) {
+	llmClient := &reactScriptedLLM{scripts: []string{
+		toolOutputJSON("再查 1", "investigator_search", map[string]interface{}{"query": "Q1"}),
+		toolOutputJSON("再查 2", "investigator_search", map[string]interface{}{"query": "Q2"}),
+		toolOutputJSON("再查 3", "investigator_search", map[string]interface{}{"query": "Q3"}),
+		toolOutputJSON("再查 4", "investigator_search", map[string]interface{}{"query": "Q4"}),
+		speakOutputJSON("降级思考", "降级后的主张", "pro_a", 0.7),
+	}}
+	a2aRepo := a2a.NewInMemoryRepository(nil)
+	bus := a2a.NewBus(a2aRepo, nil)
+	orch := NewOrchestratorLegacy(llmClient, bus)
+
+	ag := model.Agent{ID: uuid.New(), AgentType: model.AgentProsecutor, BeliefA: 0.75}
+	session := model.CourtSession{ID: uuid.New(), SessionUUID: "s", OptionA: "A", OptionB: "B"}
+
+	speaker, _, err := orch.ProsecutorSpeakWithReAct(
+		context.Background(), ag, session, nil, nil, nil, nil, nil,
+	)
+	require.NoError(t, err, "ReAct 触顶必须降级为发言，而不是返回错误（R21）")
+	require.Equal(t, "降级后的主张", speaker.Content)
+
+	// 降级发言同样要走 side effects（A2A public speech + private strategy_note），
+	// 否则前端看不到这一轮的发言与策略笔记。
+	rows, err := a2aRepo.ListVisibleTo(context.Background(), session.ID, a2a.AddressOrchestrator)
+	require.NoError(t, err)
+	var speech, note int
+	for _, r := range rows {
+		switch r.MessageType {
+		case string(a2a.MessageTypeSpeech):
+			speech++
+		case string(a2a.MessageTypeStrategyNote):
+			note++
+		}
+	}
+	require.Equal(t, 1, speech, "降级发言必须写入 A2A public speech")
+	require.GreaterOrEqual(t, note, 1, "降级发言必须写入 private strategy_note")
 }

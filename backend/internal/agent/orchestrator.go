@@ -14,16 +14,15 @@ import (
 	"github.com/decisioncourt/backend/internal/agent/tools"
 	"github.com/decisioncourt/backend/internal/agent_gateway"
 	"github.com/decisioncourt/backend/internal/belief"
+	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/google/uuid"
 )
 
 type Orchestrator struct {
 	llmClient   llm.Client
 	a2aBus      *a2a.Bus
-	memoryRepo  private_memory.Repository
 	weakenRepo  belief.WeakenRepository
 	rebutRepo   RebuttalSink         // v1.0.2 候选 4: 持久化 rebuttal 声明 (Hook 用)
 	rebutRead   RebuttalRepository   // v1.0.2 候选 4: 读取 standing 状态 (hard reject 用)
@@ -36,6 +35,38 @@ type Orchestrator struct {
 	// 输出被反幻觉校验硬拒的通知 (mode + pattern)。service 层 wire 成 metric,
 	// 让发言级幻觉率可观测。Nil = 不上报 (向后兼容)。
 	hallucinationObserver func(mode, pattern string)
+	// investigationLister (2026-10-10 Round 2 接地素材管道), if non-nil, 让
+	// orchestrator 在组装控辩提示词前拉取本场累积的 InvestigationFinding 并真正
+	// 注入"## 调查活动"section。Nil = 不注入 (向后兼容 / 测试 mock)。
+	investigationLister InvestigationLister
+}
+
+// InvestigationLister (2026-10-10 Round 2) 抽象"拉取本场调查发现"的能力, 让
+// service 层注入 (orchestrator 不直接依赖 DB, 与 HistoryProvider 同模式)。
+// 满足此接口的典型实现是 *investigation.Service。
+type InvestigationLister interface {
+	ListBySession(ctx context.Context, sessionID uuid.UUID) ([]investigation.Finding, error)
+}
+
+// SetInvestigationLister (2026-10-10 Round 2) 注入调查发现读取器。
+// Nil-safe: 传 nil 关闭注入, 控辩提示词的"## 调查活动"section 回退为
+// "尚无调查发现"(向后兼容)。
+func (o *Orchestrator) SetInvestigationLister(l InvestigationLister) {
+	o.investigationLister = l
+}
+
+// loadInvestigationFindings 拉取本场调查发现供提示词注入。best-effort:
+// 未接线 / 出错 / 空会话都返回 nil (不阻塞发言)。
+func (o *Orchestrator) loadInvestigationFindings(ctx context.Context, sessionID uuid.UUID) []investigation.Finding {
+	if o.investigationLister == nil || sessionID == uuid.Nil {
+		return nil
+	}
+	findings, err := o.investigationLister.ListBySession(ctx, sessionID)
+	if err != nil {
+		log.Printf("[orchestrator] ListBySession findings failed for session %s: %v", sessionID, err)
+		return nil
+	}
+	return findings
 }
 
 // HistoryProvider v0.10.23 候选 2: 抽象接口, 让 service 层注入 history 拉取逻辑
@@ -67,17 +98,13 @@ func (o *Orchestrator) SetHallucinationObserver(fn func(mode, pattern string)) {
 // v0.6: weakenRepo and evidenceLkp are optional. When both are wired the
 // orchestrator activates the WeakenHook so ReAct reflect steps can declare
 // weakening edges that the belief engine reads when applying future impact.
-func NewOrchestrator(client llm.Client, bus *a2a.Bus, memRepo private_memory.Repository, weakenRepo belief.WeakenRepository, evidenceLkp EvidenceResolver) *Orchestrator {
+func NewOrchestrator(client llm.Client, bus *a2a.Bus, weakenRepo belief.WeakenRepository, evidenceLkp EvidenceResolver) *Orchestrator {
 	if bus == nil {
 		panic("agent: a2a.Bus is required")
-	}
-	if memRepo == nil {
-		panic("agent: private_memory.Repository is required")
 	}
 	return &Orchestrator{
 		llmClient:   client,
 		a2aBus:      bus,
-		memoryRepo:  memRepo,
 		weakenRepo:  weakenRepo,
 		evidenceLkp: evidenceLkp,
 	}
@@ -88,9 +115,9 @@ func NewOrchestrator(client llm.Client, bus *a2a.Bus, memRepo private_memory.Rep
 // It simply defers to NewOrchestrator with nil weakenRepo / nil resolver,
 // which disables WeakenHook emission — equivalent to pre-v0.6 behaviour.
 //
-// Marked Deprecated in the godoc so new wiring uses the 5-arg form.
-func NewOrchestratorLegacy(client llm.Client, bus *a2a.Bus, memRepo private_memory.Repository) *Orchestrator {
-	return NewOrchestrator(client, bus, memRepo, nil, nil)
+// Marked Deprecated in the godoc so new wiring uses the 4-arg form.
+func NewOrchestratorLegacy(client llm.Client, bus *a2a.Bus) *Orchestrator {
+	return NewOrchestrator(client, bus, nil, nil)
 }
 
 // SetRebuttalSink (v1.0.2 候选 4) injects the RebuttalSink after construction.
@@ -116,7 +143,7 @@ func (o *Orchestrator) ProsecutorSpeak(
 	messages []model.Message,
 	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3
 ) (Speaker, error) {
-	prompt, err := ProsecutorPrompt(agent, session, evidences, "")
+	prompt, err := ProsecutorPrompt(agent, session, evidences, "", o.loadInvestigationFindings(ctx, session.ID))
 	if err != nil {
 		return Speaker{}, err
 	}
@@ -137,7 +164,7 @@ func (o *Orchestrator) DefenderSpeak(
 	messages []model.Message,
 	agentMap map[uuid.UUID]model.AgentType, // v2.10 ADR 0044 #3
 ) (Speaker, error) {
-	prompt, err := DefenderPrompt(agent, session, evidences, "")
+	prompt, err := DefenderPrompt(agent, session, evidences, "", o.loadInvestigationFindings(ctx, session.ID))
 	if err != nil {
 		return Speaker{}, err
 	}
@@ -209,7 +236,7 @@ func (o *Orchestrator) lawyerSpeakReAct(
 	stepHook StepHook,
 	chunkCb SpeakChunkCallback,
 ) (Speaker, []Step, error) {
-	var promptBuilder func(model.Agent, model.CourtSession, []model.Evidence, string) (string, error)
+	var promptBuilder func(model.Agent, model.CourtSession, []model.Evidence, string, []investigation.Finding) (string, error)
 	switch self {
 	case model.AgentProsecutor:
 		promptBuilder = ProsecutorPrompt
@@ -226,7 +253,7 @@ func (o *Orchestrator) lawyerSpeakReAct(
 		)
 	}
 
-	systemPrompt, err := promptBuilder(agent, session, evidences, toolBlockForPrompt(toolMap))
+	systemPrompt, err := promptBuilder(agent, session, evidences, toolBlockForPrompt(toolMap), o.loadInvestigationFindings(ctx, session.ID))
 	if err != nil {
 		return Speaker{}, nil, err
 	}
@@ -320,6 +347,32 @@ func (o *Orchestrator) lawyerSpeakReAct(
 
 	speaker, steps, err := runner.Run(ctx, messages)
 	if err != nil {
+		// R21 兜底（2026-10-10）：ReAct 触到迭代上限仍未发言时**不要整轮判失败**。
+		//
+		// 触发场景：零素材庭审（不填背景、不提交证据）—— prompt 的战略第 1 条要求
+		// "证据列表为空就优先 investigator_search"，模型照做并连续检索，每次都判为
+		// "还不够"，4 次后触顶 → 整轮报错 → 开场陈述失败、庭审卡死在 opening。
+		//
+		// 降级策略：改用**非 ReAct 的单次发言路径**（同一 system prompt + 显式"必须发言"
+		// 提醒，无工具绑定）。该路径自带 JSON 解析重试与最终兜底文案，能保证这一轮一定有发言，
+		// 从而把"死路"变成"降质但可继续"。（deferred-items-2026-10-07 §R21）
+		if errors.Is(err, ErrReactMaxIterations) {
+			slog.Warn("orchestrator: ReAct hit max iterations without speak; degrading to non-ReAct speak",
+				"session_uuid", session.SessionUUID, "agent_type", string(self))
+			fallbackPrompt := systemPrompt +
+				"\n\n## 重要提醒\n你已经做过足够的调研。现在必须直接输出你的主张（action=\"speak\"），" +
+				"不要再调用任何工具，也不要再输出 reflect。"
+			fallback, ferr := o.speak(ctx, agent, fallbackPrompt, messages, len(evidences) > 0, nil)
+			if ferr != nil {
+				// 降级也失败：保留原始 ReAct 错误（更接近根因），让上层走 UFE 恢复路径。
+				slog.Error("orchestrator: non-ReAct fallback speak also failed",
+					"session_uuid", session.SessionUUID, "agent_type", string(self), "err", ferr)
+				return speaker, steps, err
+			}
+			fallback.Agent = agent
+			o.recordSideEffects(ctx, session, agent, opponent, fallback, evidences)
+			return fallback, steps, nil
+		}
 		return speaker, steps, err
 	}
 	speaker.Agent = agent
@@ -332,10 +385,11 @@ func (o *Orchestrator) lawyerSpeakReAct(
 // each Runner instance routes to the same bus, and the runner can call it
 // without knowing about A2A types.
 //
-// v0.5 design choice: we deliberately write ONLY to the A2A bus here, NOT
-// to the legacy private_memory.Repository. PR 4 will introduce a parallel
-// "dual-write" period where this hook also touches the legacy repo to
-// validate parity; PR 4.5 (deferred) will drop the legacy write.
+// v0.5 design choice: we deliberately write ONLY to the A2A bus here, never
+// to a separate private-memory store. 2026-10-10 (M2): the legacy
+// private_memory table (which a deferred dual-write once mirrored) has been
+// removed entirely — the A2A bus is the single source of truth for private
+// memory.
 //
 // Failure isolation: a Send error is logged but never returned. The runner
 // relies on the hook being best-effort — aborting the trial because of a
@@ -436,13 +490,13 @@ func withArgumentSummaryText(messages []model.Message, selfType, opponentType mo
 	// v0.9.1 (ADR 0015):用户最近补充输入放在最显眼位置,LLM 必须优先看到。
 	if userInterrupt != nil {
 		sb.WriteString(fmt.Sprintf("【用户最新补充】%s\n注意：用户正在主动补充事实/约束，请直接引用此补充作为论证依据。不要把它当作对方的论点。\n",
-			truncate(userInterrupt.Content, 200)))
+			truncateRunes(userInterrupt.Content, userInterruptMaxRunes)))
 	}
 	if opponentLatest != nil {
-		sb.WriteString(fmt.Sprintf("对方刚刚说：%s\n", truncate(opponentLatest.Content, 150)))
+		sb.WriteString(fmt.Sprintf("对方刚刚说：%s\n", truncateRunes(opponentLatest.Content, opponentLatestMaxRunes)))
 	}
 	if selfLatest != nil {
-		sb.WriteString(fmt.Sprintf("你之前说：%s\n", truncate(selfLatest.Content, 100)))
+		sb.WriteString(fmt.Sprintf("你之前说：%s\n", truncateRunes(selfLatest.Content, selfLatestMaxRunes)))
 		sb.WriteString("注意：不要重复你之前的话，必须提出新论点或针对对方最新发言进行反驳。\n")
 	} else {
 		sb.WriteString("这是你的首次发言，请清晰亮明立场。\n")
@@ -453,21 +507,20 @@ func withArgumentSummaryText(messages []model.Message, selfType, opponentType mo
 // recordSideEffects runs after every speaking turn. It (1) publishes a
 // public A2A speech message that contains both the public content AND the
 // private reasoning (so the bus has a faithful audit record), and (2)
-// persists a private strategy_note to BOTH the new A2A private channel
-// (MemoryAuditPanel reads from this) AND the legacy private_memory repo
-// (kept during the dual-write transition window; PR 4.5 will drop the
-// legacy write). Failures are logged but never propagated: the
-// user-visible turn already succeeded and must not be rolled back.
+// publishes a private strategy_note to the A2A private channel
+// (MemoryAuditPanel reads from this). Failures are logged but never
+// propagated: the user-visible turn already succeeded and must not be
+// rolled back.
 //
-// v0.5 修复：之前只写老表，前端 MemoryAuditPanel 永远看不到 —— 现在
-// 额外写一条 visibility=private / message_type=strategy_note 的 A2A
-// 消息，前端 hydrate 成 MemoryEntry。Memory Hook 路径（reflect 步骤
-// 自动分析）保持不变。
+// 2026-10-10（M2 收口）：私有记忆的唯一权威源是 A2A 私有消息。此前还存在
+// 一个"双写过渡期"的第二写 —— 老 private_memory 表（其读接口在生产零调用，
+// 见 deferred-items-2026-10-09 §M2）—— 已按记录在案的决策删除（删写 + 删表
+// + 删包），过渡期不再延长。
 //
 // ctx 处理：recordSideEffects 在 courtroom service 的 withCancel 包裹
 // 下被调用，speak 一返回外层就可能 cancel()。这里派生一个 3s 的独立
-// background context，避免"ctx canceled"导致 a2aBus.Send /
-// memoryRepo.Append 失败（之前日志里出现过多次）。
+// background context，避免"ctx canceled"导致 a2aBus.Send 失败（之前日志里
+// 出现过多次）。
 func (o *Orchestrator) recordSideEffects(
 	_ context.Context,
 	session model.CourtSession,
@@ -481,10 +534,9 @@ func (o *Orchestrator) recordSideEffects(
 	defer writeCancel()
 
 	// v0.6 修复：把 speaker.EvidenceRefs 里混入的 DB UUID 归一化回
-	// display_id，确保下游 A2A 消息和 private_memory 表的
-	// linked_evidence_ids 字段对前端一致。LLM 偶尔会瞥见模型输入里的
-	// UUID 并把它们当作 evidence_refs 返回（详见
-	// .trae/documents/memory-a2a-redesign.md §"已发现但未做"）。
+	// display_id，确保下游 A2A 消息的 linked_evidence_ids 字段对前端一致。
+	// LLM 偶尔会瞥见模型输入里的 UUID 并把它们当作 evidence_refs 返回
+	// （详见 .trae/documents/memory-a2a-redesign.md §"已发现但未做"）。
 	normalizedRefs := NormalizeEvidenceRefs(speaker.EvidenceRefs, evidences)
 
 	a2aMsg := a2a.Message{
@@ -524,7 +576,7 @@ func (o *Orchestrator) recordSideEffects(
 			MessageType: a2a.MessageTypeStrategyNote,
 			Visibility:  a2a.VisibilityPrivate,
 			Payload: map[string]interface{}{
-				"memory_type":         string(private_memory.TypeStrategyNote),
+				"memory_type":         "strategy_note",
 				"stance":              speaker.Stance,
 				"confidence":          speaker.Confidence,
 				"reasoning":           speaker.Reasoning,
@@ -537,26 +589,6 @@ func (o *Orchestrator) recordSideEffects(
 		if _, err := o.a2aBus.Send(writeCtx, privateMsg); err != nil {
 			log.Printf("[orchestrator] a2a private strategy_note write failed for %s: %v", agent.AgentType, err)
 		}
-	}
-
-	// 双写过渡期：保留老 private_memory.Repository 写入，PR 4.5 drop。
-	if agent.ID == uuid.Nil {
-		log.Printf("[orchestrator] skip private memory write: agent.ID is zero for %s", agent.AgentType)
-		return
-	}
-	memEntry := private_memory.NewEntry(
-		session.ID,
-		agent.ID,
-		session.CurrentRound,
-		private_memory.TypeStrategyNote,
-		fmt.Sprintf(
-			"立场=%s 置信度=%.2f reasoning=%s",
-			speaker.Stance, speaker.Confidence, speaker.Reasoning,
-		),
-	)
-	memEntry.LinkedEvidenceIDs = normalizedRefs
-	if _, err := o.memoryRepo.Append(writeCtx, memEntry); err != nil {
-		log.Printf("[orchestrator] private memory write failed for %s: %v", agent.AgentType, err)
 	}
 }
 
@@ -1056,10 +1088,10 @@ func withArgumentSummary(messages []model.Message, selfType model.AgentType, opp
 	var summary strings.Builder
 	summary.WriteString("## 本轮对话摘要（你必须基于这些信息回应，禁止重复）\n")
 	if opponentLatest != nil {
-		summary.WriteString(fmt.Sprintf("对方刚刚说：%s\n", truncate(opponentLatest.Content, 150)))
+		summary.WriteString(fmt.Sprintf("对方刚刚说：%s\n", truncateRunes(opponentLatest.Content, opponentLatestMaxRunes)))
 	}
 	if selfLatest != nil {
-		summary.WriteString(fmt.Sprintf("你之前说：%s\n", truncate(selfLatest.Content, 100)))
+		summary.WriteString(fmt.Sprintf("你之前说：%s\n", truncateRunes(selfLatest.Content, selfLatestMaxRunes)))
 		summary.WriteString("注意：不要重复你之前的话，必须提出新论点或针对对方最新发言进行反驳。\n")
 	} else {
 		summary.WriteString("这是你的首次发言，请清晰亮明立场。\n")

@@ -11,7 +11,6 @@ import (
 	"github.com/decisioncourt/backend/internal/evidence"
 	"github.com/decisioncourt/backend/internal/investigation"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -21,14 +20,13 @@ import (
 // 前推送 agent.thinking_started，让前端能立刻渲染云朵，避免死亡空窗。
 func TestServiceSpeakWithReAct_BroadcastsThinkingStartedBeforeCotStep(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
 	llmClient := &reactScriptedLLM{scripts: []string{
 		toolJSON(tools.InvestigatorSearchToolName, map[string]interface{}{"query": "x"}),
 		speakJSON("final", "pro_a", 0.7),
 	}}
-	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus)
 
 	searcher := &stubSearcher{results: nil}
 	invRepo := investigation.NewInMemoryRepository(nil)
@@ -113,13 +111,12 @@ func TestServiceSpeakWithReAct_BroadcastsThinkingStartedBeforeCotStep(t *testing
 // 据此渲染气泡。
 func TestServiceSpeakWithReAct_ThinkingStartedPayloadShape(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
 	llmClient := &reactScriptedLLM{scripts: []string{
 		speakJSON("直接说话", "pro_a", 0.8),
 	}}
-	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus)
 
 	svc := &Service{
 		db:               nil,
@@ -179,14 +176,13 @@ func TestServiceSpeakWithReAct_ThinkingStartedPayloadShape(t *testing.T) {
 // 调查员的旋转动画。
 func TestServiceSpeakWithReAct_SearchStartedAroundToolCotStep(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
 
 	llmClient := &reactScriptedLLM{scripts: []string{
 		toolJSON(tools.InvestigatorSearchToolName, map[string]interface{}{"query": "市场行情"}),
 		speakJSON("基于搜索的论点", "pro_a", 0.8),
 	}}
-	orch := agent.NewOrchestratorLegacy(llmClient, bus, memRepo)
+	orch := agent.NewOrchestratorLegacy(llmClient, bus)
 
 	results := []search.Result{{Title: "数据", URL: "u", Content: "c"}}
 	searcher := &stubSearcher{results: results}

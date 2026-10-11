@@ -27,7 +27,6 @@ import (
 	"github.com/decisioncourt/backend/internal/middleware"
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/observability"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/decisioncourt/backend/internal/promptlab"
 	"github.com/decisioncourt/backend/internal/trace"
 	"github.com/decisioncourt/backend/internal/search"
@@ -74,6 +73,10 @@ func buildGatewayConfig(a config.AgentGatewayConfig) agent_gateway.GatewayConfig
 		// v2 Token Budget
 		RejectWhenExhausted:    a.RejectWhenExhausted,
 		BudgetSlidingWindowSec: a.BudgetSlidingWindowSec,
+		// 成本维度（2026-10-10 第 3 轮）：定价 JSON 在 agent_gateway.NewWithConfig
+		// 里解析成 PricingTable（config 层不能反向 import agent_gateway）。
+		BudgetCostLimitUSD: a.BudgetCostLimitUSD,
+		PricingJSON:        a.PricingJSON,
 
 		// v2 Prompt Compression
 		SmartCompression:       a.SmartCompression,
@@ -255,7 +258,6 @@ func main() {
 		hub.Broadcast(sessionUUID, courtroom.Event{Type: eventType, Payload: payload})
 	}
 	bus := a2a.NewBus(a2a.NewGormRepository(model.DB), a2aBroadcaster)
-	memRepo := private_memory.NewGormRepository(model.DB)
 
 	// v1.0.3 PR-B1: 初始化 promptlab.Store, 把 baseRules 从 hardcoded 字符串
 	// 切到 YAML 文件 (backend/prompts/base.yaml). 启动时 Load() 失败 → 降级
@@ -307,7 +309,7 @@ func main() {
 		}
 	}()
 
-	orchestrator := agent.NewOrchestrator(gatewayClient, bus, memRepo, nil, nil)
+	orchestrator := agent.NewOrchestrator(gatewayClient, bus, nil, nil)
 	evidenceSvc := evidence.NewService(model.DB, gatewayClient)
 
 	// v2.1 F4: search provider 启动检测。未实现的 provider 输出明确错误
@@ -463,7 +465,18 @@ func main() {
 	handler.RegisterAPIRoutes(authedGroup)
 
 	handler.RegisterRoutes(r) // 注册 /health 到 r
-	handler.RegisterMetricsRoute(r)
+	// /metrics 访问控制（2026-10-10 第 3 轮）：不再无条件公开。
+	//   - OPS_METRICS_PUBLIC=true  → 公开（dev compose 显式开启，保持 `curl /metrics` 习惯）
+	//   - OPS_METRICS_TOKEN=<t>    → scraper 带 Bearer/X-Metrics-Token 可读
+	//   - 两者都没有               → 401；启动打 WARN，避免"静默锁死自己看不到指标"
+	if !config.AppConfig.MetricsPublic && config.AppConfig.MetricsToken == "" {
+		slog.Warn("metrics endpoint has no access channel configured; all /metrics requests will be 401",
+			"hint", "set OPS_METRICS_PUBLIC=true (dev) or OPS_METRICS_TOKEN=<token> (Prometheus scraper)")
+	}
+	handler.RegisterMetricsRoute(r, middleware.MetricsAccess(middleware.MetricsAccessConfig{
+		Public: config.AppConfig.MetricsPublic,
+		Token:  config.AppConfig.MetricsToken,
+	}))
 
 	// WebSocket 升级前 token 验证在 wsServer.Handler 内部做(query 优先,cookie 兜底)。
 	r.GET("/ws/courtrooms/:session_uuid", wsServer.Handler)

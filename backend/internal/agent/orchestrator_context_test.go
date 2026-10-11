@@ -8,11 +8,11 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/a2a"
 	"github.com/decisioncourt/backend/internal/llm"
 	"github.com/decisioncourt/backend/internal/model"
-	"github.com/decisioncourt/backend/internal/private_memory"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -22,8 +22,7 @@ import (
 func TestBuildEpisodicMemoryBlock_NoPriorMemory_ReturnsEmpty(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
 
 	block := orch.buildEpisodicMemoryBlock(context.Background(), uuid.New(), "prosecutor")
 	require.Equal(t, "", block, "no memory should yield empty block, not an empty heading")
@@ -32,8 +31,7 @@ func TestBuildEpisodicMemoryBlock_NoPriorMemory_ReturnsEmpty(t *testing.T) {
 func TestBuildEpisodicMemoryBlock_NilInputs_ReturnsEmpty(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
 
 	// nil/empty inputs to buildEpisodicMemoryBlock must short-circuit
 	require.Equal(t, "", orch.buildEpisodicMemoryBlock(context.Background(), uuid.Nil, ""))
@@ -80,8 +78,7 @@ func memoryTypeForBus(kind string) string {
 func TestBuildEpisodicMemoryBlock_FormatsAllRowsChronologically(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
 
 	sessionID := uuid.New()
 	// Insert out of order to confirm sort
@@ -108,8 +105,7 @@ func TestBuildEpisodicMemoryBlock_FormatsAllRowsChronologically(t *testing.T) {
 func TestBuildEpisodicMemoryBlock_OtherAgentsMemoryNotVisible(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
 
 	sessionID := uuid.New()
 	writePrivateMemo(t, bus, sessionID, "defender", "strategy_note", 1, "DEFENDER SECRET MEMO")
@@ -123,8 +119,7 @@ func TestBuildEpisodicMemoryBlock_OtherAgentsMemoryNotVisible(t *testing.T) {
 func TestBuildEpisodicMemoryBlock_MalformedPayloadSkipped(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
 
 	sessionID := uuid.New()
 	// Good row
@@ -155,8 +150,7 @@ func TestBuildEpisodicMemoryBlock_MalformedPayloadSkipped(t *testing.T) {
 func TestBuildEpisodicMemoryBlock_LongContentTruncated(t *testing.T) {
 	a2aRepo := a2a.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
-	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&reactScriptedLLM{}, bus)
 
 	sessionID := uuid.New()
 	longContent := strings.Repeat("这是很长的策略笔记。", 100) // 1000+ chars
@@ -164,8 +158,11 @@ func TestBuildEpisodicMemoryBlock_LongContentTruncated(t *testing.T) {
 
 	block := orch.buildEpisodicMemoryBlock(context.Background(), sessionID, "prosecutor")
 	require.Contains(t, block, "...")
-	// truncation should keep total block size bounded
-	require.Less(t, len(block), 600, "block must be bounded even with huge content")
+	// truncation should keep total block size bounded.
+	// 2026-10-10 Round 2：单行上限由 240 字节改为 memoryNoteMaxRunes(=800) rune，
+	// "有界"断言随契约改为按 rune 计（原来比较的是 len(block) 字节）。
+	require.Less(t, utf8.RuneCountInString(block), memoryNoteMaxRunes+200,
+		"block must be bounded even with huge content")
 }
 
 func TestExtractMemoryPayload_NormalAndMalformed(t *testing.T) {
@@ -228,9 +225,8 @@ func (c *capturingLLM) Calls() int { return int(atomic.LoadInt32(&c.calls)) }
 func TestProsecutorSpeakWithReAct_PriorMemoryInjectedIntoSystemPrompt(t *testing.T) {
 	// Setup: bus + memRepo + orchestrator
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	orch := NewOrchestratorLegacy(&capturingLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&capturingLLM{}, bus)
 
 	// Seed 3 private strategy notes into the bus BEFORE the LLM call
 	sessionID := uuid.New()
@@ -283,9 +279,8 @@ func TestProsecutorSpeakWithReAct_PriorMemoryInjectedIntoSystemPrompt(t *testing
 func TestDefenderSpeakWithReAct_OwnMemoryInjected_OpponentsExcluded(t *testing.T) {
 	// Setup: bus + memRepo + orchestrator
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	orch := NewOrchestratorLegacy(&capturingLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&capturingLLM{}, bus)
 
 	sessionID := uuid.New()
 	// Defender's own memory (should appear)
@@ -321,9 +316,8 @@ func TestDefenderSpeakWithReAct_OwnMemoryInjected_OpponentsExcluded(t *testing.T
 func TestProsecutorSpeakWithReAct_NoPriorMemory_BlockAbsent(t *testing.T) {
 	// Setup empty bus
 	a2aRepo := a2a.NewInMemoryRepository(nil)
-	memRepo := private_memory.NewInMemoryRepository(nil)
 	bus := a2a.NewBus(a2aRepo, nil)
-	orch := NewOrchestratorLegacy(&capturingLLM{}, bus, memRepo)
+	orch := NewOrchestratorLegacy(&capturingLLM{}, bus)
 
 	llmClient := &capturingLLM{scripts: []string{
 		speakOutputJSON("first time", "开场陈述", "pro_a", 0.7),

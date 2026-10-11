@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -83,12 +84,19 @@ func extractMemoryPayload(payloadJSON string) (content, memoryType string) {
 	return content, memoryType
 }
 
-// truncateForMemory is a defensive truncator that respects UTF-8 boundaries
-// when possible. We keep it tiny — the runtime hot path only needs to bound
-// the per-row size so the section total stays under the token budget.
-func truncateForMemory(s string, max int) string {
-	if len(s) <= max {
+// truncateForMemory is a defensive truncator that respects UTF-8 boundaries.
+// We keep it tiny — the runtime hot path only needs to bound the per-row size
+// so the section total stays under the token budget.
+//
+// 2026-10-10 Round 2：改为 rune 语义（原实现裸 s[:max] 按字节切，中文会切出
+// 半个汉字，产出非法 UTF-8 拼进 prompt）。
+func truncateForMemory(s string, maxRunes int) string {
+	if maxRunes < 0 {
 		return s
 	}
-	return s[:max] + "..."
+	if utf8.RuneCountInString(s) <= maxRunes {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:maxRunes]) + "..."
 }

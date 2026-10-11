@@ -64,6 +64,11 @@ func (s *Service) RecoverActiveSessions(ctx context.Context, maxConcurrent int) 
 		"active_sessions", len(sessions),
 		"max_concurrent", maxConcurrent)
 
+	// 2026-10-10：启动恢复后把 courtroom_active_sessions 校准到 DB 真值。
+	// 进程重启会让内存指标清零，重算一次让面板立刻反映"重启后还剩几场进行中的庭审"。
+	// 放在下面的提前 return 之前，保证两条路径都会校准（无会话时校准成 0 也是对的）。
+	s.refreshActiveSessionsGauge(ctx)
+
 	if len(sessions) == 0 {
 		s.recoveryAttemptedTotal.Add(1)
 		s.recoverySucceededTotal.Add(1)
