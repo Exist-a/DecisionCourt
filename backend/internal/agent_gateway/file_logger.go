@@ -40,6 +40,8 @@ type LogEntry struct {
 	CompressionAtomicGroups int     `json:"compression_atomic_groups,omitempty"`
 	CompressionAtomicKept int       `json:"compression_atomic_kept,omitempty"`
 	CompressionRecentForced int     `json:"compression_recent_forced,omitempty"`
+	// CompressionMaterialForced (v2.12 M8-2 第 2 轮)：素材下限强制保留条数。
+	CompressionMaterialForced int `json:"compression_material_forced,omitempty"`
 	CompressionSummarized int       `json:"compression_summarized_blocks,omitempty"`
 	Throttled             bool      `json:"throttled"`
 	ThrottleExempted      bool      `json:"throttle_exempted"`

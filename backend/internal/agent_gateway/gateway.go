@@ -682,6 +682,7 @@ func (g *Gateway) writeFileLog(
 		CompressionAtomicGroups: compInfo.AtomicGroups,
 		CompressionAtomicKept:  compInfo.AtomicGroupsKept,
 		CompressionRecentForced: compInfo.RecentForcedKept,
+		CompressionMaterialForced: compInfo.MaterialForcedKept,
 		CompressionSummarized:  compInfo.SummarizedBlocks,
 		Throttled:              throttleInfo.Applied,
 		ThrottleExempted:       throttleInfo.Exempted,

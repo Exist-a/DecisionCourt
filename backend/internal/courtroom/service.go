@@ -1622,6 +1622,16 @@ func (s *Service) DispatchInvestigator(
 		} else {
 			payload["success"] = false
 			payload["error"] = fmt.Sprint(recErr)
+			// 沉默的 return 是长期隐患（AGENTS.md §6.2e 规则 3）：搜索失败此前
+			// 只回灌给 LLM（observation 里的 [tool_error]）+ 前端 banner，后端
+			// **不落任何日志** —— 运维事后无法判断"搜索为什么失败"（是网络超时、
+			// 限流、还是 key 失效）。这里补一条 WARN，带上可诊断的上下文。
+			slog.Warn("investigator search failed",
+				"session_uuid", session.SessionUUID,
+				"dispatcher", dispatcher,
+				"query", query,
+				"err", recErr,
+			)
 		}
 		s.broadcastEvent(session.SessionUUID, Event{
 			Type:    "search.completed",

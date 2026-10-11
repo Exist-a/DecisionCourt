@@ -508,6 +508,44 @@ task=react_think_retry  msgs 2->2  chars 20850->20850  saved=0.0%  ratio=0.999
 
 ---
 
+## M9（发现即修，2026-10-11）调查员搜索失败在后端**无日志**（静默缺口）
+
+### 怎么发现的
+
+第 2 轮真实验证时，用户在庭审页面看到顶部 banner「调查员搜索失败: <query>…」。但后端
+`logs` 里**完全没有对应记录** —— 无法判断是网络超时、限流、还是 key 失效。
+
+### 根因（读码定位）
+
+- `investigation.RecordFinding`（`backend/internal/investigation/service.go:73-76`）在**第一步
+  就执行搜索**，失败即 `return nil, err` —— 此时**尚未**发 A2A dispatch/report，故 `a2a_messages`
+  与 `investigation_findings` 都**不留痕**。
+- `courtroom.DispatchInvestigator`（`service.go`）的 defer 把失败转成 WS
+  `search.completed{success:false,error}` 发给前端（D2-L2 的 banner 就是它），但**不写后端日志**。
+- ReAct 侧该错误只作为 `[tool_error] …` 回灌给 LLM（`react_runner.go:371`），也不落日志。
+- ⇒ 失败只对「LLM 的下一轮输入」和「前端 UI」可见，**运维视角是黑洞**（AGENTS.md §6.2e 规则 3：
+  沉默的 return 是长期隐患）。
+
+### 现场取证
+
+- 直接复现两条 query（中文 + 英文）对 bocha 均 **HTTP 200** → 该次失败是**瞬时**的
+  （超时/取消/限流），而非查询本身非法。
+- 强制失败验证修法：把 `BOCHA_API_KEY` 置为**非空但无效**的值（置空会命中启动 fail-fast
+  `SEARCH_PROVIDER=bocha requires BOCHA_API_KEY`），跑庭审后日志出现：
+
+  ```
+  WARN investigator search failed  session_uuid=… dispatcher=prosecutor
+       query="…" err="investigation: search: bocha: status 401: {\"message\":\"Invalid API KEY\"…}"
+  ```
+
+### 处置（已落地）
+
+`courtroom/service.go` 的 `DispatchInvestigator` defer 在 `success=false` 分支补一条
+`slog.Warn("investigator search failed", session_uuid, dispatcher, query, err)`。
+下次同类失败可直接从日志定位原因。**不改搜索本身逻辑**（瞬时失败属正常，由前端 retry 兜底）。
+
+---
+
 ## 核对方法（可复现）
 
 本批结论全部来自真实代码 grep / read，不采信文档：
