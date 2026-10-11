@@ -18,10 +18,11 @@ func TestBudgetDefault_ConfigAndGatewayAgree(t *testing.T) {
 		t.Fatalf("默认预算上限漂移：config=%d agent_gateway=%d —— 两处必须一致",
 			config.DefaultBudgetPerSession, agent_gateway.DefaultBudgetPerSession)
 	}
-	// 顺手钉住具体数值：D17 实测一场 quick 庭审约 46k token，20000 会让判决被拒。
+	// 顺手钉住具体数值：2026-10-11 (§M8) 实测一场 standard 3 轮庭审 209,018 token
+	// 超 200k → 判决走 fallback，故抬到 300000。
 	// 改动这个数字必须是有意识的决策（同时更新 .env.example + ADR 0013 状态更新）。
-	if config.DefaultBudgetPerSession != 200000 {
-		t.Errorf("默认预算上限应为 200000（v2.11 D17 实测依据），got %d", config.DefaultBudgetPerSession)
+	if config.DefaultBudgetPerSession != 300000 {
+		t.Errorf("默认预算上限应为 300000（§M8 实测依据），got %d", config.DefaultBudgetPerSession)
 	}
 }
 

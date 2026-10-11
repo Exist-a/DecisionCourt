@@ -168,8 +168,8 @@ func TestGatewayChildren_BudgetDefaultIsRealistic(t *testing.T) {
 	if gw.BudgetPerSession != DefaultBudgetPerSession {
 		t.Errorf("未配置时预算上限应为 %d，got %d", DefaultBudgetPerSession, gw.BudgetPerSession)
 	}
-	if gw.BudgetPerSession != 200000 {
-		t.Errorf("预算上限应为 200000（实测一场 quick 庭审约 46k token），got %d", gw.BudgetPerSession)
+	if gw.BudgetPerSession != 300000 {
+		t.Errorf("预算上限应为 300000（§M8：standard 3 轮实测 209k token 超 200k 致判决 fallback），got %d", gw.BudgetPerSession)
 	}
 	if !gw.RejectWhenExhausted {
 		t.Error("RejectWhenExhausted 默认应为 true（失控循环时拒绝优于继续烧钱）")

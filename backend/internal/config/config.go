@@ -84,10 +84,16 @@ type AgentGatewayConfig struct {
 // （光开庭陈述 17.7k），旧默认连开场都撑不住 → 预算耗尽后判决阶段的调用被拒、
 // 判决退化成兜底文案。
 //
+// 2026-10-11 (deferred-items-2026-10-09 §M8) 200000 → 300000：实测一场 **standard
+// 3 轮 + 1 条证据**的庭审用了 **209,018 token**（> 200k）→ GenerateVerdict 被
+// reject-when-exhausted 拦下、判决降级 fallback；且既有同类庭审已到 197,788
+// （98.9%），即 200k 对 standard 早已贴线。加上"压缩在真实庭审里省 0%"（§M8），
+// 没有别的兜底 → 上调默认值。300k ≈ 1.4× 实测 standard 峰值。
+//
 // ⚠️ 必须与 agent_gateway.DefaultBudgetPerSession 保持一致（同一语义、两个包各自
 // 持有字面量，因为 config 不能反向 import agent_gateway）。cmd/server 有一条
 // 跨包一致性断言测试防漂移。
-const DefaultBudgetPerSession = 200000
+const DefaultBudgetPerSession = 300000
 
 // resolveGatewayChild 决定一个 gateway 子开关的生效值。
 //

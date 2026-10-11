@@ -87,9 +87,9 @@ func TestGatewayConfig_SmartCompressionDisabled(t *testing.T) {
 
 func TestGatewayConfig_NormalizeDefaults(t *testing.T) {
 	c := GatewayConfig{Enabled: true}.Normalize()
-	// v2.11 (D17): 默认上限 20000 → 200000。
-	if c.BudgetPerSession != 200000 {
-		t.Errorf("budget: want 200000 got %d", c.BudgetPerSession)
+	// v2.11 (D17): 默认上限 20000 → 200000；2026-10-11 (§M8) 200000 → 300000。
+	if c.BudgetPerSession != 300000 {
+		t.Errorf("budget: want 300000 got %d", c.BudgetPerSession)
 	}
 	if c.CompressionThreshold != 0.7 {
 		t.Errorf("compress threshold: want 0.7 got %.2f", c.CompressionThreshold)

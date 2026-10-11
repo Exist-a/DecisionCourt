@@ -110,10 +110,14 @@ type GatewayConfig struct {
 //     判决阶段的 judge/clerk 调用被拒 → 判决退化成兜底文案。
 //   - 200000 ≈ 4 倍 quick 庭审余量，standard/deep 也容得下。
 //
+// 2026-10-11 (§M8) 200000 → 300000：实测一场 standard 3 轮 + 1 条证据的庭审用了
+// 209,018 token（> 200k）→ 判决阶段调用被拒、判决降级 fallback；既有同类庭审已到
+// 197,788（98.9%）。且实测压缩在真实庭审里省 0%（见 §M8），没有兜底 → 上调。
+//
 // 注意：压缩/限流的触发线是按这个上限的**比例**算的（CompressionThreshold 0.7 /
 // ThrottlingThreshold 0.8），所以抬上限同时意味着"压缩只在超长庭审才介入"。
 // 这是设计本意：短庭审本来没有可压的冗余（压缩的价值在长庭审的长历史）。
-const DefaultBudgetPerSession = 200000
+const DefaultBudgetPerSession = 300000
 
 // IsPromptCompressionEnabled 返回压缩是否生效。
 func (c GatewayConfig) IsPromptCompressionEnabled() bool {
