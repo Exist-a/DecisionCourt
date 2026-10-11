@@ -257,7 +257,7 @@ ProjectPayloadForOpponent` 一条，消除"4 个入口有多个在跑"的误读�
 
 ## M6（P2）压缩节省率基线数字漂移 + 无护栏 + 引用源缺失
 
-> **状态更新（2026-10-11，真实庭审实测 + 同日复核更正）**：本项的"问题 0（生产从未触发压缩）"已被实测解决 —— 压缩**真的触发了**。**⚠️ 但"省 0%"的初版结论取样不全，已更正**：完整日志 12 条压缩记录中，前 7 条（session `1e241ab4`）确为 **0.0%**，后 5 条（session `78e68370`）**省 17.7–22.1%**。且省幅来源**不是四步流水线，而是 system 消息的兜底上限**（`compressMaxSystemMsgLen=24000` → 截到 20000）被触发。逐条数据、算术证明与其余 5 项异常见 [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](../COMPRESSION-REDESIGN-PROPOSAL.md)。
+> **状态更新（2026-10-11，真实庭审实测 + 同日复核更正）**：本项的"问题 0（生产从未触发压缩）"已被实测解决 —— 压缩**真的触发了**。**⚠️ 但"省 0%"的初版结论取样不全，已更正**：完整日志 12 条压缩记录中，前 7 条（session `1e241ab4`）确为 **0.0%**，后 5 条（session `78e68370`）**省 17.7–22.1%**。且省幅来源**不是四步流水线，而是 system 消息的兜底上限**（`compressMaxSystemMsgLen=24000` → 截到 20000）被触发。逐条数据、算术证明与其余 4 项异常（含根因）见 [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](../COMPRESSION-REDESIGN-PROPOSAL.md)。
 >
 > **状态更新（2026-10-10，第 1 轮止血）**：**问题 1（数字漂移）/ 问题 2（引用源不存在）已于 2026-10-09 修复** ——
 > `decisioncourt-prd.md` §9.4、`decisioncourt-tech-spec.md`（Token 节省率行）、`ADR 0006` 顶部状态更新均已改为
@@ -428,9 +428,14 @@ task=react_think_retry  msgs 2->2  chars 20850->20850  saved=0.0%  ratio=0.999
 - PRD / tech-spec 的「Token 节省率 ≥ 30%」**在真实输入上不成立**（实测 0%（短）～22%（长），
   且省幅主要来自 system 兜底上限；见 §1.2 更正）；
 - 这解释了为什么"预算快烧完"却指望不上压缩兜底（R19 的隐忧在此坐实）；
-- **同日审计另查出 5 项异常**（限流疑似引发重试自食其果 / 兜底截断砍掉最新庭审历史 /
-  quick 庭审波动 2.6 倍 / 预算拒绝不进文件日志 / 兜底摘要从未触发）——
-  见 [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](../COMPRESSION-REDESIGN-PROPOSAL.md) §3。
+- **同日审计另查出 4 项真实异常**（逐项根因已读代码定位）：
+  ① 限流把 `max_tokens` 砍到 100 → ReAct 决策 JSON 被截断 → 重试（最坏 `return error` 打断整轮），
+  实测限流后 7 次调用 3 次重试、重试平均输入 9,108 > 正常 8,479，**疑似净负**；
+  ② 兜底截断保留**头部**、丢弃**尾部** → 被砍的恰是**最新庭审历史**；
+  ③ 预算拒绝只写 DB、**不进 FileLogger**（DB 35 行 vs 文件 33 条）；
+  ④ 兜底摘要条件 `droppedCount > 5` 与 `MaxIterations=4`（非 system ≤ ~8、强制保留 3）不匹配 → **分支不可达**。
+  （原列的"quick 波动 2.6 倍"经复核**已撤回** —— 是我自己误点「直接判决」跳过质证造成的取样失误。）
+  详见 [`docs/COMPRESSION-REDESIGN-PROPOSAL.md`](../COMPRESSION-REDESIGN-PROPOSAL.md) §3。
 
 ### ✅ 决策与落地（2026-10-11）
 
