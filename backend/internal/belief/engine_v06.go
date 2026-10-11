@@ -2,6 +2,7 @@ package belief
 
 import (
 	"context"
+	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/google/uuid"
@@ -165,12 +166,19 @@ func weakenFor(weakens []model.EvidenceWeakenLink, evidenceID uuid.UUID, targetA
 // truncateReason shrinks a free-text evidence content into a one-line hint
 // suitable for the UI card. Caller-facing strings; 80 chars is generous for
 // the wide-aspect BeliefDiffCard.
+//
+// 2026-10-11 修复（真实庭审实测撞出）：原实现按**字节**切（`s[:max-1]`），
+// 中文证据必在字符中间断开，产出非法 UTF-8；该值写入 belief_diffs.reason，
+// Postgres 直接报 `invalid byte sequence for encoding "UTF8"` 并**整行拒绝**
+// —— 表现为"信念变更记录静默丢失"（只有 GORM 日志里有 ERROR，业务无感知）。
+// 现改为按 rune 截断，语义与注释一致（80 字符）。
 func truncateReason(s string) string {
 	const max = 80
-	if len(s) <= max {
+	if utf8.RuneCountInString(s) <= max {
 		return s
 	}
-	return s[:max-1] + "…"
+	runes := []rune(s)
+	return string(runes[:max-1]) + "…"
 }
 
 // ln2 is a constant used in the Bayesian update formula. Lifted to package

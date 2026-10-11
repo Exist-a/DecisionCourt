@@ -3,11 +3,47 @@ package belief
 import (
 	"context"
 	"math"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/google/uuid"
 )
+
+// TestTruncateReason_RuneSafe 钉住 2026-10-11 修复：belief_diffs.reason 必须
+// 是合法 UTF-8，否则 Postgres 会以 `invalid byte sequence for encoding "UTF8"`
+// 拒绝**整行**（表现为信念变更记录静默丢失）。
+//
+// 复现：evidence.Content 为中文时，旧实现的字节截断 `s[:79]` 必然落在字符
+// 中间，产出半个汉字。
+func TestTruncateReason_RuneSafe(t *testing.T) {
+	// 超过 80 rune 的中文串：旧实现按字节切（90 字节处 = 第 30 个字中间）会切出
+	// 半个汉字，这里断言 rune 语义下结果始终是合法 UTF-8。
+	midRune := strings.Repeat("中", 100)
+	got := truncateReason(midRune)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncateReason 产出非法 UTF-8: %q", got)
+	}
+	if n := utf8.RuneCountInString(got); n > 80 {
+		t.Fatalf("rune 数 = %d, 期望 <= 80", n)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("超长串应以省略号结尾, got %q", got)
+	}
+
+	// 混合中文 + 数字的长串同样必须合法。
+	mixed := truncateReason("2026 年 Q3 行业报告：" + strings.Repeat("数据", 60))
+	if !utf8.ValidString(mixed) {
+		t.Fatalf("混合串产出非法 UTF-8: %q", mixed)
+	}
+
+	// 短串原样返回（不追加省略号）。
+	short := "月薪 8000 元"
+	if truncateReason(short) != short {
+		t.Fatalf("短串不应被改写, got %q", truncateReason(short))
+	}
+}
 
 // TestLogitSigmoidRoundTrip protects the two helper math functions from
 // drifting out of sync. They are inverses on (0,1) → R and R → (0,1).
