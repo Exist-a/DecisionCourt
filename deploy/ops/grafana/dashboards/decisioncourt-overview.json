@@ -1,0 +1,150 @@
+{
+  "uid": "decisioncourt-overview",
+  "title": "DecisionCourt 总览",
+  "tags": ["decisioncourt", "auto-provisioned"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "进行中的庭审",
+      "description": "courtroom_active_sessions = status=active 且已离开 idle 的会话数（立案未开庭的不算）。2026-10-10 第 3 轮接线：此前它只有常量、无写入方，面板挂它只会永远 No data。与 global_concurrency_current（此刻正在跑 LLM 的庭审数）不是同一口径。",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "courtroom_active_sessions" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "预算水位（最高会话）",
+      "description": "budget_ratio：越高越接近预算上限；≥0.7 触发压缩、≥0.8 触发限流、≥1.0 直接拒绝调用。",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 5, "x": 4, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "budget_ratio" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1.2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.7 },
+              { "color": "orange", "value": 0.8 },
+              { "color": "red", "value": 1.0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "预算累计用量（token）",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 5, "x": 9, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "llm_budget_used_tokens" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "判决证据引用准确率",
+      "description": "verdict_evidence_accuracy：持续 <1.0 说明压缩丢证据链或判决幻构。",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 5, "x": 14, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "verdict_evidence_accuracy" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 0.99 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "LLM 调用速率（按 Agent）",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
+      "targets": [{ "refId": "A", "expr": "sum(rate(llm_call_total[5m])) by (agent)" }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 } }, "overrides": [] }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Token 用量速率（input / output）",
+      "description": "input/output 拆分开；type=input_stream_estimated 表示该次流式没拿到真实 usage、用了估算。",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
+      "targets": [{ "refId": "A", "expr": "sum(rate(llm_call_tokens_total[5m])) by (type)" }],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 } }, "overrides": [] }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "LLM 调用延迟 P95（秒）",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum(rate(llm_call_duration_seconds_bucket[5m])) by (le))" },
+        { "refId": "B", "expr": "histogram_quantile(0.50, sum(rate(llm_call_duration_seconds_bucket[5m])) by (le))" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 1 } }, "overrides": [] }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "缓存命中 / 未命中",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 13 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(llm_cache_hit_total[5m]))", "legendFormat": "hit" },
+        { "refId": "B", "expr": "sum(rate(llm_cache_miss_total[5m]))", "legendFormat": "miss" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 } }, "overrides": [] }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "预算拒绝 / 预警 / 限流拒绝",
+      "description": "budget_rejected_total 非 0 = 有调用因超预算被直接拒绝（庭审可能因此退化）。",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 13 },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(budget_rejected_total[1h]))", "legendFormat": "budget rejected" },
+        { "refId": "B", "expr": "sum(increase(budget_warning_total[1h]))", "legendFormat": "budget warning" },
+        { "refId": "C", "expr": "sum(increase(session_rate_limit_rejected_total[1h]))", "legendFormat": "session ratelimited" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40, "lineWidth": 1 } }, "overrides": [] }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "发言幻觉 / 压缩 / 状态迁移",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 13 },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(speak_hallucination_total[1h]))", "legendFormat": "hallucination" },
+        { "refId": "B", "expr": "sum(increase(compression_applied_total[1h]))", "legendFormat": "compression applied" },
+        { "refId": "C", "expr": "sum(increase(courtroom_state_transition_total[1h]))", "legendFormat": "state transitions" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40, "lineWidth": 1 } }, "overrides": [] }
+    }
+  ]
+}

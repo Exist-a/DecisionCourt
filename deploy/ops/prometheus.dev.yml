@@ -1,0 +1,13 @@
+# Prometheus 抓取配置（dev）。2026-10-10 第 3 轮「可观测呈现层」。
+# backend 的 /metrics 默认返回 JSON（给人看）；Prometheus 走 ?format=prometheus。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: decisioncourt-backend
+    metrics_path: /metrics
+    params:
+      format: ["prometheus"]
+    static_configs:
+      - targets: ["backend:8080"]

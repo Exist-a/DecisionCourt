@@ -1,0 +1,11 @@
+# 仪表盘自动加载目录（把 dashboards/*.json 挂进来即可）。
+apiVersion: 1
+providers:
+  - name: decisioncourt
+    orgId: 1
+    folder: DecisionCourt
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

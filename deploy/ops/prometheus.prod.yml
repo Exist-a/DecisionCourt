@@ -1,0 +1,21 @@
+# Prometheus 抓取配置（生产）。2026-10-10 第 3 轮。
+#
+# 与 dev 的差别：生产 backend 的 /metrics 默认收紧（OPS_METRICS_PUBLIC=false），
+# 所以这里带 bearer token。token **不走文件、走环境变量**：
+#   - Prometheus 启动时会做 ${VAR} 替换，token 由 compose 从 .env 注入容器；
+#   - 刻意不用 credentials_file —— 文件不存在会让 Prometheus 直接起不来，
+#     而"观测栈起不来"不该把整份 compose 拖死。token 没配时只是抓取 401/失败（可见）。
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: decisioncourt-backend
+    metrics_path: /metrics
+    params:
+      format: ["prometheus"]
+    authorization:
+      type: Bearer
+      credentials: ${OPS_METRICS_TOKEN}
+    static_configs:
+      - targets: ["backend:8080"]

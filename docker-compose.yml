@@ -205,8 +205,58 @@ services:
       - backend
       - frontend
 
+  # ── 可观测「呈现层」（2026-10-10 第 3 轮）**默认启动** ──────────────────────
+  # 2026-10-10 第 3 轮（OPS-DASHBOARD-PLAN §10）。**内存依据是实测的**：
+  #   生产机 2C2G（实测总 1613MB / 可用 938MB），应用栈 5 容器 ≈155MB；
+  #   Prometheus ≈103MB（35 series）、Grafana ≈194MB（峰值 222MB）。
+  #   → 观测栈 ≈300–400MB 放得下，但**必须**用 mem_limit 锁住，否则会跟应用抢内存。
+  #
+  # 前置（生产必设，否则 /metrics 抓不到）：
+  #   .env 里 OPS_METRICS_TOKEN=<随机串>（backend 校验 + Prometheus 带上，两边同一个值）
+  #   .env 里 GF_ADMIN_PASSWORD=<强口令>（不设会让 compose 直接报错 —— 刻意不提供默认口令）
+  # 只想停观测栈：docker compose stop prometheus grafana
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: dc_prometheus
+    environment:
+      # 供 prometheus.prod.yml 里的 ${OPS_METRICS_TOKEN} 替换（空值 = 不带凭证抓取）
+      OPS_METRICS_TOKEN: ${OPS_METRICS_TOKEN:-}
+    volumes:
+      - ./deploy/ops/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=512MB
+    mem_limit: 384m
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: dc_grafana
+    ports:
+      # 只绑本机：面板走 Caddy 反代或 SSH 隧道访问，不对公网直接开端口
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    mem_limit: 384m
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
   redis_data:
   caddy_data:
   caddy_config:
+  prometheus_data:
+  grafana_data:

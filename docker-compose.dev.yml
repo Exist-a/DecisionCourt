@@ -110,6 +110,10 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
       AGENT_GATEWAY_LLM_TIMEOUT_SEC: 90
+      # 2026-10-10 第 3 轮：/metrics 默认在生产收紧（401）。dev 显式开放，
+      # 保持 AGENTS.md §11.5「curl /metrics 翻动」这条既有验证习惯可用。
+      # 生产改为配 OPS_METRICS_TOKEN 给 Prometheus（见 docker-compose.yml）。
+      OPS_METRICS_PUBLIC: "true"
       # v2.10: dev 栈默认开 Agent Gateway（v2.10 前 dev compose 缺该项，
       # 需手动用临时容器注入；现在让 `docker compose up -d` 一键跑全链路）
       # 子开关 (SMART_COMPRESSION / CACHE_ENABLED / BREAKER_ENABLED 等)
@@ -175,8 +179,62 @@ services:
   # 循环 fatal 'Could not connect to any Docker Engine' (每60s restart 一次).
   # 替代方案: 终端 'docker compose -f docker-compose.dev.yml logs -f backend'.
 
+  # ── 可选：可观测「呈现层」（profile=ops，默认**不**启动）────────────────────
+  # 2026-10-10 第 3 轮（OPS-DASHBOARD-PLAN P2）：给 /metrics 一个 Prometheus 能抓的
+  # 形状（backend 支持 ?format=prometheus）+ 一块面板。
+  #
+  # ── 可观测「呈现层」（2026-10-10 第 3 轮）**默认启动** ──────────────────────
+  # 2026-10-10 第 3 轮（OPS-DASHBOARD-PLAN P2）：给 /metrics 一个 Prometheus 能抓的
+  # 形状（backend 支持 ?format=prometheus）+ 一块面板。
+  #
+  # 现在是默认启动（用户 2026-10-10 决定）。内存依据是**实测**的，不是估的：
+  #   生产机 2C2G（实测可用 938MB）、应用栈 ≈155MB、Prometheus ≈103MB、Grafana ≈194MB
+  #   → 观测栈 ≈300–400MB 放得下。两个容器都设了 mem_limit 把上限锁死，
+  #     避免观测栈跟应用的庭审峰值抢内存。
+  #
+  # 访问：面板 http://localhost:3001（admin / ${GF_ADMIN_PASSWORD:-admin}）、抓取 http://localhost:9090
+  # 不想跑观测栈时：docker compose -f docker-compose.dev.yml stop prometheus grafana
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: dc_dev_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/ops/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+      - dc_dev_prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      # 保留策略收紧：个人项目 + 低基数指标，不需要默认的长期全量保留
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=512MB
+    mem_limit: 384m
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: dc_dev_grafana
+    ports:
+      # host 3000 被 dev 前端占用，面板挪到 3001
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - dc_dev_grafana_data:/var/lib/grafana
+      # 自动配置数据源 + 预置仪表盘（部署即有效，不用手点）
+      - ./deploy/ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    mem_limit: 320m
+    depends_on:
+      - prometheus
+
 volumes:
   dc_dev_postgres_data:
   dc_dev_redis_data:
   dc_dev_backend_cache:
   dc_dev_go_mod:
+  dc_dev_prometheus_data:
+  dc_dev_grafana_data:
