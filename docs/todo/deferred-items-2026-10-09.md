@@ -623,11 +623,69 @@ TCP 发送缓冲填满后这次写会**无限阻塞**。而 Broadcast 是**同�
 
 ### 边界（诚实声明）
 
-- **多场连续跑的 soak 复测未做**（需要 docker，本时段环境有容器在跑不能动）——
-  "停滞不再复现"目前由根因修复 + 真实 socket 测试支撑，待 docker 空闲后补一场
-  多场 soak 确认。
 - 踢掉慢客户端后，**该用户的实时视图会断**（前端需重连/刷新恢复）——这是
   "宁可断视图也不卡死庭审"的取舍，属预期行为。
+
+### M10 附带新发现（2026-10-12 soak 复测准备时撞上）：启动恢复自死锁
+
+**看门狗上线的第一战就抓到一条藏了很久的真死锁**，而且不是 M10 修复引入的：
+是 ADR 0012 以来一直存在的老 bug，只是之前**完全静默**（无任何日志）。
+
+- **现象**：dev 栈启动后立即出现 5 个会话的
+  `WARN session lock held by another goroutine for a long time (caller=runCrossExamRound)`
+  并**无限增长**（15s→…→650s+），`recovery: all done` 永不打印。
+- **根因**：启动恢复链 `recovery.go → resumeCrossExam → runCrossExamRound`
+  中，`resumeCrossExam` 先 `lockSession` 拿到 session 锁，再**持锁**调用
+  `runCrossExamRound`；而后者内部会**再取同一把锁**（service.go 顶部注释
+  "锁必须在调 runCrossExamRound 之前释放——否则死锁"正是这条纪律）。`sync.Mutex`
+  **不可重入** → 自己锁死自己，goroutine 永久卡死。连带效应：
+  ① 这批卡死的恢复 goroutine **占满恢复并发闸**（默认 5），排在其后的会话恢复被饿死；
+  ② 每次**重启都复现**——只要 DB 里有 cross_exam 阶段的 active 会话。
+- **修复**：`resumeCrossExam` 锁内只做 phase 判断，判断后**立即解锁**再调
+  `runCrossExamRound`（与 `ProcessUserAction.continue_cross_exam` 同一条纪律）。
+- **回归钉**：`TestResumeCrossExam_NoSelfDeadlock`（service_lock_session_test.go）——
+  断言 resumeCrossExam 必须返回 + 返回后锁空闲；**已做反向验证**：git stash 掉
+  修复后该测试 10s 超时 FAIL，恢复修复后 0.08s PASS。
+- **此前为什么没人发现**：修复前该处死锁**零日志**（这正是 M10 之前的处境）；
+  看门狗 WARN 让它第一次可见。生产影响评估：线上重启时若有 active cross_exam
+  会话，它们的恢复同样会静默卡死（症状与"重启后没恢复"一致）——本修复对
+  生产同样生效。
+
+### M10 soak 复测结果（2026-10-12，docker 空闲后补做）✅
+
+**方法**：dev 栈（同一 backend 进程）内——3 场 API 驱动 standard 3 轮庭审
+（`scripts/soak-local-trial.py`，双稳定窗口 60s 判定轮间推进）
++ 1 场浏览器 UI 驱动庭审（真实 WS 客户端）。
+
+| 指标 | 结果 |
+|---|---|
+| API soak | 3/3 场到达 verdict，各 332s / 39–41 次 LLM 调用，判决含完整建议 |
+| UI 庭审 | 全流程跑通（开场→3 轮质证→判决书页渲染 35/65 打分 + 共识/争议） |
+| 锁看门狗 WARN | **全程 delta 0**（700 条历史累计均为修复前旧进程） |
+| 慢客户端 WARN | **0** |
+| 判决落库 | 4/4 场 `status=completed`、`current_phase=verdict` |
+
+**边界（诚实声明）**：soak 未复现"停滞"的原始触发条件（半死 WS 客户端是
+偶发的）；结论是"修复后多场连续跑无停滞 + 根因已从机制上移除（写 deadline）"，
+而非"在 soak 里复现了停滞再证明消失"。
+
+### M10 复测连带发现（2026-10-12）：opening 阶段「开始质证」按钮事件驱动缺口
+
+- **现象**：在 `opening.finished` 事件广播**之后**才打开/刷新庭审页的用户，
+  看不到「开始质证」按钮（该按钮此前只由 WS 事件 `waitingForNextRound` 置位）
+  → 页面无推进入口，只剩「直接判决」。
+- **同类前例**：v2.13 D22 现象 2 修过 evidence 阶段的同款问题（"重开后无按钮
+  可点"），当时 opening 阶段没一并处理。
+- **修复**（前端）：`CourtroomScene.tsx` 增加 `openingSpeechesDone` —— 从已
+  hydrate 的 messages 派生"控辩双方各有一条 opening 发言"，CTA 渲染条件扩为
+  `waitingForNextRound || phase==='evidence' || openingSpeechesDone`。
+- **验证**：浏览器实测——刷新页面后按钮出现、点击后第 1 轮正常启动、全程推进
+  到判决；`tsc --noEmit` 通过；前端 69 个 lib 单测全绿。
+- **另注**：UI 实测中 defender 发言的流式调用出现一次
+  `stream recv: http2: response body closed`（FileLogger status=error）。读码
+  确认为**良性尾部断开**：`streamSpeakContent` 在 content 完整后收到流关闭，
+  走 complete 路径（零 WARN、发言正常落库、无重试需求），非静默截断。
+  属于 DeepSeek 侧瞬态，不需修复；记录在此供将来排查同类日志时对照。
 
 ---
 

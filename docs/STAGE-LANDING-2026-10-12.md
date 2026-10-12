@@ -131,7 +131,17 @@ WARN investigator search failed  session_uuid=… dispatcher=prosecutor
 
 **修复（两层）**：① hub 每次写前 `SetWriteDeadline(5s)`，超时 → WARN + 踢掉慢客户端，庭审继续；② `Service.lockSession` 看门狗助手替换全部 9 个持锁点，等待超 5s 每 5s WARN（未来任何新的无界阻塞都会出声）。
 
-**验证**：真实 gorilla WS socket 单测（慢客户端 48MB 灌入 → 5.4s 返回 + 客户端被移除 + 健康客户端不受影响）+ 锁看门狗 3 例 + `go test ./...` exit 0。**边界**：多场 soak 复测待 docker 空闲后补做。详见 [`deferred-items-2026-10-09 §M10`](todo/deferred-items-2026-10-09.md)。
+**验证**：真实 gorilla WS socket 单测（慢客户端 48MB 灌入 → 5.4s 返回 + 客户端被移除 + 健康客户端不受影响）+ 锁看门狗 3 例 + `go test ./...` exit 0。**soak 复测（2026-10-12 补做）**：见下「M10 复测」小节。详见 [`deferred-items-2026-10-09 §M10`](todo/deferred-items-2026-10-09.md)。
+
+### M10 复测（2026-10-12，docker 空闲后补做）：看门狗首战抓出一条老死锁
+
+soak 前置启动 dev 栈时，看门狗**立刻**对 5 个历史 stuck 会话持续 WARN（等锁 650s+ 不止、`recovery: all done` 永不打印）——定位发现是一条 **ADR 0012 以来的老死锁**（非 M10 修复引入）：启动恢复链 `resumeCrossExam` **持锁**调用 `runCrossExamRound`，后者再取同一把不可重入的 `sync.Mutex` → 恢复 goroutine 永久自锁；且这批卡死 goroutine 占满恢复并发闸（默认 5）。此前它**零日志静默卡死**（正是 M10 之前的处境），生产重启时同样会复现。
+
+**修复**：`resumeCrossExam` 锁内只做 phase 判断、判断后立即解锁再调 `runCrossExamRound`；回归钉 `TestResumeCrossExam_NoSelfDeadlock`（反向验证：stash 修复后 10s 超时 FAIL、恢复后 0.08s PASS）。
+
+**soak 复测结果**：同一 backend 进程内 3 场 API 驱动 + 1 场浏览器 UI 驱动 standard 3 轮庭审全部到达判决（API 3/3 各 332s / 39–41 次 LLM 调用；UI 全流程含判决书页渲染）——**锁看门狗 WARN delta 0、慢客户端 WARN 0**。边界：未在 soak 里复现原始停滞触发条件（半死 WS 客户端偶发），结论是"根因已从机制上移除 + 多场连续跑无停滞"。
+
+**UI 复测连带发现（已修）**：opening 阶段「开始质证」按钮此前**只**由 WS 事件 `opening.finished` 置位——事件广播后才打开/刷新页面的用户看不到按钮（只剩「直接判决」）。同款问题 v2.13 D22 已在 evidence 阶段修过。修法：`CourtroomScene.tsx` 从已 hydrate 的 messages 派生 `openingSpeechesDone` 兜底渲染 CTA；浏览器实测刷新后按钮出现、全流程推进到判决，`tsc --noEmit` + 前端 69 个 lib 单测全绿。
 
 ### 🟡 单测覆盖但真机未观察到（低风险）
 

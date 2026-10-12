@@ -196,7 +196,12 @@ Agent 需要熟悉以下核心文档：
   `hub.Broadcast` 对 WS 客户端**从不设置写 deadline** → 半死客户端把持 session 锁的
   整轮 goroutine 无限阻塞（不是锁泄漏，定性已修正）。修法：hub 写加 5s deadline +
   WARN 踢慢客户端；`Service.lockSession` 看门狗替换全部 9 个持锁点（等待超 5s 每 5s
-  WARN）。soak 复测待 docker 空闲后补。见 [`deferred-items-2026-10-09 §M10`](docs/todo/deferred-items-2026-10-09.md)。
+  WARN）。**soak 复测已做（2026-10-12）**：同进程 3 场 API + 1 场浏览器 UI 庭审全部
+  到达判决，锁看门狗 WARN delta 0 / 慢客户端 WARN 0；看门狗首战另抓出一条
+  **启动恢复自死锁**（`resumeCrossExam` 持锁调 `runCrossExamRound` 重入，ADR 0012
+  以来一直静默存在，已修 + 回归钉 `TestResumeCrossExam_NoSelfDeadlock`）；
+  UI 复测还修了 opening 阶段「开始质证」按钮纯事件驱动的缺口（刷新后无按钮，
+  与 D22 evidence 阶段同款）。见 [`deferred-items-2026-10-09 §M10`](docs/todo/deferred-items-2026-10-09.md)。
 - ⚠️ **纪律提醒**：本批发现第 2 轮曾误报"全量测试全绿"（`| head` 掩盖了退出码）。
   **跑 `go test ./...` 必须看真实退出码，不要用管道过滤后的输出判断成败。**
 

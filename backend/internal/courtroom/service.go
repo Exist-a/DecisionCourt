@@ -1104,13 +1104,18 @@ func (s *Service) resumeOpening(session model.CourtSession) error {
 }
 
 func (s *Service) resumeCrossExam(session model.CourtSession) error {
+	// 2026-10-12 (M10 soak 复测发现): 锁内只做 phase 判断,必须在调
+	// runCrossExamRound 之前解锁 —— 后者内部会再获取同一把锁,而 sync.Mutex
+	// 不可重入,持锁自调 = 永久死锁(与 ProcessUserAction continue_cross_exam
+	// 的注释同一条纪律)。此前启动恢复对 cross_exam 会话每次必然自死锁:
+	// goroutine 卡死、占满恢复并发闸(默认 5)、"recovery: all done" 永不
+	// 打印 —— 直到看门狗 WARN 把它喊出来才可见。
 	lock := s.lockSession(session.SessionUUID, "resumeCrossExam")
-	defer lock.Unlock()
-
-	if session.CurrentPhase != model.PhaseCrossExam {
+	isCrossExam := session.CurrentPhase == model.PhaseCrossExam
+	lock.Unlock()
+	if !isCrossExam {
 		return nil
 	}
-
 	return s.runCrossExamRound(context.Background(), session)
 }
 

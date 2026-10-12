@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/decisioncourt/backend/internal/model"
 )
 
 func newLockWatchdogService() *Service {
@@ -81,4 +83,35 @@ func TestLockSession_ConcurrentCallersAllAcquireEventually(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("10s 内未全部拿到锁")
 	}
+}
+
+// TestResumeCrossExam_NoSelfDeadlock 是 2026-10-12 soak 复测发现的启动恢复
+// 自死锁的回归钉:resumeCrossExam 此前持锁调用 runCrossExamRound(内部再取
+// 同一把不可重入的 sync.Mutex)→ 自己锁死自己,recovery goroutine 永不返回、
+// 占满恢复并发闸(默认 5)、"recovery: all done" 永不打印。
+//
+// 修复后契约:resumeCrossExam 在调 runCrossExamRound 前必须释放锁
+// (runCrossExamRound 自己加锁,与 ProcessUserAction.continue_cross_exam
+// 的注释同一条纪律)。nopLLM 下 runCrossExamRound 会因发言失败快速返回
+// error —— error 本身不算失败,**必须返回**才是断言重点。
+func TestResumeCrossExam_NoSelfDeadlock(t *testing.T) {
+	svc, db, _, _ := newLockTestService(t)
+	session := seedSessionForLock(t, db, model.PhaseCrossExam, 1)
+
+	done := make(chan error, 1)
+	go func() { done <- svc.resumeCrossExam(session) }()
+	select {
+	case err := <-done:
+		t.Logf("resumeCrossExam 返回(允许 error): %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("resumeCrossExam 10s 未返回 = 持锁自调 runCrossExamRound 的重入死锁回归")
+	}
+
+	// 死锁的旁证:若上一 goroutine 卡死,session 锁仍被持有 → TryLock 应失败;
+	// 修复后锁已释放,TryLock 必须成功。
+	lock := svc.getSessionLock(session.SessionUUID)
+	if !lock.TryLock() {
+		t.Fatal("resumeCrossExam 返回后 session 锁仍被持有(锁泄漏)")
+	}
+	lock.Unlock()
 }

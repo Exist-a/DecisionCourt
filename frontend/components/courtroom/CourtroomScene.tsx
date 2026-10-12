@@ -521,6 +521,26 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
   const clerk = agents.find((a) => a.agent_type === "clerk");
   const judge = agents.find((a) => a.agent_type === "judge");
 
+  // 2026-10-12 (M10 soak 发现): opening 阶段的「开始质证」入口此前**只**由
+  // WS 事件 opening.finished 置位 (waitingForNextRound)。用户在事件广播之后
+  // 才打开/刷新庭审页时事件已错过 → 按钮永不出现,只剩「直接判决」死路。
+  // 与 D22 现象 2 (evidence 阶段同类问题) 同款修法: 从已 hydrate 的 messages
+  // 派生"开场陈述已完成" (控辩双方各有一条 opening 发言), 不单靠事件。
+  const openingSpeechesDone =
+    session?.current_phase === "opening" &&
+    messages.some(
+      (m) =>
+        m.phase === "opening" &&
+        m.action_type === "speak" &&
+        m.agent_type === "prosecutor",
+    ) &&
+    messages.some(
+      (m) =>
+        m.phase === "opening" &&
+        m.action_type === "speak" &&
+        m.agent_type === "defender",
+    );
+
   const currentSpeakerName = getCurrentSpeakerName(agents, currentBubble);
 
   // 单一数据源：所有阶段相关的 UI 文案
@@ -1018,8 +1038,13 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
               {/* v2.13 (deferred D22 现象 2): evidence 阶段(补充证据重开后)
                   也要出现「进入第 N 轮」入口 —— 此前只有 WS 事件置位的
                   waitingForNextRound 才渲染,而重开走的是判决页跳转,事件早
-                  就发过了 → 用户回到举证阶段后无按钮可点。 */}
-              {(waitingForNextRound || session.current_phase === "evidence") && (
+                  就发过了 → 用户回到举证阶段后无按钮可点。
+                  2026-10-12 (M10 soak 发现): opening 阶段同款 —— 事件广播后
+                  才打开/刷新页面的用户靠 openingSpeechesDone (messages 派生)
+                  兜底渲染「开始质证」。 */}
+              {(waitingForNextRound ||
+                session.current_phase === "evidence" ||
+                openingSpeechesDone) && (
                 <Button
                   size="sm"
                   onClick={() => {
