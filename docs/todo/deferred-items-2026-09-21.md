@@ -13,6 +13,12 @@
 
 ## D4. logs/ retention helper（v2.8 PR-3 call out）
 
+**✅ 已实施（2026-10-12，F4，方案 B）**：`agent_gateway.PruneOldLogs(logDir, retentionDays)` —— 启动期一次性清理超过 `AGENT_GATEWAY_LOG_RETENTION_DAYS`（默认 **30**，≤0 关闭）的
+`agent_gateway_*.log`。只匹配该前缀/后缀的普通文件（不碰子目录 / 其它产物）；单文件删除失败只 WARN。
+`cmd/server/main.go` 在 `ProbeLogDir` 之后调用；**无 cron 依赖**（保持 single-binary），**不在写热路径上做副作用**（符合下方"不做什么"边界）。
+验证：单测 `log_retention_test.go`（3 例）+ **实跑** —— 重启 dev 后端出现
+`log retention: removed old log file path=logs/agent_gateway_2026-07-01.log age_days=103 retention_days=30`，目录文件数 6→5。
+
 ### 现象
 - v2.8 PR-3 (ADR 0042) 引入 `AGENT_GATEWAY_FILE_LOGGER_PROMPTS=full` opt-in，让
   LogEntry 写 system prompt + input messages + output content。

@@ -4,7 +4,7 @@
 |---|---|
 | **编号** | 0033 |
 | **标题** | v1.0.4 LLM Trace 架构：FileLogger JSON Lines 读端聚合 + REST + 前端时间轴 |
-| **状态** | ✅ Accepted |
+| **状态** | ⚠️ **部分归档（2026-10-12）** —— 原 ✅ Accepted。本 ADR 的**读端**（`internal/trace/` 聚合器/解析器 + REST `/traces/*` + 前端可视化）已随 R4 于 2026-10-12 **整体删除**（前端视图 2026-10-08 先删、后端端点 2026-10-12 补删；无消费者 = 可达性死代码）。**写端（`agent_gateway.FileLogger` JSON Lines 落盘）仍在**，可观测栈照常消费。本 ADR 保留为历史决策记录；**不要再据此认为 `/traces` 端点存在**。 |
 | **作者** | Exist + ZCode Agent |
 | **决策日期** | 2026-08-22 |
 | **触发** | V1-ROADMAP M3 v1.0.4 "LLM Trace 可视化 + Framer Motion 微动效" |

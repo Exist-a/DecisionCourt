@@ -168,7 +168,13 @@ export function usePhaseUI(params: UsePhaseUIParams): PhaseUI {
         case "appeal":
           guideText = "如需补充证据重新辩论，可点击「直接判决」旁的选项。";
           speakerHint = "等待你的下一步操作";
-          placeholder = "可补充证据重新辩论";
+          // R5-d 收尾：后端状态机在 appeal 阶段**禁止 submit_evidence**
+          // （statemachine.go：closing/deliberation/verdict/appeal 一律 reject），
+          // 唯一支持路径是 reopen_trial。此前这里输入栏仍可打字、placeholder 还写
+          // "可补充证据重新辩论" → 提交必被拒。改为禁用 + 引导走重开入口。
+          placeholder = "庭审已判决，如需继续请使用「重开庭审」";
+          inputDisabled = true;
+          inputHelpText = "如需补充证据重新辩论，请点击「重开庭审」";
           break;
       }
     }

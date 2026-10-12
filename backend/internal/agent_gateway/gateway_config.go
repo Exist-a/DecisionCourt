@@ -62,6 +62,9 @@ type GatewayConfig struct {
 	// MaterialKeepRecentN (v2.12 M8-2 第 2 轮)：素材块下限 —— 强制保留最新 N 条
 	// 素材（庭审历史/证据），防止预算紧张时丢光整段历史。默认 6。
 	MaterialKeepRecentN int
+	// LogRetentionDays (v2.12 F4 / deferred D4)：启动期清理超过该天数的
+	// agent_gateway_*.log。默认 30；≤0 关闭。
+	LogRetentionDays int
 	// SmartCompressionAbstractiveSummary (v2.10 ADR 0044 #6) 启用 abstractive 摘要：
 	// 丢弃消息成段时不再只做 extractive anchor 拼接，而是额外调一次轻量 LLM
 	// 生成保留推理链的摘要。默认 false（每次 trial 多一次 LLM 调用，需用户 opt-in）。

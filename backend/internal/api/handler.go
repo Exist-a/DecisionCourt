@@ -19,7 +19,6 @@ import (
 	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/ratelimit"
 	"github.com/decisioncourt/backend/internal/idempotency"
-	"github.com/decisioncourt/backend/internal/trace"
 	"github.com/decisioncourt/backend/internal/util"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -75,23 +74,10 @@ type Handler struct {
 	// nil 时 RegisterPromptLabRoutes 不注册任何路由(降级为 404)。
 	promptLab PromptLabClient
 
-	// v1.0.4 PR-C1 Trace: /api/v1/courtrooms/:uuid/traces/* REST 端点依赖。
-	// 注入方式: handler.WithTraceStore(trace.NewFileTraceStore(logDir))
-	// nil 时 RegisterTraceRoutes 不注册路由(降级为 404)。
-	traceStore trace.Store
-
 	// v2.11 (deferred D12): GET /courtrooms/:uuid/events 的数据源。
 	// 默认走 GORM 查 decision_events；测试注入内存 fake。
 	// nil 时端点降级为空列表（不 404，保持"无数据 ≠ 出错"语义）。
 	eventLister DecisionEventLister
-}
-
-// WithTraceStore 注入 trace.Store。装配阶段(main.go)调用一次。
-// 修复: 之前 PR-C1 文档注释里写的 "handler.traceStore = ..." 跨包访问
-// private 字段编译失败,导致 main.go 漏注入,/traces 端点从未注册。
-// 加 setter 与 WithMetrics / WithEventRecorder 同模式。
-func (h *Handler) WithTraceStore(store trace.Store) {
-	h.traceStore = store
 }
 
 // WithEventRecorder 注入前端埋点 recorder。装配阶段(main.go)调用一次。
@@ -251,9 +237,6 @@ func (h *Handler) RegisterAPIRoutes(api *gin.RouterGroup) {
 	// nil 时 (老部署 / 测试场景) 不注册,降级为 404。
 	h.RegisterPromptLabRoutes(api)
 
-	// v1.0.4 PR-C1 Trace REST 端点。
-	// nil 时 (老部署 / 测试场景) 不注册,降级为 404。
-	h.RegisterTraceRoutes(api)
 }
 
 func (h *Handler) HealthHandler(c *gin.Context) {

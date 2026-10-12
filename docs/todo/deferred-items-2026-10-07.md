@@ -803,6 +803,15 @@ v2.13 收口后的浏览器实测暴露 3 个**新的运行时缺陷**，都是�
 
 **遗留（未处理，需决策）**：后端 `/api/v1/courtrooms/:uuid/traces` REST 端点 + `internal/trace` 聚合器/解析器 + trace 落盘仍在，但**前端已无消费者**，现在是可达性死代码。相关注释（`api/handler_trace.go:99`、`trace/parser.go:6`、`trace/aggregator.go:20`）仍写着「供前端 TrialReplay 渲染」，已过时。要清理需要单独一轮（涉及 `AgentGatewayTrace` 写入路径 + metrics + 测试），本次未动。
 
+**✅ R4 后端清理已收口（2026-10-12，F1）**：用户确认「那可以删了」→ 后端 trace 子系统**整体删除**：
+`backend/internal/trace/`（aggregator / parser / store + 4 个测试文件）、
+`backend/internal/api/handler_trace.go` + 测试、`Handler.traceStore` 字段 + `WithTraceStore`、
+`RegisterTraceRoutes` 调用、`main.go` 的 `trace.NewFileTraceStore` 注入 + import、
+前端 `types/index.ts` 的 `TraceRun` / `TraceRunNode` / `Trace` / `TraceListResponse` / `TraceDetailResponse` 类型。
+**边界澄清（勿混淆）**：被删的只是「把 `logs/agent_gateway_*.log` 再解析成调用树」这一层；
+**trace 数据本身没丢**（LLM 调用在 `llm_calls` 表 + FileLogger 文件里，可观测栈 Prometheus/Grafana + `/metrics` 照常消费）。
+验证：`go build ./...` + `go test ./...` 全绿、`tsc --noEmit` 干净。
+
 **待办清单影响**：V1-ROADMAP 里 v1.0.4 PR-C2「Trace 前端可视化」这条已交付项**现已被移除**，后续叙述不应再把它当作现有能力。
 
 ### R5 庭审现场布局重做 + 气泡改顶层浮层（2026-10-08）
@@ -843,6 +852,22 @@ v2.13 收口后的浏览器实测暴露 3 个**新的运行时缺陷**，都是�
 - `CourtroomScene.handleSubmitEvidence` 提交瞬间 push 一条占位；`useEffect` 监听 `store.evidences.length` 增量，按 **FIFO** 消掉对应占位（真正的证据由后端 `evidence.added` 落库后出现）。
 
 **已知边界（未做）**：只有"按数量增量 FIFO 消占位"，没有做超时兜底 —— 若提交最终失败（例如后端拒绝），占位会一直停在「排队中」。失败路径要精确对应需要后端回一个可关联的 request_id，属后续增强。
+
+**✅ R5-d 收尾（2026-10-12，F3）**：三处一次收掉 ——
+
+1. **超时兜底**：`PendingEvidence` 加 `createdAt` / `failed`；`CourtroomScene` 每 5s 扫一次，
+   超过 `PENDING_EVIDENCE_TIMEOUT_MS`(30s) 未落库 → 标 `failed`，`EvidenceBoard` 显示
+   「提交超时」（红色）并给「移除」按钮（新增 `onDismissPending` 入参）。判定抽成纯函数
+   `frontend/lib/pendingEvidence.ts::markTimedOut` + `lib/pendingEvidence.test.ts`（5 例）。
+2. **死字段 `inputHelpText`**：`usePhaseUI` 一直产出、`CourtroomScene` 从未渲染。它承载
+   "当前阶段不能打字但可以怎么做"的引导（如 closing 提示去点「+ 提交证据」），删掉会丢 UX
+   → 现于底部输入栏下方渲染（`data-testid="phase-input-help"`）。
+3. **appeal 阶段输入栏**：后端状态机在 appeal **禁止 `submit_evidence`**（`statemachine.go:71`），
+   唯一路径是 `reopen_trial`；但前端 appeal 分支输入栏仍可打字、placeholder 还写"可补充证据
+   重新辩论" → 提交必被拒。改为 `inputDisabled=true` + placeholder 指向「重开庭审」+ 对应 helpText。
+
+**验证**：`tsc --noEmit` 干净；`lib/*.test.ts` 107/107（新增 5）；浏览器实测提交证据正常落库、
+占位正确清除、页面重载无运行时错误。
 
 **R5-d 补漏（2026-10-09，用户实测反馈）**：R5-d 只给**证据板表单**那一条路径加了占位。庭审页底部输入栏（`Input` + 发送按钮）当时是**另一份** `submit_evidence` 发送逻辑（`handleSendInput`），没跟占位逻辑走 —— 于是"从底部输入框提交证据"看不到「排队中」，用户反馈为"没有显示排队中的图标"。
 
@@ -964,6 +989,12 @@ denied: unknown manifest class for application/vnd.oci.empty.v1+json
 **为什么值得修（不是"设计内的降级"）**：ADR 0031 §57 确实把 fallback 写成设计路径，但它针对的是「加载失败」的兜底；这里的情况是**打包漏文件导致必然失败**。更要命的是方向性：dev 栈 `bind mount ./backend:/app`，本地**一直**走 YAML，所以线上跑的恰是没被测过的那条路。YAML 与 hardcoded 在文档里声明「1:1 等价」，但**没有任何测试断言这一点**（`HardcodedBaseRules` 在 `_test.go` 里零引用）。
 
 **修法**：runtime 阶段补 `COPY --from=builder /app/prompts /app/prompts`。
+
+**✅ R10 等价性护栏已补（2026-10-12，F2）**：此前「YAML 与 hardcoded 1:1 等价」只是注释声明、
+零测试。现加 `backend/internal/agent/prompts_base_rules_equivalence_test.go`：
+`TestHardcodedBaseRules_MatchesYAML` 加载 `prompts/base.yaml` 并与 `HardcodedBaseRules()`
+**逐字节比较**（唯一允许差异：末尾换行 —— Go 原始字符串字面量以换行结尾，YAML 块标量文件末尾无换行；
+实测 yaml=7604B / hardcoded=7605B，首个差异在最后一字节）。任一侧漂移即失败并打印首个差异位置 + 上下文。
 
 **附带（同批，production-retrospective §4 P1-2）**：deploy.yml 后端 build 补 `build-args: VERSION=${{ env.TAG }}`。此前镜像里 `main.version` 恒为 `dev`，"线上跑的是哪版"只能靠镜像 tag 反推。
 

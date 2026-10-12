@@ -24,6 +24,8 @@ interface EvidenceBoardProps {
   sessionId: string;
   // v2.13: 已提交但尚未落库的证据（后端按 session 串行处理，发言期间提交会排队）
   pendingEvidences?: PendingEvidence[];
+  // v2.13 收尾(R5-d): 提交超时的占位允许用户手动移除。
+  onDismissPending?: (id: string) => void;
 }
 
 /**
@@ -31,12 +33,23 @@ interface EvidenceBoardProps {
  * 根因：`SubmitEvidence` 要拿 session 互斥锁（ADR 0012 决策 1），律师发言轮次
  * 持同一把锁 → 发言途中归档会排到该轮结束才落库。此前 UI 毫无反馈，看起来像
  * "点了没反应"。这里做乐观插入 + 「排队中」角标，落地后自动换成正式条目。
+ *
+ * R5-d 收尾：此前占位**只靠"证据数增加"按 FIFO 消**，若提交最终失败（后端拒绝 /
+ * 网络断），占位会**永久停在"排队中"**。现加 `createdAt` + `failed`：超过
+ * PENDING_EVIDENCE_TIMEOUT_MS 未落库即标为"提交超时"，用户可手动移除。
  */
 export interface PendingEvidence {
   id: string;
   content: string;
   type: EvidenceType;
+  /** 乐观插入的时间戳（毫秒），用于超时判定。 */
+  createdAt: number;
+  /** 超时未落库 → true，UI 显示"提交超时"而非"排队中"。 */
+  failed?: boolean;
 }
+
+/** 占位超过该时长仍未落库 → 判定为"提交超时"。 */
+export const PENDING_EVIDENCE_TIMEOUT_MS = 30000;
 
 const evidenceTypeLabels: Record<EvidenceType, string> = {
   fact: "事实",
@@ -59,7 +72,7 @@ const sourceColors: Record<string, { tab: string; ink: string }> = {
   clarification_answer: { tab: "#A89F8E", ink: "#5C564F" },
 };
 
-export function EvidenceBoard({ evidences, onSubmit, sessionId, pendingEvidences = [] }: EvidenceBoardProps) {
+export function EvidenceBoard({ evidences, onSubmit, sessionId, pendingEvidences = [], onDismissPending }: EvidenceBoardProps) {
   const [content, setContent] = useState("");
   const [type, setType] = useState<EvidenceType>("fact");
   const [expanded, setExpanded] = useState(false);
@@ -108,17 +121,41 @@ export function EvidenceBoard({ evidences, onSubmit, sessionId, pendingEvidences
                     待归档
                   </span>
                   <span
-                    className="text-[10px] uppercase tracking-wider text-inkSoft font-data px-1.5 py-0.5 border border-rule rounded-sm flex items-center gap-1"
-                    title="已提交，正等待本轮发言结束（后端按 session 串行处理）"
+                    className={
+                      p.failed
+                        ? "text-[10px] uppercase tracking-wider text-seal-ink font-data px-1.5 py-0.5 border border-seal rounded-sm flex items-center gap-1"
+                        : "text-[10px] uppercase tracking-wider text-inkSoft font-data px-1.5 py-0.5 border border-rule rounded-sm flex items-center gap-1"
+                    }
+                    title={
+                      p.failed
+                        ? "提交后长时间未落库，可能已被拒绝或网络中断"
+                        : "已提交，正等待本轮发言结束（后端按 session 串行处理）"
+                    }
                     data-testid="pending-evidence-chip"
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-seal animate-pulse" />
-                    排队中
+                    <span
+                      className={
+                        p.failed
+                          ? "w-1.5 h-1.5 rounded-full bg-seal"
+                          : "w-1.5 h-1.5 rounded-full bg-seal animate-pulse"
+                      }
+                    />
+                    {p.failed ? "提交超时" : "排队中"}
                   </span>
                 </div>
                 <p className="text-xs text-inkSoft leading-relaxed line-clamp-3 text-display">
                   {p.content}
                 </p>
+                {p.failed && onDismissPending && (
+                  <button
+                    type="button"
+                    onClick={() => onDismissPending(p.id)}
+                    className="mt-1.5 text-[10px] text-seal-ink hover:underline font-data"
+                    data-testid="pending-evidence-dismiss"
+                  >
+                    移除
+                  </button>
+                )}
               </div>
             ))}
           </div>

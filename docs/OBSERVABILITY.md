@@ -408,7 +408,7 @@ curl -X POST "$B/prompts/eval" -b "dc_session=$SESS; XSRF-TOKEN=$RAW" -H "X-XSRF
 |---|---|---|
 | 会话预算烧了多少（`budget_used / budget_total`） | FileLogger JSON 的 `budget_used` 字段 | 没有对应的 gauge/counter 埋点 —— **想在图上看只能加指标** |
 | 每次调用的 prompt 版本（`prompt_version`） | `llm_calls` 表 / FileLogger JSON | 是行级字段，不是聚合指标 |
-| 「喂进去什么 / 出来什么」（`system_prompt` / `input_messages` / `output_content`） | `logs/backend/agent_gateway_<日期>.log` 或 `GET /courtrooms/:uuid/traces/*` | 落文件，不进内存指标 |
+| 「喂进去什么 / 出来什么」（`system_prompt` / `input_messages` / `output_content`） | `logs/backend/agent_gateway_<日期>.log`（需 `AGENT_GATEWAY_FILE_LOGGER_PROMPTS=full`） | 落文件，不进内存指标。~~`GET /courtrooms/:uuid/traces/*`~~ 已于 2026-10-12 随 R4 后端清理删除 |
 | 前端埋点的明细（哪 12 条、`event_type` 是什么） | `decision_events` 表 | 指标只按 HTTP 路径计数 |
 
 **结论**：这场庭审**该记的都在记**（业务动作 / 埋点 / LLM 调用 / token / 幻觉 / 回收 / 并发全部有），

@@ -138,7 +138,7 @@ func (h *Handler) WithPromptLab(c PromptLabClient) *Handler {
 //   接口签名无需变化 (handler 内部判断)。
 func (h *Handler) RegisterPromptLabRoutes(api *gin.RouterGroup) {
 	if h.promptLab == nil {
-		// 与 RegisterTraceRoutes 对称：nil 时**必须出声**。
+		// nil 时**必须出声**（与其它 Register*Routes 同一纪律）。
 		// 2026-10-09 的教训就是这个 return 之前是静默的 —— 装配漏调
 		// WithPromptLab()，日志里一个字都没有，直到有人去 curl 端点才发现
 		// 线上恒 404（"文档说有、实际没有"）。

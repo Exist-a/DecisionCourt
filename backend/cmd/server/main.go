@@ -28,7 +28,6 @@ import (
 	"github.com/decisioncourt/backend/internal/model"
 	"github.com/decisioncourt/backend/internal/observability"
 	"github.com/decisioncourt/backend/internal/promptlab"
-	"github.com/decisioncourt/backend/internal/trace"
 	"github.com/decisioncourt/backend/internal/search"
 	"github.com/decisioncourt/backend/internal/util"
 	"github.com/gin-contrib/cors"
@@ -83,6 +82,8 @@ func buildGatewayConfig(a config.AgentGatewayConfig) agent_gateway.GatewayConfig
 		KeepRecentForcedN:      a.KeepRecentForcedN,
 		SummaryInsertThreshold: a.SummaryInsertThreshold,
 		ScoreThreshold:         a.ScoreThreshold,
+		MaterialKeepRecentN:    a.MaterialKeepRecentN,
+		LogRetentionDays:       a.LogRetentionDays,
 		// v2.10 (ADR 0044 #6) abstractive 摘要开关。
 		SmartCompressionAbstractiveSummary: a.SmartCompressionAbstractiveSummary,
 
@@ -244,6 +245,14 @@ func main() {
 		} else {
 			slog.Info("agent_gateway: file logger log dir writable", "dir", gatewayCfg.LogDir)
 		}
+		// v2.12 (F4 / deferred D4)：启动期清理过期日志，防止 full 模式把磁盘写满。
+		// 无 cron 依赖（single-binary）；只在启动跑一次，不碰写热路径。
+		if n, err := agent_gateway.PruneOldLogs(gatewayCfg.LogDir, gatewayCfg.LogRetentionDays); err != nil {
+			slog.Warn("agent_gateway: log retention prune failed", "dir", gatewayCfg.LogDir, "err", err)
+		} else if n > 0 {
+			slog.Info("agent_gateway: log retention pruned old files",
+				"dir", gatewayCfg.LogDir, "removed", n, "retention_days", gatewayCfg.LogRetentionDays)
+		}
 	}
 
 	// v0.8 白盒化：把 metrics + GormEventRecorder 注入到 gatewayClient 装饰器层，
@@ -360,18 +369,9 @@ func main() {
 	// v0.10 前端埋点 (ADR 0020)：复用同一个 eventRecorder,前端事件落同一张表。
 	handler.WithEventRecorder(eventRecorder)
 
-	// v1.0.4 PR-C1 (修复): 注入 trace.Store 让 /api/v1/courtrooms/:uuid/traces 路由可注册。
-	// 之前 PR-C1 在 handler 侧加了 traceStore 字段 + RegisterTraceRoutes,
-	// 但 main.go 忘了 NewFileTraceStore 注入, 导致 handler.traceStore == nil,
-	// RegisterTraceRoutes(nil) 静默 return, /traces 端点从未注册 → 404。
-	// 复用 AGENT_GATEWAY_LOG_DIR (与 agent_gateway.FileLogger 同目录),
-	// 单文件 LRU 100 entries 缓存 (FileTraceStore 默认)。
-	traceLogDir := os.Getenv("AGENT_GATEWAY_LOG_DIR")
-	if traceLogDir == "" {
-		traceLogDir = "logs"
-	}
-	handler.WithTraceStore(trace.NewFileTraceStore(traceLogDir))
-	slog.Info("trace store enabled", "log_dir", traceLogDir, "type", "FileTraceStore")
+	// R4 收尾（2026-10-12）：`/traces` REST 端点 + internal/trace 已删除 —— 其前端
+	// 「Trace 可视化」视图在 R4 就移除了，后端端点长期无消费者（可达性死代码）。
+	// trace 数据本身仍在 `llm_calls` 表 + FileLogger 文件里，可观测栈照常消费。
 
 	// v0.9 (ADR 0014): 每用户每天 N 次 StartTrial 限流(防弱网/脚本刷 trial 烧 LLM 配额)。
 	// 默认 5 次/24h,可通过 USER_TRIAL_LIMIT 环境变量调整;置 0 禁用。

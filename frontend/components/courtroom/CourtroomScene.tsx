@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { createCourtWebSocket, type CourtEventHandler } from "@/lib/websocket";
 import { setGlobalWsRef } from "@/lib/wsHolder";
 import { saveMemoryCache, loadMemoryCache } from "@/lib/memoryCache";
+import { markTimedOut } from "@/lib/pendingEvidence";
 import type {
   Agent,
   EvidenceType,
@@ -26,7 +27,7 @@ import {
   toastWarning,
 } from "@/lib/errorBus";
 import { AgentAvatar } from "./AgentAvatar";
-import { EvidenceBoard, type PendingEvidence } from "./EvidenceBoard";
+import { EvidenceBoard, type PendingEvidence, PENDING_EVIDENCE_TIMEOUT_MS } from "./EvidenceBoard";
 import { MessageHistory } from "./MessageHistory";
 import { InvestigatorPanel } from "./InvestigatorPanel";
 import { MemoryAuditPanel } from "./MemoryAuditPanel";
@@ -141,6 +142,21 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
       setPendingEvidences((prev) => (prev.length === 0 ? prev : prev.slice(delta)));
     }
   }, [evidences.length]);
+
+  // v2.13 收尾（R5-d）：超时兜底。FIFO 只在"证据数增加"时消占位 —— 若提交最终失败
+  // （后端拒绝 / 网络断），占位会永久停在「排队中」。这里每 5s 扫一次，超过
+  // PENDING_EVIDENCE_TIMEOUT_MS 仍未落库的标为 failed（UI 显示「提交超时」+ 移除）。
+  useEffect(() => {
+    if (pendingEvidences.length === 0) return;
+    const timer = setInterval(() => {
+      setPendingEvidences((prev) => markTimedOut(prev, Date.now(), PENDING_EVIDENCE_TIMEOUT_MS).items);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [pendingEvidences.length]);
+
+  const dismissPendingEvidence = (id: string) => {
+    setPendingEvidences((prev) => prev.filter((p) => p.id !== id));
+  };
 
   // v1.0-patch (2026-08-22): hydrate 移到 app/court/[id]/page.tsx 共享
   // hydrateCourtroomStore()。本 useEffect 只做 4 件事:
@@ -437,7 +453,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
     // 结束才落库，没有这个占位用户会以为点了没反应（见 PendingEvidence 注释）。
     setPendingEvidences((prev) => [
       ...prev,
-      { id: `pending-${Date.now()}-${prev.length}`, content, type },
+      { id: `pending-${Date.now()}-${prev.length}`, content, type, createdAt: Date.now() },
     ]);
     // v0.10 (ADR 0020) fe.evidence_submitted:同上,只记录类型 + 字符数。
     getAnalytics().trackEvidenceSubmitted(type, content.length);
@@ -878,6 +894,7 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
           <EvidenceBoard
             evidences={evidences}
             pendingEvidences={pendingEvidences}
+            onDismissPending={dismissPendingEvidence}
             onSubmit={handleSubmitEvidence}
             sessionId={sessionId}
           />
@@ -1046,6 +1063,17 @@ export function CourtroomScene({ sessionId }: CourtroomSceneProps) {
               </Button>
             </div>
           </div>
+          {/* R5-d 收尾：usePhaseUI.inputHelpText 此前是**死字段**（从未渲染）。
+              它承载"当前阶段不能打字，但你可以怎么做"的引导（如 closing 阶段
+              提示去点「+ 提交证据」），删掉会丢 UX，故在此渲染。 */}
+          {phaseUI.inputHelpText && (
+            <p
+              className="mt-1.5 text-[11px] text-inkFaint text-display"
+              data-testid="phase-input-help"
+            >
+              {phaseUI.inputHelpText}
+            </p>
+          )}
         </div>
       </div>
 
