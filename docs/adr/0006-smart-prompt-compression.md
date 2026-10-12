@@ -14,7 +14,7 @@
 >
 > **状态更新（2026-10-12 已实施）**：上述方案**已落地（本地提交，未上线）**：
 > - **附带修 A1–A4 + 度量 A5**：截断改「保最近砍最旧」；限流不再砍 JSON 输出（`react_think` 决策 JSON 豁免 max_tokens）；预算拒绝补文件日志（含流式分支）；兜底摘要默认阈值 5→3（原值在 ReAct 下永不触发）；新增 `prompt_compression_saved_ratio` 指标。详见 [deferred-items-2026-10-09 §M8](../todo/deferred-items-2026-10-09.md)。
-> - **主重构 M8-2**：`buildInitialMessages` 把 system 拆成**契约块**（baseRules + 工具协议，永不压缩）与**素材块**（历史/证据，参与评分/贪心；新增 `AGENT_GATEWAY_MATERIAL_KEEP_RECENT_N` 默认 6 保最新历史）。**属行为变更 —— 真实 A/B 同题对跑尚未完成，完成前不应上线。**
+> - **主重构 M8-2**：`buildInitialMessages` 把 system 拆成**契约块**（baseRules + 工具协议，永不压缩）与**素材块**（历史/证据，参与评分/贪心；新增 `AGENT_GATEWAY_MATERIAL_KEEP_RECENT_N` 默认 6 保最新历史）。**真实 A/B 同题对跑已完成（2026-10-12）**：拆分使同场庭审少约 **6.0%** token（210,970 vs 224,396），机制 = 旧素材可被丢弃（最多 15→10 条）；两臂 **0 错误 / 0 重试 / 判决同向**，**未观察到质量回归**（进程级 + 判决方向层面；未做人工盲评）。见 [deferred-items-2026-10-09 §M8](../todo/deferred-items-2026-10-09.md)。
 >
 > **状态更新（2026-10-09 复测）**：⚠️ **下表的数字（含本行复测值）是合成 fixture 微基准，不是生产实测** —— 输入是测试里手写的假庭审（重复填充文本 + fake LLM + 人工灌预算到 throttle 档，见 `compression_eval_test.go` 的 `fixedTrialTranscript()`），且真实庭审的预算峰值 69.4% 压在 70% 触发线下、压缩从未触发（`OBSERVABILITY.md` §8.6）。它**只能用于策略横向对比，不能当产品指标**。实跑 `go test ./internal/agent_gateway/ -run TestCompressionEval_StrategyComparison -v` 现为：Legacy 19→6 条 / **70.3%**（不变）；Smart 19→**13** 条 / **34.1%**（原子组 17 / 保留 9 / 最近强制 1）。差异来源：v2.10 [ADR 0044](0044-token-compression-strategy-review.md) #5 把预算单位从"字符数"换成内容感知 `EstimateTokens`（CJK 1.5 tok/char、ASCII 0.25 tok/char），保留组数由 10 变 9。另注意：该 eval 测试只断言下限（legacy ≥25%、smart >0、`atomicKept ≥ 9`），**不钉**节省率与保留条数 —— 见 [deferred-items-2026-10-09 §M6](../todo/deferred-items-2026-10-09.md)。
 
