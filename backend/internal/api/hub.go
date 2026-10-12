@@ -21,6 +21,20 @@ import (
 // - 不影响普通广播(普通广播按 event 间隔本来就 > 30ms)
 const minChunkSpacing = 30 * time.Millisecond
 
+// writeTimeout 是对单个 WS 客户端**一次** WriteMessage 的硬上限（2026-10-12，
+// 修复庭审静默停滞）。
+//
+// 之前**从不设置写 deadline** —— 客户端半死（关页残留连接 / 网络中断 /
+// 停止读取）时，TCP 发送缓冲填满后 WriteMessage 会**无限阻塞**。而 Broadcast
+// 是同步发生在**持有 session 锁**的路径上（runCrossExamRound 整轮持锁、
+// streamSpeakContent 的逐 chunk 广播），一个慢/死客户端就能让整场庭审
+// **静默卡死**：后端零日志、无 LLM 调用、前端一直"进行中"，只有重启能恢复
+// （实测见 docs/STAGE-LANDING-2026-10-12.md §4 静默停滞）。
+//
+// 加 deadline 后：写不进去 → 5s 超时报错 → 踢掉该客户端（WARN 出声）→
+// 广播循环继续，庭审不再被单个客户端拖死。
+const writeTimeout = 5 * time.Second
+
 // client wraps a single WebSocket connection with a write-lock so
 // concurrent Broadcast callers (e.g. ReAct streaming + evidence-triggered
 // belief.diff / belief.updated events) serialize their WriteMessage calls.
@@ -107,10 +121,20 @@ func (h *Hub) Broadcast(sessionUUID string, event courtroom.Event) {
 	for c := range clients {
 		// 串行化每个 conn 的写操作,避免 "concurrent write to websocket"。
 		c.wmu.Lock()
+		// writeTimeout：写不进去的客户端 5s 踢掉，绝不无限阻塞
+		// （无限阻塞 = 持 session 锁的整轮 goroutine 静默卡死）。
+		_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 		writeErr := c.conn.WriteMessage(websocket.TextMessage, data)
 		c.wmu.Unlock()
 
 		if writeErr != nil {
+			// 出声：这是"庭审静默停滞"修复后的关键观测点 —— 如果日志里
+			// 频繁出现，说明有客户端反复写超时（网络差 / 半死连接）。
+			slog.Warn("hub: write failed, dropping slow client",
+				"session_uuid", sessionUUID,
+				"event_type", event.Type,
+				"error", writeErr,
+			)
 			// Remove broken connection.
 			h.Leave(sessionUUID, c.conn)
 			c.conn.Close()

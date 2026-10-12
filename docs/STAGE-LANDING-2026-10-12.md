@@ -123,9 +123,15 @@ WARN investigator search failed  session_uuid=… dispatcher=prosecutor
 
 ## 4. 遗留与下一步
 
-### 🔴 本阶段**新发现的真缺陷（未修，建议优先）**
+### 🔴 ~~本阶段**新发现的真缺陷（未修，建议优先）**~~ → ✅ **已于同日修复（M10）**
 
-**UI 驱动的庭审在同一后端进程跑多场之后出现「静默停滞」**：后端**无任何日志**、前端显示"质证进行中"却不再有 LLM 调用；**重启后端即恢复**。触发时机在多次 LLM 报错/预算拒绝之后出现。疑似 **ADR 0012 的 session 互斥锁在某条错误路径未释放**。与 M8-2 **无关**（Arm A 拆分开也停滞过；全新进程可正常跑完整场）。已登记在 [`deferred-items-2026-10-09 §M8`](todo/deferred-items-2026-10-09.md)。
+**UI 驱动的庭审在同一后端进程跑多场之后出现「静默停滞」**：后端**无任何日志**、前端显示"质证进行中"却不再有 LLM 调用；**重启后端即恢复**。
+
+**根因（2026-10-12 读码定位）**：不是锁泄漏（Lock/Unlock 配对逐处核过均正确），而是 **`hub.Broadcast` 对 WS 客户端写从不设置 deadline** —— 半死客户端（关页残留/网络中断）使 TCP 缓冲填满后 `WriteMessage` 无限阻塞，而广播同步发生在**持 session 锁**的 `runCrossExamRound` / 流式路径上 → 持锁方被无界阻塞 → 全 session 无声排队。原"疑似 session 互斥锁泄漏"定性修正。
+
+**修复（两层）**：① hub 每次写前 `SetWriteDeadline(5s)`，超时 → WARN + 踢掉慢客户端，庭审继续；② `Service.lockSession` 看门狗助手替换全部 9 个持锁点，等待超 5s 每 5s WARN（未来任何新的无界阻塞都会出声）。
+
+**验证**：真实 gorilla WS socket 单测（慢客户端 48MB 灌入 → 5.4s 返回 + 客户端被移除 + 健康客户端不受影响）+ 锁看门狗 3 例 + `go test ./...` exit 0。**边界**：多场 soak 复测待 docker 空闲后补做。详见 [`deferred-items-2026-10-09 §M10`](todo/deferred-items-2026-10-09.md)。
 
 ### 🟡 单测覆盖但真机未观察到（低风险）
 

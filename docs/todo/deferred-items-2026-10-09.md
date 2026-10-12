@@ -574,6 +574,63 @@ task=react_think_retry  msgs 2->2  chars 20850->20850  saved=0.0%  ratio=0.999
 
 ---
 
+## M10（🔴→✅ 2026-10-12 修复）庭审"静默停滞"：hub 广播无写超时
+
+### 现象（A/B 实验期间实测撞上）
+
+UI 驱动的庭审在**同一后端进程跑多场之后**，某场会卡死：后端**零日志**、无 LLM 调用，
+前端一直显示"质证进行中"；**重启后端即恢复**。修复前无法事后定位。
+
+### 根因（读码定位，非猜测）
+
+`backend/internal/api/hub.go::Broadcast` 对每个 WS 客户端 `conn.WriteMessage`
+**从不设置写 deadline**。客户端半死（关页残留连接 / 网络中断 / 停止读取）时，
+TCP 发送缓冲填满后这次写会**无限阻塞**。而 Broadcast 是**同步**发生在
+**持有 session 锁**（ADR 0012）的路径上：
+
+- `runCrossExamRound` 整轮持锁，每次广播（含逐 chunk 流式）都在锁内同步写；
+- `streamSpeakContent` 的每个 `agent.speak_chunk` 同样如此。
+
+于是**一个慢/死客户端 → 持锁的整轮 goroutine 卡死 → 该 session 后续所有请求
+无声排队**（`continue_cross_exam` 等也在锁上等）→ 症状 = "质证进行中" + 零日志。
+重启杀掉连接即恢复 —— 与实测完全吻合。"跑多场之后才出现"是因为出问题的
+半死连接是偶发的，而非必然。
+
+**所以这不是锁泄漏**（锁的 Lock/Unlock 配对逐处核过，均正确）；是**锁的持有方被
+无界阻塞**。原登记的"疑似 session 互斥锁泄漏"定性修正。
+
+### 修复（两层，均已落地）
+
+1. **hub.go 根修**：每次 `WriteMessage` 前 `SetWriteDeadline(5s)`；超时/报错 →
+   `WARN hub: write failed, dropping slow client`（出声）+ `Leave` 踢掉该客户端 +
+   关闭连接。广播循环继续，**庭审不再被单个客户端拖死**。
+2. **courtroom/service.go 观测兜底**：新增 `lockSession(sessionUUID, caller)` 助手
+   （语义 = `lock.Lock()` 阻塞等待），替换全部 **9 个**持锁点；锁被占用超过
+   **5s** 由看门狗 goroutine 每 5s 打 `WARN courtroom: session lock held by another
+   goroutine for a long time`（含 caller / 已等秒数 / 修复提示），拿到锁后补一条
+   INFO 记录等待时长。**即使未来出现新的无界阻塞，也会在日志里出声。**
+
+### 验证（真实 socket 单测，未用 docker —— 用户提供环境中另有容器在跑）
+
+- `hub_write_deadline_test.go`（2 例，**真实 gorilla WS 连接**）：
+  - 客户端连接后**不读** + 灌 48MB（远超 socket 缓冲，旧实现必无限阻塞）→
+    Broadcast 在 ~5.4s 返回、客户端被移出房间；日志出现
+    `WARN hub: write failed, dropping slow client … i/o timeout`。
+  - 同房间"健康客户端 + 慢客户端"并存：慢的被踢，健康的**继续收到事件**。
+- `service_lock_session_test.go`（3 例）：空闲即拿 / 被占时阻塞等待并在持有方
+  释放后拿到同一把 / 8 并发等待者全部最终进入。
+- `go build` + `go vet` + `go test -count=1 ./...` **exit 0**。
+
+### 边界（诚实声明）
+
+- **多场连续跑的 soak 复测未做**（需要 docker，本时段环境有容器在跑不能动）——
+  "停滞不再复现"目前由根因修复 + 真实 socket 测试支撑，待 docker 空闲后补一场
+  多场 soak 确认。
+- 踢掉慢客户端后，**该用户的实时视图会断**（前端需重连/刷新恢复）——这是
+  "宁可断视图也不卡死庭审"的取舍，属预期行为。
+
+---
+
 ## 核对方法（可复现）
 
 本批结论全部来自真实代码 grep / read，不采信文档：

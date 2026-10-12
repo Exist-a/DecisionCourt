@@ -283,6 +283,68 @@ func (s *Service) getSessionLock(sessionUUID string) *sync.Mutex {
 	return s.sessionLocks[sessionUUID]
 }
 
+// lockSessionWatchdogInterval / lockPollInterval：session 锁看门狗参数。
+// 等待每满 5s 打一条 WARN，让"锁被长期持有"从静默变有声（2026-10-12，
+// 配套 hub 写超时修复庭审静默停滞 —— 见 docs/STAGE-LANDING-2026-10-12.md §4）。
+const (
+	lockSessionWatchdogInterval = 5 * time.Second
+	lockPollInterval            = 200 * time.Millisecond
+)
+
+// lockSession 获取 session 互斥锁（语义与 lock.Lock() 相同：阻塞直到拿到），
+// 但被占用超过 lockSessionWatchdogInterval 时**每 5s 打一条 WARN**。
+//
+// 背景：runCrossExamRound / SubmitEvidence 等路径整轮持锁，任何持有方被永久
+// 阻塞（修复前：hub 广播无写超时可被慢客户端拖死）都会让该 session 的后续
+// 请求**无声排队** —— 前端显示"进行中"、后端零日志。看门狗不改变锁语义，
+// 只保证这种状态在日志里可见。
+//
+// 返回**已加锁**的 mutex；调用方负责 Unlock（与此前 lock.Lock() 用法一致，
+// 现有 defer lock.Unlock() / 显式 unlock 代码零改动）。
+func (s *Service) lockSession(sessionUUID, caller string) *sync.Mutex {
+	lock := s.getSessionLock(sessionUUID)
+	if lock.TryLock() {
+		return lock
+	}
+
+	// 被占用 → 起看门狗，每 5s WARN；拿到锁后停表。
+	waitStart := time.Now()
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(lockSessionWatchdogInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				slog.Warn("courtroom: session lock held by another goroutine for a long time",
+					"session_uuid", sessionUUID,
+					"caller", caller,
+					"waited_seconds", int(time.Since(waitStart).Seconds()),
+					"hint", "若持续增长，持有方大概率被永久阻塞（历史根因：hub 广播无写超时）；重启后端可恢复",
+				)
+			}
+		}
+	}()
+	slog.Info("courtroom: session lock busy, waiting",
+		"session_uuid", sessionUUID, "caller", caller)
+	for {
+		time.Sleep(lockPollInterval)
+		if lock.TryLock() {
+			break
+		}
+	}
+	waited := time.Since(waitStart)
+	close(done)
+	if waited >= lockSessionWatchdogInterval {
+		slog.Info("courtroom: session lock acquired after waiting",
+			"session_uuid", sessionUUID, "caller", caller,
+			"waited_seconds", int(waited.Seconds()))
+	}
+	return lock
+}
+
 // WithConcurrencyLimiter 注入 L0 全局并发 trial 信号量 (ADR 0027)。
 // 调用方式: NewService(...).WithConcurrencyLimiter(courtroom.NewConcurrencyLimiter(max))
 // nil 表示不限流 (向后兼容, 单测场景)。
@@ -686,8 +748,10 @@ func (s *Service) SubmitEvidence(
 	// v0.9 (ADR 0012 决策 1):同一 session 的并发 SubmitEvidence 必须串行化。
 	// 否则:并发请求 → 重复 belief_diff 写入 + 重复 evidence.added 广播 + 重复
 	// belief update。锁粒度按 session 切分,不影响其他 session。
-	lock := s.getSessionLock(sessionUUID)
-	lock.Lock()
+	// v0.9 (ADR 0012 决策 1): per-session 锁防同 session 并发提交撞车。
+	// 2026-10-12: 换 lockSession 看门狗 —— 持有方若被长期阻塞,每 5s WARN 出声
+	// (静默停滞修复的一部分),锁语义不变。
+	lock := s.lockSession(sessionUUID, "SubmitEvidence")
 	defer lock.Unlock()
 
 	var session model.CourtSession
@@ -772,8 +836,7 @@ func (s *Service) ProcessUserAction(
 	case "direct_verdict":
 		// Cancel any in-flight LLM call so the automatic loop exits quickly.
 		s.cancelCall(session.SessionUUID)
-		lock := s.getSessionLock(session.SessionUUID)
-		lock.Lock()
+		lock := s.lockSession(session.SessionUUID, "ProcessUserAction.direct_verdict")
 		defer lock.Unlock()
 		return s.finishTrial(ctx, session)
 	case "continue_cross_exam":
@@ -782,8 +845,7 @@ func (s *Service) ProcessUserAction(
 		// 锁范围: 只锁 transitionPhase 之前的临界区(round 自增判断 + 写 DB)。
 		// 锁必须在调 runCrossExamRound 之前释放 —— runCrossExamRound 内部
 		// 会再获取同一把锁,如果外层未释放则死锁。
-		lock := s.getSessionLock(session.SessionUUID)
-		lock.Lock()
+		lock := s.lockSession(session.SessionUUID, "ProcessUserAction.continue_cross_exam")
 		// User confirms to proceed to the next round.
 		nextRound := session.CurrentRound + 1
 		if nextRound > session.MaxRounds {
@@ -800,8 +862,7 @@ func (s *Service) ProcessUserAction(
 		// v0.9 (ADR 0012 决策 1):与 continue_cross_exam 同理 —— transitionPhase
 		// 之前的临界区需要持锁,避免双击导致 round=1 被写入两次。
 		// 锁范围同样缩到 transitionPhase,runCrossExamRound 自己重新加锁。
-		lock := s.getSessionLock(session.SessionUUID)
-		lock.Lock()
+		lock := s.lockSession(session.SessionUUID, "ProcessUserAction.start_cross_exam")
 		// User confirms to start cross_exam after opening.
 		if err := s.transitionPhase(&session, model.PhaseCrossExam, 1); err != nil {
 			lock.Unlock()
@@ -814,8 +875,7 @@ func (s *Service) ProcessUserAction(
 		// v0.9 (ADR 0012 决策 1):skip_agent 与 continue_cross_exam 一样需要在
 		// transitionPhase 之前持锁(runCrossExamRound 内部也加锁,但 transitionPhase
 		// 之外的部分仍有 race)。
-		lock := s.getSessionLock(session.SessionUUID)
-		lock.Lock()
+		lock := s.lockSession(session.SessionUUID, "ProcessUserAction.skip_agent")
 		nextRound := session.CurrentRound + 1
 		if nextRound > session.MaxRounds {
 			lock.Unlock()
@@ -838,8 +898,7 @@ func (s *Service) ProcessUserAction(
 	case "dispatch_investigator":
 		// v0.9 (ADR 0012 决策 1):同 session 并发 dispatch → 重复触发搜索 → 烧
 		// 调查员配额。锁粒度按 session,不影响其他 session 调查。
-		lock := s.getSessionLock(session.SessionUUID)
-		lock.Lock()
+		lock := s.lockSession(session.SessionUUID, "ProcessUserAction.dispatch_investigator")
 		defer lock.Unlock()
 		dispatcher, _ := payload["dispatcher"].(string)
 		query, _ := payload["query"].(string)
@@ -887,8 +946,7 @@ func (s *Service) ProcessUserAction(
 func (s *Service) reopenTrial(ctx context.Context, session model.CourtSession) error {
 	_ = ctx // reserved for future trace_id propagation
 
-	lock := s.getSessionLock(session.SessionUUID)
-	lock.Lock()
+	lock := s.lockSession(session.SessionUUID, "reopenTrial")
 	defer lock.Unlock()
 
 	// Re-read inside the lock so we don't race with another goroutine that
@@ -1046,8 +1104,7 @@ func (s *Service) resumeOpening(session model.CourtSession) error {
 }
 
 func (s *Service) resumeCrossExam(session model.CourtSession) error {
-	lock := s.getSessionLock(session.SessionUUID)
-	lock.Lock()
+	lock := s.lockSession(session.SessionUUID, "resumeCrossExam")
 	defer lock.Unlock()
 
 	if session.CurrentPhase != model.PhaseCrossExam {
@@ -1329,8 +1386,9 @@ func findAgentByID(agents []model.Agent, agentID *uuid.UUID) *model.Agent {
 }
 
 func (s *Service) runCrossExamRound(ctx context.Context, session model.CourtSession) (err error) {
-	lock := s.getSessionLock(session.SessionUUID)
-	lock.Lock()
+	// 整轮持锁（defer）。若持有方被永久阻塞（历史根因：hub 广播无写超时），
+	// 这里换 lockSession 让等待者在日志里出声（2026-10-12 静默停滞修复）。
+	lock := s.lockSession(session.SessionUUID, "runCrossExamRound")
 	defer lock.Unlock()
 
 	// v0.10.21 PR-D (P2-C1): 埋 RunCrossExamRound span

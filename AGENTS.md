@@ -192,8 +192,11 @@ Agent 需要熟悉以下核心文档：
   超时兜底 + 渲染死字段 `inputHelpText` + appeal 阶段输入栏禁用；F4 启动期日志 retention
   （`AGENT_GATEWAY_LOG_RETENTION_DAYS` 默认 30）。
 - **P2 可见面已定稿**为选项①「维持现状」。
-- 🔴 **新发现未修**：UI 驱动庭审在同一后端进程跑多场后**静默停滞**（后端无日志、前端仍显示
-  "质证进行中"，重启即恢复），疑似 **session 互斥锁泄漏**（ADR 0012）；与 M8-2 无关。建议优先排查。
+- **🔴→✅ 静默停滞已修（M10）**：UI 驱动庭审同一进程跑多场后**静默停滞**的根因是
+  `hub.Broadcast` 对 WS 客户端**从不设置写 deadline** → 半死客户端把持 session 锁的
+  整轮 goroutine 无限阻塞（不是锁泄漏，定性已修正）。修法：hub 写加 5s deadline +
+  WARN 踢慢客户端；`Service.lockSession` 看门狗替换全部 9 个持锁点（等待超 5s 每 5s
+  WARN）。soak 复测待 docker 空闲后补。见 [`deferred-items-2026-10-09 §M10`](docs/todo/deferred-items-2026-10-09.md)。
 - ⚠️ **纪律提醒**：本批发现第 2 轮曾误报"全量测试全绿"（`| head` 掩盖了退出码）。
   **跑 `go test ./...` 必须看真实退出码，不要用管道过滤后的输出判断成败。**
 
