@@ -5,7 +5,7 @@
 | **文档类型** | 方案/审计文档（**未实施**；用户 2026-10-11："按你说的方案记录到文档里面，先不做"） |
 | **日期** | 2026-10-11 |
 | **触发** | M8 实测"压缩省 0%"→ 复核数据时**发现原结论取样不全**，并顺带查出异常 |
-| **状态** | ⏳ 待立项评审；**代码未改** |
+| **状态** | ✅ **已实施（2026-10-12，本地提交未上线）** —— §2.3/§3.2 截断方向修（A1）、§3.1 限流豁免（A2）、§3.4 拒绝补日志（A3）、§3.5 摘要阈值（A4）、§2.2 system 拆「契约块+素材块」（M8-2）均已落地。**M8-2 属行为变更，真实 A/B 同题对跑未完成，完成前不应上线**。详见 [deferred-items-2026-10-09 §M8](todo/deferred-items-2026-10-09.md)。 |
 | **关联** | [`docs/todo/deferred-items-2026-10-09.md`](todo/deferred-items-2026-10-09.md) §M8 · [`docs/adr/0006-smart-prompt-compression.md`](adr/0006-smart-prompt-compression.md) · [`docs/AGENT-GATEWAY-BUDGET-PLAN.md`](AGENT-GATEWAY-BUDGET-PLAN.md) |
 
 ---
