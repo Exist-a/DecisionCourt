@@ -175,6 +175,28 @@ Agent 需要熟悉以下核心文档：
 - **P2 可见面**（是否让双方看到对方的**推理链**）已出方案文档
   [`docs/P2-VISIBILITY-PROPOSAL.md`](docs/P2-VISIBILITY-PROPOSAL.md)，**待用户评审、未实施**。
 
+### 6.2g 2026-10-12 收口批次（压缩 M8-2 + 技术债 F1–F4，本地已提交，**未 push**）
+
+完整落地记录（模块清单 / 验证证据 / A/B 数据 / 决策 / 遗留）见
+[`docs/STAGE-LANDING-2026-10-12.md`](docs/STAGE-LANDING-2026-10-12.md)。要点：
+
+- **压缩 M8-2 已实施**：system 拆「契约块（永不压缩）+ 素材块（可评分丢弃）」，新增
+  `AGENT_GATEWAY_MATERIAL_KEEP_RECENT_N`（默认 6）。**A1–A5** 附带修：截断改「保最近砍最旧」、
+  限流 JSON 输出豁免 max_tokens、预算拒绝补文件日志、摘要阈值 5→3、新增
+  `prompt_compression_saved_ratio` 指标。**真实 A/B**：拆分开比拆开关 **少约 6.0% token**
+  （210,970 vs 224,396），两臂 0 错误 0 重试、判决同向 → 未见质量回归（未做人工盲评）。
+  **回答"压缩省多少"前先读 STAGE-LANDING-2026-10-12 §2.5。**
+- **M9**：调查员搜索失败此前**后端零日志**（错误只回灌 LLM 与前端 banner）→ 已补 `slog.Warn`。
+- **技术债**：F1 删除后端 `/traces` 读端死代码（**白盒化/可观测不受影响**，数据仍在
+  `llm_calls` + FileLogger）；F2 补 `base_rules` YAML↔hardcoded 等价性护栏；F3 证据占位
+  超时兜底 + 渲染死字段 `inputHelpText` + appeal 阶段输入栏禁用；F4 启动期日志 retention
+  （`AGENT_GATEWAY_LOG_RETENTION_DAYS` 默认 30）。
+- **P2 可见面已定稿**为选项①「维持现状」。
+- 🔴 **新发现未修**：UI 驱动庭审在同一后端进程跑多场后**静默停滞**（后端无日志、前端仍显示
+  "质证进行中"，重启即恢复），疑似 **session 互斥锁泄漏**（ADR 0012）；与 M8-2 无关。建议优先排查。
+- ⚠️ **纪律提醒**：本批发现第 2 轮曾误报"全量测试全绿"（`| head` 掩盖了退出码）。
+  **跑 `go test ./...` 必须看真实退出码，不要用管道过滤后的输出判断成败。**
+
 ## 7. 禁止事项
 
 Agent 在工作过程中禁止：
