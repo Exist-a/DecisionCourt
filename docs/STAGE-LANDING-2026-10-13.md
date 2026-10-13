@@ -6,7 +6,7 @@
 | **上一阶段** | [`STAGE-LANDING-2026-10-12.md`](STAGE-LANDING-2026-10-12.md)（压缩 M8-2 收口 + 技术债 F1–F4） |
 | **本阶段主题** | ① 信念引擎**两处缺陷**修正（真实庭审实测撞出）② 埋点 Grafana 看板（跨域关联）③ **Grafana 反代到主域 `/monitor/*` 并首次上线** ④ 修掉三个**部署脚本缺口** |
 | **提交** | **5 个 commit 全部已 push 并部署**：`cdaaada` → `c178c55` → `d7ab986` → `7e19f1f` → `23be3f7` |
-| **状态** | ✅ 站点在线、`/monitor` 可用、埋点看板有数据；🔴 **总览看板仍空（见 §4，未解决）** |
+| **状态** | ✅ 站点在线、`/monitor` 可用、埋点看板有数据；✅ **总览看板已修（同日收尾，见 §4）** |
 
 ---
 
@@ -98,17 +98,23 @@
 
 ## 4. 遗留与未解决
 
-### 🔴 未解决 · 「DecisionCourt 总览」看板仍无数据
+### ✅ 已解决 · 「DecisionCourt 总览」看板全空（2026-10-13 同日收尾）
 
-- **现象**：Prometheus 抓取目标 `health=down`，`up` 指标**全为 0**。
-- **已排除**：backend 进程内 `OPS_METRICS_TOKEN` 长度 48、`PUBLIC=false`（已生效）；backend 与 prometheus 容器内 token **sha256 一致**（`d454065adeb6`）；Grafana 两个数据源 health 均为 OK；埋点看板（走 Postgres）数据正常。
-- **高度怀疑（未最终验证）**：`deploy/ops/prometheus.prod.yml` 里 `authorization.credentials: ${OPS_METRICS_TOKEN}` —— **Prometheus 的环境变量展开很可能只作用于 `external_labels`**，于是它把**字面量** `${OPS_METRICS_TOKEN}` 当凭证发给后端 → 后端 401。该假设与"dev 从未暴露此问题"一致（dev 走 `OPS_METRICS_PUBLIC=true` 公开通道，根本不需要 token）。
-- **本地复现该假设失败**：一次性 prometheus 容器两次没跑起来（一次 MSYS 改写了容器内路径、一次卡在 `Created`），未取到 `/api/v1/status/config` 的实际凭证值。
-- **建议修法**（未实施）：启动时用 shell 把 token 展开进配置再 exec prometheus（`sh -c "sed ... > /tmp/p.yml && exec /bin/prometheus --config.file=/tmp/p.yml ..."`），绕开"Prometheus 不展开"的问题；或改用 `credentials_file`（注意注释里已说明"文件不存在会让 Prometheus 起不来"的取舍）。
+- **现象**：Prometheus 抓取目标 `health=down`，`up` 指标**全为 0**；用户截图确认「总览」10 个面板全是 "No data"，而**另一块（埋点与跨域关联，走 Postgres）正常**。
+- **根因（本轮实证，不再是"高度怀疑"）**：**Prometheus 不会在 `scrape_configs` 里做环境变量展开** —— 它只在 `external_labels` 段展开，且要 `--enable-feature=expand-external-labels` 才开。所以 `prometheus.prod.yml` 里 `authorization.credentials: ${OPS_METRICS_TOKEN}` 被当**字面量**发出。
+  - **取证方法（决定性）**：起一个一次性 Prometheus 容器加载该配置，让它去抓一个"回显请求头"的临时服务 —— 抓到的是 `Authorization: Bearer ${OPS_METRICS_TOKEN}`（**未展开**）。同一方法换上"启动期 sed 展开"的入口后，抓到 `Bearer TESTTOKEN123`（真值）。
+  - 与"dev 从不暴露此问题"一致：dev 走 `OPS_METRICS_PUBLIC=true` 公开通道，压根不带 token。
+- **修法（已实施）**：
+  1. 新增 `deploy/ops/prometheus-entrypoint.sh`（经 volumes 挂进容器），启动期把 credentials 行的占位符展开进 `/tmp` 的临时配置再 `exec prometheus`（原配置是只读挂载，不能就地改）。只替换 `credentials:` 那一行 —— 全局替换会把 token 泄露进注释文本（**实测踩到过**）。token 含 `&`/`|`/`\` 时的 sed 转义也做了（有单测级本地验证）。
+  2. `docker-compose.yml` 的 prometheus 服务改 `entrypoint: ["/bin/sh","/etc/prometheus/entrypoint.sh"]` + 挂载该脚本，去掉原 `command`。
+  3. `.github/workflows/deploy.yml`：prometheus 改 **`--force-recreate`**（"改了 ops 配置就一定生效"变成确定行为，而不是依赖 compose 的配置哈希检测——那失败时是**静默**的），并补一条 **抓取健康度自检**（`up` 查询，期望 `health=up`），让这类静默失败可见。
+  4. `prometheus.prod.yml` 里那句错误注释（"Prometheus 启动时会做 ${VAR} 替换"）已更正。
+  5. 新增根目录 `.gitattributes`（`*.sh text eol=lf`）：防止 Windows 侧写入 CRLF 导致容器内 `/bin/sh` 报错。
+- **验证**：本地（不用 docker，遵用户"另一项目在用"）—— `sh -n` 通过；用**真实脚本 + 真实配置**跑三类用例：① 恶意 token（`&|` `\`）→ credentials 行逐字节等于输入、注释未被误替换、非注释行无残留占位符、YAML 可解析；② 空 token → 与源文件逐字节一致；③ credentials 行被改成引号形式 → **护栏 WARN 触发**。compose YAML 解析 + 挂载源存在性 + workflow YAML 解析 + 内嵌 shell `bash -n` 均通过。**线上验收见下方 §6**。
 
-### 🟡 部署脚本缺口 · Grafana 环境变量变更不会自动 recreate
+### 🟡 部署脚本缺口 · Grafana 环境变量变更不会自动 recreate（部分收窄）
 
-部署脚本按 **Caddyfile 内容哈希**决定是否重建 caddy，但**没有任何机制**处理 grafana 的环境变量变更（`up -d prometheus grafana` 只在配置变化时才会重建）。本次首次创建不受影响；**将来改 grafana 的 env 需手工 `docker compose up -d --force-recreate grafana`**。
+prometheus 已改为无条件 `--force-recreate`（本轮），但 **grafana 仍是普通 `up -d`** —— 改 grafana 的 env 需手工 `docker compose up -d --force-recreate grafana`。
 
 ### 🟡 信念引擎三处遗留（未修，登记备查）
 
@@ -138,3 +144,10 @@ B1/B2 只有**单测**（含可精确复现线上数字的回归钉），**未�
 - 信念引擎两处修正：`AGENTS.md` §6.2g（含三处遗留与 `air` 不热重载的运维教训）
 - 部署缺口与 `/monitor`：`AGENTS.md` §6.2h、`docs/deployment/SECOND-LAUNCH-2026-10-09.md`
 - 上一阶段：[`STAGE-LANDING-2026-10-12.md`](STAGE-LANDING-2026-10-12.md)
+
+## 6. 总览看板修复 · 线上验收
+
+> 部署后补记。
+
+- 判据：Prometheus 抓取目标 `health=up`（`up=1`），且「总览」看板各面板出数（不再 "No data"）。
+- 取证路径：CI 部署日志里的「Prometheus 抓取状态 (期望 health=up)」自检行；或经 SSH 在 `prometheus` 容器内查 `/api/v1/query?query=up`。

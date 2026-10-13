@@ -1,10 +1,19 @@
-# Prometheus 抓取配置（生产）。2026-10-10 第 3 轮。
+# Prometheus 抓取配置（生产）。2026-10-10 第 3 轮，2026-10-13 更正。
 #
 # 与 dev 的差别：生产 backend 的 /metrics 默认收紧（OPS_METRICS_PUBLIC=false），
-# 所以这里带 bearer token。token **不走文件、走环境变量**：
-#   - Prometheus 启动时会做 ${VAR} 替换，token 由 compose 从 .env 注入容器；
-#   - 刻意不用 credentials_file —— 文件不存在会让 Prometheus 直接起不来，
-#     而"观测栈起不来"不该把整份 compose 拖死。token 没配时只是抓取 401/失败（可见）。
+# 所以这里带 bearer token。
+#
+# ⚠️ 下面的 ${OPS_METRICS_TOKEN} **不是**由 Prometheus 自己展开的 —— Prometheus 只在
+#   external_labels 段展开环境变量（且需 --enable-feature=expand-external-labels），
+#   scrape_configs 里的 ${VAR} 会被当**字面量**原样发出。2026-10-13 实测：后端收到的
+#   是 `Authorization: Bearer ${OPS_METRICS_TOKEN}` → 一律 401 → 抓取 up=0 → Grafana
+#   「总览」看板全 "No data"。
+#   真正的展开在 deploy/ops/prometheus-entrypoint.sh（启动期把 token 写进 /tmp 的临时
+#   配置再 exec prometheus）。这里保留 ${...} 占位符，正是给那个脚本做 sed 替换用的。
+#
+# 为什么不用 credentials_file：那会把凭据摊成"容器里必须存在的一个文件"，引入新的失败面
+#   （文件没同步 / 权限不对 → Prometheus 起不来），而"观测栈起不来"不该把整份 compose
+#   拖死。token 没配时这里只是抓取 401/失败（可见），Prometheus 本身照常运行。
 global:
   scrape_interval: 30s
   evaluation_interval: 30s

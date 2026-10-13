@@ -240,7 +240,7 @@ Agent 需要熟悉以下核心文档：
 - **`/monitor` 反代上线**：`https://decisioncourt.cn/monitor/`，**两道口令**（Caddy basicauth + Grafana 登录）。口令在服务器 `.env`，仓库里没有。
 - **修掉三个部署脚本缺口**：scp 补 `deploy/ops`（此前**从未同步**→ prometheus 因挂载源被 Docker 建成目录而起不来）；部署末尾补启动 prometheus/grafana（**故意不致命**）；去掉我误加的 `depends_on: grafana`（它导致 caddy 卡 `Created` → **全站宕机约 20 分钟**，已修 + 已恢复）。
 - **关掉 Grafana 暴力破解锁**（用户拍板，理由与**反向条件**见 compose 注释）；**补上 `OPS_METRICS_TOKEN` 给 backend**（此前只给了 prometheus → 生产 `/metrics` 一律 401）。
-- 🔴 **未解决**：**「总览」看板仍空**（Prometheus `up=0`；高度怀疑 `${OPS_METRICS_TOKEN}` 在 `authorization.credentials` 里**未被 Prometheus 展开**，字面量当凭证发出去 → 401；未最终验证，修法与其余遗留见落地文档 §4）。
+- ✅ **「总览」看板已修（2026-10-13 同日收尾）**：根因**已实证**——Prometheus **不做** `scrape_configs` 里的环境变量展开（只在 `external_labels` 段展开，且需 `--enable-feature=expand-external-labels`），所以 `credentials: ${OPS_METRICS_TOKEN}` 被当**字面量**发出（抓包实测 = `Authorization: Bearer ${OPS_METRICS_TOKEN}`）→ 生产 backend 401 → `up=0` → 全空。修法：`deploy/ops/prometheus-entrypoint.sh`（挂载进容器）在启动期把 token 展开进 `/tmp` 临时配置再 exec。**教训**：`scrape_configs` 里的 `${VAR}` 是**字面量**，别指望 Prometheus 展开它。
 - ⚠️ **运维两条**：① 本服务器存在**IP 级 SSH 限流**，且**限流时 HTTPS 也间歇超时**——**同一域名下有成功响应即说明站点没挂**，别误判成宕机；把远程工作**合并成一次连接**。② **Docker 会以 root 创建缺失的 bind 挂载源**，需用容器以 root 处理。
 
 ## 7. 禁止事项

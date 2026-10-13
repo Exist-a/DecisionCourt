@@ -208,13 +208,23 @@ jobs:
             # 可观测栈（prometheus / grafana）—— 2026-10-13 补。
             # 此前 CI 从不启动它们：`up -d --force-recreate backend frontend` 只碰这两个服务，
             # 于是观测栈会永远停在 `Created`，/monitor 反代拿到无人监听的 upstream（502）。
-            # 用普通 up（不加 --force-recreate）：grafana 的环境变量在首次创建时已带上，
-            # 只有**改过** grafana 的 env 才需要手工 recreate（见 AGENTS.md 的已知缺口）。
+            # 2026-10-13 二次修：prometheus 改为 `--force-recreate` —— 它的启动脚本/挂载/
+            # entrypoint 变了必须重建才生效，而"依赖 compose 配置哈希检测"失败时是**静默**的
+            # （总览继续空、零报错）。grafana 保持普通 up：它每次重启会让 /monitor 白闪几秒。
             # **故意不致命**：观测栈只是呈现层，它失败不该让整次部署失败、更不该波及 caddy。
             echo "==> 启动观测栈 (prometheus/grafana)"
-            OPS_OUT=$(docker compose up -d prometheus grafana 2>&1) \
+            OPS_OUT=$(docker compose up -d --force-recreate prometheus 2>&1) \
               && { echo "$OPS_OUT" | tail -6; } \
-              || { echo "$OPS_OUT" | tail -20; echo "WARN: 观测栈启动失败（站点不受影响）；检查 deploy/ops 是否已同步、挂载源是否为文件"; }
+              || { echo "$OPS_OUT" | tail -20; echo "WARN: prometheus 启动失败（站点不受影响）；检查 deploy/ops 是否已同步、挂载源是否为文件"; }
+            docker compose up -d grafana > /dev/null 2>&1 \
+              || echo "WARN: grafana 启动失败（不影响站点与 /monitor 之外的页面）"
+            # 抓取自检：确认 token 展开真的生效（否则「总览」看板会静默一直空着 —— 那是本轮
+            # 正在修的静默失败，必须让它可见）。health=up 为正常；down 说明仍是 401/连不上。
+            sleep 5
+            echo "==> Prometheus 抓取状态 (期望 health=up)"
+            docker compose exec -T prometheus wget -qO- 'http://localhost:9090/api/v1/query?query=up' 2>/dev/null | head -c 400 \
+              || echo "(prometheus 未响应)"
+            echo
             docker compose ps --format 'table {{.Name}}\t{{.Status}}' | sed 's/^/    /'
 
             echo ""

@@ -231,15 +231,17 @@ services:
     image: prom/prometheus:v3.1.0
     container_name: dc_prometheus
     environment:
-      # 供 prometheus.prod.yml 里的 ${OPS_METRICS_TOKEN} 替换（空值 = 不带凭证抓取）
+      # 供启动脚本把 ${OPS_METRICS_TOKEN} 展开进抓取配置（空值 = 不带凭证抓取）
       OPS_METRICS_TOKEN: ${OPS_METRICS_TOKEN:-}
     volumes:
       - ./deploy/ops/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      # 启动脚本：见文件头注释 —— Prometheus 不会在 scrape_configs 里展开环境变量，
+      # 必须在启动期把 token 写进临时配置，否则 credentials 会以字面量发出 → 401 → 总览空。
+      - ./deploy/ops/prometheus-entrypoint.sh:/etc/prometheus/entrypoint.sh:ro
       - prometheus_data:/prometheus
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.retention.time=15d
-      - --storage.tsdb.retention.size=512MB
+    entrypoint:
+      - /bin/sh
+      - /etc/prometheus/entrypoint.sh
     mem_limit: 384m
     restart: unless-stopped
     depends_on:
