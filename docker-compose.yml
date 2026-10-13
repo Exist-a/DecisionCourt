@@ -98,6 +98,13 @@ services:
       # P0-3：DATABASE_URL 从 env 读,无默认值。
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # 2026-10-13 修复：此前 OPS_METRICS_TOKEN 只透传给了 prometheus（用于替换
+      # prometheus.prod.yml 里的 ${...}），**backend 自己拿不到** —— 于是生产下
+      # MetricsPublic 默认 false、Token 为空，命中 main.go:472 那条告警分支：
+      # /metrics 对所有人（含 Prometheus 的 Bearer）一律 401，表现为「总览看板全空」。
+      # 两边必须拿到同一个值；dev compose 用 OPS_METRICS_PUBLIC=true 走公开通道，不受影响。
+      OPS_METRICS_PUBLIC: ${OPS_METRICS_PUBLIC:-false}
+      OPS_METRICS_TOKEN: ${OPS_METRICS_TOKEN:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
