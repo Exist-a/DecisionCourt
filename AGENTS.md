@@ -230,6 +230,19 @@ Agent 需要熟悉以下核心文档：
 - ⚠️ **纪律提醒**：本批发现第 2 轮曾误报"全量测试全绿"（`| head` 掩盖了退出码）。
   **跑 `go test ./...` 必须看真实退出码，不要用管道过滤后的输出判断成败。**
 
+### 6.2h 2026-10-13 批次（信念引擎修正 + 埋点看板 + `/monitor` 反代上线，**已 push 并部署**）
+
+完整落地记录（模块清单 / 验证证据 / 决策 / **未解决项**）见
+[`docs/STAGE-LANDING-2026-10-13.md`](docs/STAGE-LANDING-2026-10-13.md)。要点：
+
+- **信念引擎两处缺陷已修**：① 锚定项**反号**（支持某方的证据反而降低该方信念，控方 79%→74%）；② **零权重证据仍触发锚定**（写出"标着 evidence、位移全来自锚定"的 diff，真实库 9 条）。两条回归钉，禁用可精确复现线上数字。
+- **埋点 Grafana 看板**：Grafana 直连业务库画 `decision_events`，含**按会话的跨域关联时间线**（10 面板，顶部两栏字段说明）。
+- **`/monitor` 反代上线**：`https://decisioncourt.cn/monitor/`，**两道口令**（Caddy basicauth + Grafana 登录）。口令在服务器 `.env`，仓库里没有。
+- **修掉三个部署脚本缺口**：scp 补 `deploy/ops`（此前**从未同步**→ prometheus 因挂载源被 Docker 建成目录而起不来）；部署末尾补启动 prometheus/grafana（**故意不致命**）；去掉我误加的 `depends_on: grafana`（它导致 caddy 卡 `Created` → **全站宕机约 20 分钟**，已修 + 已恢复）。
+- **关掉 Grafana 暴力破解锁**（用户拍板，理由与**反向条件**见 compose 注释）；**补上 `OPS_METRICS_TOKEN` 给 backend**（此前只给了 prometheus → 生产 `/metrics` 一律 401）。
+- 🔴 **未解决**：**「总览」看板仍空**（Prometheus `up=0`；高度怀疑 `${OPS_METRICS_TOKEN}` 在 `authorization.credentials` 里**未被 Prometheus 展开**，字面量当凭证发出去 → 401；未最终验证，修法与其余遗留见落地文档 §4）。
+- ⚠️ **运维两条**：① 本服务器存在**IP 级 SSH 限流**，且**限流时 HTTPS 也间歇超时**——**同一域名下有成功响应即说明站点没挂**，别误判成宕机；把远程工作**合并成一次连接**。② **Docker 会以 root 创建缺失的 bind 挂载源**，需用容器以 root 处理。
+
 ## 7. 禁止事项
 
 Agent 在工作过程中禁止：
