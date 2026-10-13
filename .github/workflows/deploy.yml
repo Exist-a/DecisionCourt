@@ -127,9 +127,12 @@ jobs:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
-          # 只同步 compose 与 Caddyfile。服务器上的 .env 不在仓库里，不会被碰（§8 红线）。
+          # 只同步 compose / Caddyfile / 观测栈配置。服务器上的 .env 不在仓库里，不会被碰（§8 红线）。
           # Caddyfile 的"改了要生效"由下面 deploy 脚本按内容哈希决定是否 recreate caddy。
-          source: "docker-compose.yml,deploy/caddy/Caddyfile"
+          # 2026-10-13 补 deploy/ops：此前它**从未被同步过** —— 于是 prometheus 的 bind 挂载源
+          # 不存在，Docker 把它自动建成**空目录** → `not a directory: Are you trying to mount
+          # a directory onto a file` → prometheus 起不来、/monitor 反代拿到死 upstream。
+          source: "docker-compose.yml,deploy/caddy/Caddyfile,deploy/ops"
           target: "/opt/DecisionCourt/"
           overwrite: true
 
@@ -201,6 +204,18 @@ jobs:
                 echo "==> Caddyfile 未变化，跳过 caddy"
               fi
             fi
+
+            # 可观测栈（prometheus / grafana）—— 2026-10-13 补。
+            # 此前 CI 从不启动它们：`up -d --force-recreate backend frontend` 只碰这两个服务，
+            # 于是观测栈会永远停在 `Created`，/monitor 反代拿到无人监听的 upstream（502）。
+            # 用普通 up（不加 --force-recreate）：grafana 的环境变量在首次创建时已带上，
+            # 只有**改过** grafana 的 env 才需要手工 recreate（见 AGENTS.md 的已知缺口）。
+            # **故意不致命**：观测栈只是呈现层，它失败不该让整次部署失败、更不该波及 caddy。
+            echo "==> 启动观测栈 (prometheus/grafana)"
+            OPS_OUT=$(docker compose up -d prometheus grafana 2>&1) \
+              && { echo "$OPS_OUT" | tail -6; } \
+              || { echo "$OPS_OUT" | tail -20; echo "WARN: 观测栈启动失败（站点不受影响）；检查 deploy/ops 是否已同步、挂载源是否为文件"; }
+            docker compose ps --format 'table {{.Name}}\t{{.Status}}' | sed 's/^/    /'
 
             echo ""
             echo "============================================================"
