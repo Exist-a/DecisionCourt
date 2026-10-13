@@ -254,6 +254,15 @@ services:
       # 不设这两项，页面会白屏（静态资源 404）。Caddy 侧不做 strip_prefix。
       GF_SERVER_ROOT_URL: https://${DOMAIN}/monitor/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # 2026-10-13: 关掉 Grafana 的暴力破解锁。
+      # 现场：口令输错 5 次后账号被锁 5 分钟，而**每次重试都会续期** —— 2026-10-13
+      # 上线当天就把站长本人锁在门外（日志：`too many consecutive incorrect login
+      # attempts for user - login for user temporarily blocked`），且 CLI
+      # reset-admin-password 也无法越过它，排查成本很高。
+      # 为什么这里可以关：① 门口还有 Caddy basicauth 一道口令，登录页不是裸暴露；
+      # ② 管理员口令是 24 位随机串，本来就不存在被爆破的现实可能。
+      # ⚠️ 若将来**去掉外层口令**或**把管理员口令换成弱口令**，必须把这一行删掉。
+      GF_SECURITY_DISABLE_BRUTE_FORCE_LOGIN_PROTECTION: "true"
       # 2026-10-12: provisioning 目录是 dev/prod 共用的，postgres.yml 数据源在这里同样会被加载。
       # 不补这组变量，生产 Grafana 就会挂一个连不上的数据源（空库名/空凭据）。
       # 用与 postgres 服务完全相同的插值，保证两边永远指向同一个库、同一份凭据。
