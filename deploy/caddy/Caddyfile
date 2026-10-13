@@ -49,6 +49,29 @@
     }
     reverse_proxy @ops backend:8080
 
+    # ── 可观测面板（Grafana）→ /monitor/* ────────────────────────────────────
+    # 2026-10-13：Grafana 此前只绑 127.0.0.1:3001（必须 SSH 隧道才能看）。这里把它挂到
+    # 主域的 /monitor/ 路径下，免隧道；**两道口令**：① Caddy basicauth（外层，挡扫描器与
+    # Grafana 的 pre-auth CVE）② Grafana 自身登录（内层，口令 = 服务器 .env 的 GF_ADMIN_PASSWORD）。
+    #
+    # 外层口令的变量**必填**（docker-compose.yml caddy 段用 ${OPS_BASIC_*:?} 把关），
+    # 缺失时部署会在 compose 解析阶段直接失败 —— 刻意不让它静默降级成"页打不开但没报错"。
+    #   .env:  OPS_BASIC_USER=<用户名>
+    #          OPS_BASIC_HASH='<docker run --rm caddy:2-alpine caddy hash-password --plaintext "<口令>" 的输出>'
+    #   ⚠️ 哈希必须单引号包住 —— 里面的 $ 会被 compose 当变量展开。
+    #
+    # Grafana 侧必须配套两项（见 docker-compose.yml grafana 段）：
+    #   GF_SERVER_ROOT_URL=https://<DOMAIN>/monitor/  +  GF_SERVER_SERVE_FROM_SUB_PATH=true
+    #   否则 Grafana 生成的资源/跳转链接不带 /monitor 前缀 → 页面 404 / 白屏。
+    #   服务端子路径生效后，Caddy 这里**不做 strip_prefix**，原样透传。
+    @monitor {
+        path /monitor/*
+    }
+    basicauth @monitor {
+        {$OPS_BASIC_USER} {$OPS_BASIC_HASH}
+    }
+    reverse_proxy @monitor grafana:3000
+
     # 其他全部 → frontend (Next.js)
     reverse_proxy frontend:3000
 }

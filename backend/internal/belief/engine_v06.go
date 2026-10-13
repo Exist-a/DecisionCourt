@@ -72,15 +72,42 @@ func (e *Engine) UpdateWithDiff(
 		// that unsigned evidence pushes defeat debate diversity.
 		sign := confirmationSign(prior, evidence.ImpactOnOptionA, evidence.ImpactOnOptionB)
 
-		// If uptake is 0 (clerk) or weight is ~0, no evidence shift; we
-		// still apply anchor pull for the audit trail (but never write a
-		// row for neutral-direction moves of <0.001 magnitude).
+		// If uptake is 0 (clerk) or weight is 0, there is no evidence shift.
 		evidenceShift := cfg.Uptake * w * sign * ln2
+
+		// Zero-weight evidence carries no information for this agent, so it must
+		// not move the belief at all — not even via the anchor rubber-band.
+		//
+		// 2026-10-13 实测补修（第二类缺陷）：原实现即使 w=0 也照跑锚定项，于是写出一条
+		// **source=evidence、但整个位移 100% 来自锚定** 的 diff——前端卡片显示
+		// 「一条证据把控方从 75% 拽到 71.6%」，而这条证据的 impact_on_option_a/b
+		// 都是 0（LLM 判定它对两个选项都无影响，例如实测里的一条「困了」）。
+		// 真实库里这类记录有 9 条。上一版护栏挡不住它，因为那时 evidenceDelta 恒为 0、
+		// 「异号」判据永远不成立 —— 锚定是唯一动因，却被记成证据。
+		// 回归钉：TestUpdateWithDiff_ZeroWeightEvidenceChangesNothing。
+		if evidenceShift == 0 {
+			continue
+		}
 
 		// Log-odds update with anchoring rubber-band.
 		priorLogit := Logit(prior)
 		priorPullLogit := Logit(cfg.PriorA)
 		posteriorLogit := (1-cfg.Anchor)*(priorLogit+evidenceShift) + cfg.Anchor*priorPullLogit
+
+		// The rubber band may only damp an evidence step, never invert it.
+		//
+		// 2026-10-12 真实庭审实测发现的缺陷：锚定项按 (PriorA - prior) 的位移计费，
+		// 当 Agent 离自己的 PriorA 较远时它的量级会**盖过**证据项并把净位移反号——
+		// 实测一场里控方在 0.79（PriorA=0.7），证据项 +0.04 logit 往上推，锚定项
+		// −0.33 logit 往下拽，净 −0.29 → 控方从 79% **掉到** 74%。而该证据被判定为
+		// 「支持选项 A」（即支持控方），与上面 signed-effect 的契约正好相反。
+		//
+		// 原测试没抓到，是因为所有用例都把控方初值写成 0.70 = PriorA，锚定项恒为 0。
+		// 回归钉：TestUpdateWithDiff_AnchorNeverReversesEvidence。
+		evidenceDelta := (1 - cfg.Anchor) * evidenceShift
+		if evidenceDelta != 0 && (posteriorLogit-priorLogit)*evidenceDelta < 0 {
+			posteriorLogit = priorLogit + evidenceDelta
+		}
 
 		newA := Clamp01(Sigmoid(posteriorLogit), 0.05, 0.95)
 		posterior := Round4(newA)

@@ -193,6 +193,11 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN must be set}
       CADDY_EMAIL: ${CADDY_EMAIL:?CADDY_EMAIL must be set}
+      # 2026-10-13: /monitor/* 的外层口令。**必须透传进容器** —— Caddyfile 里的
+      # {$OPS_BASIC_*} 读的是容器环境变量；不透传的话即使 .env 配了，容器里也读不到，
+      # 结果是 /monitor 永远 401（静默降级）。这里用 :? 让它缺失时直接失败。
+      OPS_BASIC_USER: ${OPS_BASIC_USER:?OPS_BASIC_USER must be set in .env}
+      OPS_BASIC_HASH: ${OPS_BASIC_HASH:?OPS_BASIC_HASH must be set in .env}
     volumes:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -204,6 +209,8 @@ services:
     depends_on:
       - backend
       - frontend
+      # 2026-10-13: /monitor/* 反代到 grafana（Caddy 能容忍 upstream 未就绪，这里只为启动顺序）
+      - grafana
 
   # ── 可观测「呈现层」（2026-10-10 第 3 轮）**默认启动** ──────────────────────
   # 2026-10-10 第 3 轮（OPS-DASHBOARD-PLAN §10）。**内存依据是实测的**：
@@ -244,6 +251,17 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # 2026-10-13: 反代到主域 /monitor/*（Caddy @monitor → grafana:3000）。
+      # serve_from_sub_path=true 让 Grafana 自己按 /monitor 前缀生成资源与跳转 URL；
+      # 不设这两项，页面会白屏（静态资源 404）。Caddy 侧不做 strip_prefix。
+      GF_SERVER_ROOT_URL: https://${DOMAIN}/monitor/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # 2026-10-12: provisioning 目录是 dev/prod 共用的，postgres.yml 数据源在这里同样会被加载。
+      # 不补这组变量，生产 Grafana 就会挂一个连不上的数据源（空库名/空凭据）。
+      # 用与 postgres 服务完全相同的插值，保证两边永远指向同一个库、同一份凭据。
+      POSTGRES_USER: ${POSTGRES_USER:-decisioncourt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-decisioncourt}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./deploy/ops/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -252,6 +270,8 @@ services:
     restart: unless-stopped
     depends_on:
       - prometheus
+      # 2026-10-12: 埋点看板的数据源是业务库
+      - postgres
 
 volumes:
   postgres_data:

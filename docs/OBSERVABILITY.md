@@ -259,6 +259,7 @@ cat backup-2026-07-06.sql | docker exec -i dc_postgres psql -U decisioncourt -d 
 | 写入 | `POST /api/v1/courtrooms/:uuid/events` → `{"code":0,"data":{"recorded":true}}` HTTP 200 |
 | 落库 | `decision_events` 表；前端事件 `event_type` 以 `fe.` 开头（后端 span 是 `span.` / `state_`），同一个字段可一起查 |
 | 读取 | `GET /api/v1/courtrooms/:uuid/events`（v2.11 D12 补的读端点，支持 `limit`/`offset` + `event_type_prefix`） |
+| **看一眼** | 🆕 **Grafana「DecisionCourt 埋点与跨域关联」看板**（<http://localhost:3001>，2026-10-12 增）——Grafana **直连业务库 Postgres**，把前端埋点与后端 AI 决策事件画在同一时间轴上，可按会话看**跨域关联时间线**。数据源 `deploy/ops/grafana/provisioning/datasources/postgres.yml`。**注意它是给运维/开发看的只读视图**，不是面向用户的分析后台，也不做漏斗聚合 |
 | 实测 | 建会话 → 写一条 `fe.deploy_verify` → 读回 payload 完整（`{"source":"curl-check"}`、`duration_ms=42`） |
 
 三个前提，缺一条就看不到数据：
@@ -409,7 +410,7 @@ curl -X POST "$B/prompts/eval" -b "dc_session=$SESS; XSRF-TOKEN=$RAW" -H "X-XSRF
 | 会话预算烧了多少（`budget_used / budget_total`） | FileLogger JSON 的 `budget_used` 字段 | 没有对应的 gauge/counter 埋点 —— **想在图上看只能加指标** |
 | 每次调用的 prompt 版本（`prompt_version`） | `llm_calls` 表 / FileLogger JSON | 是行级字段，不是聚合指标 |
 | 「喂进去什么 / 出来什么」（`system_prompt` / `input_messages` / `output_content`） | `logs/backend/agent_gateway_<日期>.log`（需 `AGENT_GATEWAY_FILE_LOGGER_PROMPTS=full`） | 落文件，不进内存指标。~~`GET /courtrooms/:uuid/traces/*`~~ 已于 2026-10-12 随 R4 后端清理删除 |
-| 前端埋点的明细（哪 12 条、`event_type` 是什么） | `decision_events` 表 | 指标只按 HTTP 路径计数 |
+| 前端埋点的明细（哪 12 条、`event_type` 是什么） | `decision_events` 表，或 🆕 Grafana「DecisionCourt 埋点与跨域关联」看板（直连业务库） | 指标只按 HTTP 路径计数 |
 
 **结论**：这场庭审**该记的都在记**（业务动作 / 埋点 / LLM 调用 / token / 幻觉 / 回收 / 并发全部有），
 没有任何一类"静默丢失"。唯一需要留意的两处：**预算用量没有指标**（要看得登机器翻文件）、

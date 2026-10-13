@@ -106,7 +106,12 @@ services:
       # 注入容器, .env 里 ALLOWED_ORIGINS 是生产域名 (https://decisioncourt.cn,...),
       # 优先级高于 ${VAR:-default} 的 default. hardcode 是唯一能让 dev 走 localhost 的方法.
       # (同 bea7289 修复 NEXT_PUBLIC_* 的同一根因)
-      ALLOWED_ORIGINS: http://localhost:3000
+      #
+      # 2026-10-12: 补 127.0.0.1:3000 —— host 上常有别的 npm dev server 占着
+      # [::1]:3000, 此时浏览器访问 localhost:3000 会命中那个 server 而不是本容器
+      # (Docker 绑的是 0.0.0.0/IPv4)。用 127.0.0.1:3000 才能稳定打到本容器,
+      # 但那需要后端放行这个 Origin, 否则页面内 fetch 全部 CORS 失败。
+      ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
       AGENT_GATEWAY_LLM_TIMEOUT_SEC: 90
@@ -119,6 +124,11 @@ services:
       # 子开关 (SMART_COMPRESSION / CACHE_ENABLED / BREAKER_ENABLED 等)
       # 仍按各自 .env 值，默认全开 (viper.SetDefault true)
       AGENT_GATEWAY_ENABLED: "true"
+      # 2026-10-12: dev 显式开响应缓存 —— .env 里是 false，导致 Grafana
+      # 「缓存命中 / 未命中」面板恒 No data（计数器只在缓存对象存在时才自增）。
+      # compose 的 environment 优先级高于 env_file，所以这里能覆盖 .env 而不必
+      # 动 .env（敏感文件红线）。生产是否开启仍由服务器 .env 决定。
+      AGENT_GATEWAY_CACHE_ENABLED: "true"
       # dev: 不限 trial 次数
       USER_TRIAL_LIMIT: 0
     volumes:
@@ -222,6 +232,13 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # 2026-10-12: 透传给 deploy/ops/grafana/provisioning/datasources/postgres.yml。
+      # 该数据源让 Grafana 直连业务库，把 decision_events（前端埋点 + 后端 AI 决策事件）
+      # 画成看板——Prometheus 只有 counter/gauge，覆盖不到业务事件明细。
+      # 用同一套 POSTGRES_* 变量，保证与 postgres/backend 服务连的是同一个库、同一份凭据。
+      POSTGRES_USER: ${POSTGRES_USER:-decisioncourt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-decisioncourt}
     volumes:
       - dc_dev_grafana_data:/var/lib/grafana
       # 自动配置数据源 + 预置仪表盘（部署即有效，不用手点）
@@ -230,6 +247,8 @@ services:
     mem_limit: 320m
     depends_on:
       - prometheus
+      # 2026-10-12: 埋点看板的数据源是业务库，等 postgres 健康再起
+      - postgres
 
 volumes:
   dc_dev_postgres_data:

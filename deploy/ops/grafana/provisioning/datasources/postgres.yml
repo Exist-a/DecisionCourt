@@ -1,0 +1,33 @@
+# Grafana 数据源：DecisionCourt-Postgres（2026-10-12）。
+#
+# 用途：让 Grafana 直接查业务库 decision_events 表，把**前端行为埋点**与
+# **后端 AI 决策事件**画成看板——这部分是 Prometheus 指标覆盖不到的
+# （Prometheus 只有 counter/gauge，没有业务事件明细）。
+#
+# 为什么走 Grafana + Postgres：
+#   这条链路的"可视化"此前完全缺失（写路径在生产跑、读端点在、但前端零消费），
+#   而 decision_events 本来就和业务库同库。用 Grafana 直连 Postgres 是**零代码**
+#   补上可视化的最短路径——不需要新端点、不需要前端页面、不需要 BI 栈。
+#
+# 连接参数从容器环境变量取（compose 里给 grafana 服务透传 POSTGRES_*），
+# 这样不用把密码硬编码进仓库。生产若要用，同样透传即可。
+apiVersion: 1
+datasources:
+  - name: DecisionCourt-Postgres
+    uid: dc_postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: $POSTGRES_DB
+    user: $POSTGRES_USER
+    isDefault: false
+    editable: false
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 14400

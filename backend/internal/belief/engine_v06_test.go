@@ -271,6 +271,119 @@ func TestUpdateWithDiff_ProsecutorResistsManyWeakEvidences(t *testing.T) {
 	}
 }
 
+// TestUpdateWithDiff_AnchorNeverReversesEvidence covers the case the rest of
+// this suite structurally could not reach: every other case starts the
+// prosecutor AT its anchor PriorA (0.70), so the rubber-band term is exactly
+// zero and can never fight the evidence.
+//
+// Real-trial regression (2026-10-12): a prosecutor sitting at 0.79 with
+// PriorA 0.70 was fed an evidence scored as *supporting Option A* — and its
+// belief FELL 79% → 74%, because the anchor term (−0.33 logit) swamped and
+// inverted the evidence term (+0.04 logit). The defender moved the same wrong
+// way: 24% → 27% on evidence that contradicts it.
+//
+// Invariant: an agent must never move against its own read of the evidence.
+func TestUpdateWithDiff_AnchorNeverReversesEvidence(t *testing.T) {
+	engine := NewEngine()
+	repo := NewInMemoryDiffRepository(nil)
+	sessionID := uuid.New()
+
+	// w = 0.8 · 0.8 · 0.78 = 0.4992 — deliberately the same shape as the
+	// production evidence that exposed the defect (its weight rendered as
+	// "w=0.50"), scored as supporting Option A (impact_a > impact_b).
+	supportsA := model.Evidence{
+		ID:               uuid.New(),
+		CredibilityScore: 0.8,
+		RelevanceScore:   0.8,
+		ImpactOnOptionA:  0.78,
+		ImpactOnOptionB:  0.0,
+	}
+
+	cases := []struct {
+		name       string
+		agent      model.Agent
+		expectSign int // +1 = belief_a must not fall, -1 = must not rise
+	}{
+		{"prosecutor_above_anchor", model.Agent{AgentType: model.AgentProsecutor, BeliefA: 0.79, BeliefB: 0.21}, +1},
+		{"prosecutor_at_anchor", model.Agent{AgentType: model.AgentProsecutor, BeliefA: 0.70, BeliefB: 0.30}, +1},
+		{"defender_below_anchor", model.Agent{AgentType: model.AgentDefender, BeliefA: 0.24, BeliefB: 0.76}, -1},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prior := c.agent.BeliefA
+			agents, diffs, err := engine.UpdateWithDiff(
+				context.Background(), repo, sessionID, 1, "cross_exam",
+				[]model.Agent{c.agent}, supportsA, nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(diffs) != 1 {
+				t.Fatalf("expected 1 diff got %d", len(diffs))
+			}
+			got := agents[0].BeliefA
+			if c.expectSign > 0 && got < prior {
+				t.Fatalf("leans A and the evidence supports A, but belief FELL: %.4f -> %.4f", prior, got)
+			}
+			if c.expectSign < 0 && got > prior {
+				t.Fatalf("leans B and the evidence contradicts it, but belief ROSE: %.4f -> %.4f", prior, got)
+			}
+			// The direction recorded in the audit trail must agree with the
+			// actual move, otherwise the UI card's arrow lies.
+			if d := diffs[0].DeltaBeliefA; (d > 0) != (c.expectSign > 0) {
+				t.Fatalf("delta sign %.4f disagrees with the evidence read %+d", d, c.expectSign)
+			}
+		})
+	}
+}
+
+// TestUpdateWithDiff_ZeroWeightEvidenceChangesNothing pins the second half of
+// the 2026-10-13 fix. An evidence whose impact on BOTH options is zero has no
+// information content, so the anchor rubber-band must not use it as an excuse
+// to drag the agent toward its PriorA.
+//
+// Real-data regression: the evidence "困了" was scored impact_a = impact_b = 0
+// (so w = 0.85 · 0.8 · 0 = 0), yet the prosecutor still slid 75% → 71.56% and
+// the defender 25% → 28.44% — written with source=evidence although 100% of the
+// move came from the anchor. Nine such rows existed in the local database.
+func TestUpdateWithDiff_ZeroWeightEvidenceChangesNothing(t *testing.T) {
+	engine := NewEngine()
+	repo := NewInMemoryDiffRepository(nil)
+	sessionID := uuid.New()
+
+	zeroImpact := model.Evidence{
+		ID:               uuid.New(),
+		CredibilityScore: 0.85,
+		RelevanceScore:   0.8,
+		ImpactOnOptionA:  0.0,
+		ImpactOnOptionB:  0.0,
+	}
+
+	for _, ag := range []model.Agent{
+		{AgentType: model.AgentProsecutor, BeliefA: 0.75, BeliefB: 0.25},
+		{AgentType: model.AgentDefender, BeliefA: 0.25, BeliefB: 0.75},
+	} {
+		t.Run(string(ag.AgentType), func(t *testing.T) {
+			prior := ag.BeliefA
+			agents, diffs, err := engine.UpdateWithDiff(
+				context.Background(), repo, sessionID, 1, "cross_exam",
+				[]model.Agent{ag}, zeroImpact, nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(diffs) != 0 {
+				t.Fatalf("expected no diff for zero-weight evidence, got %d (delta=%.4f)",
+					len(diffs), diffs[0].DeltaBeliefA)
+			}
+			if got := agents[0].BeliefA; got != prior {
+				t.Fatalf("zero-weight evidence moved the belief: %.4f -> %.4f", prior, got)
+			}
+		})
+	}
+}
+
 // TestUpdateWithDiff_ClerkNeverMoves guards the neutral-skip behaviour.
 func TestUpdateWithDiff_ClerkNeverMoves(t *testing.T) {
 	engine := NewEngine()

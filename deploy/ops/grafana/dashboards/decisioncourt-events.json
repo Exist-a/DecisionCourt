@@ -1,0 +1,157 @@
+{
+  "uid": "decisioncourt-events",
+  "title": "DecisionCourt 埋点与跨域关联",
+  "tags": ["decisioncourt", "auto-provisioned", "analytics"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "session",
+        "type": "query",
+        "label": "庭审会话",
+        "datasource": { "type": "postgres", "uid": "dc_postgres" },
+        "definition": "SELECT session_uuid FROM decision_events WHERE session_uuid <> '' GROUP BY 1 ORDER BY count(*) FILTER (WHERE event_type NOT LIKE 'fe.%') DESC, max(created_at) DESC",
+        "query": { "query": "SELECT session_uuid FROM decision_events WHERE session_uuid <> '' GROUP BY 1 ORDER BY count(*) FILTER (WHERE event_type NOT LIKE 'fe.%') DESC, max(created_at) DESC", "refId": "standardVariableQuery" },
+        "refresh": 1,
+        "sort": 0,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "字段说明 ①：事件类型",
+      "gridPos": { "h": 17, "w": 12, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "数据全部来自同一张表 `decision_events`：前端事件带 `fe.` 前缀，后端事件是 `state_transition` / `span.*`，两类靠 `session_uuid` 串在一起。\n\n**也是「前端 / 后端」的唯一区分方式**\n\n| 事件名 | 谁写的 | 含义 |\n|---|---|---|\n| `fe.trial_started` · `fe.trial_completed` | 前端 | 立案开庭 / 庭审走完 |\n| `fe.phase_entered` | 前端 | 进入某阶段；**载荷里带该阶段停留时长** |\n| `fe.evidence_submitted` | 前端 | 提交证据（载荷：类型 `type`、字数 `char_count`） |\n| `fe.tab_switched` · `fe.toggle_real_courthouse` | 前端 | 切右侧面板 / 切「真实法庭」白盒开关 |\n| `fe.verdict_feedback` | 前端 | 判决反馈（载荷：`helpful`、对选项 A/B 的概率 `score_a`/`score_b`） |\n| `fe.direct_verdict_triggered` · `fe.reopen_trial_triggered` | 前端 | 直接判决 / 补充证据重开 |\n| `fe.ws_reconnect` · `fe.ws_missed_pong` | 前端 | 断线重连 / 心跳丢失 |\n| `state_transition` | 后端 | 庭审状态机迁移 |\n| `span.RunCrossExamRound` | 后端 | 跑完一轮质证（同类还有其它 `span.*`） |\n| `convergence_triggered` | 后端 | 信念收敛触发（提前结案） |\n| `llm_audit_fk_violation` | 后端 | LLM 审计写入异常 |"
+      }
+    },
+    {
+      "id": 11,
+      "type": "text",
+      "title": "字段说明 ②：各列含义 · ③ 其它面板",
+      "gridPos": { "h": 17, "w": 12, "x": 12, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**② 「跨域关联时间线」各列取的是什么**\n\n| 列 | 取的字段 | 备注 |\n|---|---|---|\n| 时间 | `created_at` | 格式 MM-DD HH24:MI:SS |\n| 事件类型 | `event_type` | 见左侧表 |\n| 来源 | 派生 | 按 `fe.` 前缀分「前端 / 后端」 |\n| Agent | `agent_type` | 哪个 Agent 产生；`—` = 与具体 Agent 无关 |\n| 阶段 | 载荷 `to_phase` / `phase` / `from_phase` | `—` = 该事件不带阶段 |\n| 停留/耗时 | 载荷 `duration_ms` | ⚠️ **表上那个 `duration_ms` 列对 `fe.phase_entered` 恒为 0**，真实毫秒在载荷里 |\n| 状态 | `status` | `ok` = 正常 |\n\n**③ 顶部数字与两张分布图**\n\n- `事件总数` = 表内行数；`前端埋点事件(fe.)` 与 `后端 AI 决策事件` = 按事件名前缀拆开的两类。\n- `各阶段平均停留时长` 的三列：`阶段` = 载荷 `to_phase`；`平均停留(ms)` = 载荷 `duration_ms` 的均值；`样本` = 该阶段的记录条数。\n- `事件类型分布` 的横轴是数量、纵轴是事件名（含义见左表）。\n- `各庭审会话事件量 Top 10` 是上方「庭审会话」下拉的数据源。"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "事件总数",
+      "description": "decision_events 在所选时间范围内的总行数。",
+      "datasource": { "type": "postgres", "uid": "dc_postgres" },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 17 },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT count(*) AS value FROM decision_events WHERE $__timeFilter(created_at)" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none", "graphMode": "none" }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "前端埋点事件（fe.）",
+      "description": "前端上报的用户行为事件：立案/开庭、阶段进入与停留、提交证据、切面板、判决反馈、断线重连等。",
+      "datasource": { "type": "postgres", "uid": "dc_postgres" },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 17 },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT count(*) AS value FROM decision_events WHERE event_type LIKE 'fe.%' AND $__timeFilter(created_at)" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "后端 AI 决策事件",
+      "description": "后端写入：状态机迁移（state_transition）、业务 span（span.RunCrossExamRound 等）、收敛触发、审计异常。",
+      "datasource": { "type": "postgres", "uid": "dc_postgres" },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 17 },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT count(*) AS value FROM decision_events WHERE event_type NOT LIKE 'fe.%' AND $__timeFilter(created_at)" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "orange" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" }
+    },
+    {
+      "id": 5,
+      "type": "barchart",
+      "title": "事件类型分布（同一张表）",
+      "description": "两类事件住在同一张表、按命名空间（前缀 + 类型名）分家。事件名含义见上方「字段说明 ①」。",
+      "datasource": { "type": "postgres", "uid": "dc_postgres" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 17 },
+      "targets": [{ "refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT event_type AS \"事件类型\", count(*) AS \"数量\" FROM decision_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC" }],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 1, "fillOpacity": 80 } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "showValue": "auto", "xTickLabelRotation": 0, "legend": { "showLegend": false, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "事件速率：前端埋点 vs 后端决策",
+      "description": "两条曲线共用同一时间轴，观察用户行为与 AI 决策在时间上的耦合。",
+      "datasource": { "type": "postgres", "uid": "dc_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [{
+        "refId": "A",
+        "format": "time_series",
+        "rawQuery": true,
+        "rawSql": "SELECT $__timeGroupAlias(created_at, $__interval), count(*) FILTER (WHERE event_type LIKE 'fe.%') AS \"前端埋点\", count(*) FILTER (WHERE event_type NOT LIKE 'fe.%') AS \"后端决策\" FROM decision_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+      }],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "各阶段平均停留时长（来自 fe.phase_entered）",
+      "description": "「阶段流失」维度的原料。列含义见「字段说明 ②」③：阶段 = 载荷 to_phase；平均停留(ms) = 载荷 duration_ms 的均值；样本 = 条数。",
+      "datasource": { "type": "postgres", "uid": "dc_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "targets": [{
+        "refId": "A",
+        "format": "table",
+        "rawQuery": true,
+        "rawSql": "SELECT coalesce(payload->>'to_phase','(未知)') AS \"阶段\", round(avg(NULLIF(payload->>'duration_ms','')::numeric)) AS \"平均停留(ms)\", count(*) AS \"样本\" FROM decision_events WHERE event_type = 'fe.phase_entered' AND NULLIF(payload->>'duration_ms','') IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC NULLS LAST"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "lineWidth": 1, "fillOpacity": 70 } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "showValue": "auto", "xTickLabelRotation": 0, "legend": { "showLegend": false, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "跨域关联时间线（同一场庭审：前端行为 ↔ 后端 AI 决策）",
+      "description": "所选会话的全部事件按时间交错排列。各列含义见顶部「字段说明 ②」。两类事件靠 session_uuid 对齐，不需要跨表 / 跨库 / 额外同步。会话变量留空时自动回落到「后端事件最多」的那一场。",
+      "datasource": { "type": "postgres", "uid": "dc_postgres" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 34 },
+      "targets": [{
+        "refId": "A",
+        "format": "table",
+        "rawQuery": true,
+        "rawSql": "SELECT to_char(created_at, 'MM-DD HH24:MI:SS') AS \"时间\", event_type AS \"事件类型\", CASE WHEN event_type LIKE 'fe.%' THEN '前端' ELSE '后端' END AS \"来源\", coalesce(NULLIF(agent_type,''), '—') AS \"Agent\", coalesce(payload->>'to_phase', payload->>'phase', payload->>'from_phase', '—') AS \"阶段\", coalesce(NULLIF(payload->>'duration_ms',''), NULLIF(payload->>'stay_ms',''), '—') AS \"停留/耗时\", coalesce(NULLIF(status,''), '—') AS \"状态\" FROM decision_events WHERE session_uuid = COALESCE(NULLIF('$session', ''), (SELECT session_uuid FROM decision_events WHERE session_uuid <> '' GROUP BY 1 ORDER BY count(*) FILTER (WHERE event_type NOT LIKE 'fe.%') DESC, max(created_at) DESC LIMIT 1)) ORDER BY created_at LIMIT 400"
+      }],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "时间", "desc": false }], "footer": { "show": false } }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "各庭审会话事件量 Top 10",
+      "description": "上方「庭审会话」下拉的数据源，按后端 AI 事件数降序——把只刷出断线重连的噪声会话压到后面。",
+      "datasource": { "type": "postgres", "uid": "dc_postgres" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 46 },
+      "targets": [{
+        "refId": "A",
+        "format": "table",
+        "rawQuery": true,
+        "rawSql": "SELECT session_uuid AS \"庭审会话\", count(*) AS \"事件总数\", count(*) FILTER (WHERE event_type LIKE 'fe.%') AS \"前端\", count(*) FILTER (WHERE event_type NOT LIKE 'fe.%') AS \"后端\", to_char(max(created_at), 'MM-DD HH24:MI') AS \"最近事件\" FROM decision_events WHERE session_uuid <> '' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 3 DESC, 2 DESC LIMIT 10"
+      }],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true, "footer": { "show": false } }
+    }
+  ]
+}

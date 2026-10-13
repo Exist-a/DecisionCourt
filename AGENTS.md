@@ -202,6 +202,31 @@ Agent 需要熟悉以下核心文档：
   以来一直静默存在，已修 + 回归钉 `TestResumeCrossExam_NoSelfDeadlock`）；
   UI 复测还修了 opening 阶段「开始质证」按钮纯事件驱动的缺口（刷新后无按钮，
   与 D22 evidence 阶段同款）。见 [`deferred-items-2026-10-09 §M10`](docs/todo/deferred-items-2026-10-09.md)。
+- **埋点可视化补齐（2026-10-12，面试演示驱动）**：简历第①条"前端埋点复用业务事件表"此前**只有写路径 + 读端点，界面上零消费者**（读端点 `GET /courtrooms/:uuid/events` 无任何前端调用）。现补上 **Grafana 直连业务库** 的看板 `deploy/ops/grafana/dashboards/decisioncourt-events.json`（10 面板：顶部两栏**字段说明**＝事件类型含义 / 各列含义；数据面板＝前端/后端事件计数、类型分布、事件速率、各阶段停留时长、**按会话的跨域关联时间线**、会话 Top 10），数据源 `provisioning/datasources/postgres.yml`，dev/prod 两个 compose 的 grafana 服务均补 `POSTGRES_*` 透传（**prod 不补会挂一个连不上的数据源**）。**口径**：这是给运维/开发看的**只读视图**，**不是**面向用户的分析后台，也不做漏斗聚合——被问"分析侧"仍按"未产品化"答。踩坑记录：会话变量默认空 → 跨域面板匹配到 `session_uuid=''` 的空会话；已在 SQL 里加 `COALESCE` 回落到"后端事件最多的一场"。
+- **🔴→✅ 信念引擎「锚定反号」缺陷已修（2026-10-12，真实庭审实测撞出）**：`UpdateWithDiff` 里锚定项
+  `Anchor·(PriorA − prior)` 在 Agent 离自己 `PriorA` 较远时量级会**盖过证据项并把净位移反号**——
+  实测一场：控方 0.79（PriorA=0.7），一条被判为**支持选项 A**（即支持控方）的证据，证据项 +0.04 logit
+  往上推、锚定项 −0.33 logit 往下拽 → 控方 **79% 掉到 74%**；辩方同向反号（24%→27%）。
+  这与 `engine_v06.go` 自己写的 signed-effect 契约（"supports A must push prosecutors UP"）矛盾，属**缺陷**。
+  **修法（两处，缺一不可）**：① **护栏**——锚定只允许衰减证据位移、不允许反号（`evidenceDelta` 与净位移异号时取纯证据项）；
+  ② **零权重证据直接跳过**——`evidenceShift == 0`（即 `w = cred·rel·|impactA| = 0`；实测典型是 LLM 把 `impactA`/`impactB` 都判成 0，
+  如一条内容为「困了」的证据）时，原实现仍照跑锚定项，于是写出一条 **`source=evidence`、但位移 100% 来自锚定** 的 diff
+  （真实库 9 条：控方 0.75→0.7156 / 辩方 0.25→0.2844，前端卡片却标着"证据"）。**①挡不住这一类**，因为那时 `evidenceDelta` 恒为 0、
+  「异号」判据永远不成立。回归钉：`TestUpdateWithDiff_AnchorNeverReversesEvidence` +
+  `TestUpdateWithDiff_ZeroWeightEvidenceChangesNothing`（禁用对应修复后分别精确复现 0.7900→0.7373 / 0.2400→0.2728 与
+  0.7500→0.7156 / 0.2500→0.2844，均与真实数据一致）。
+  **为什么长期没被发现**：`engine_v06_test.go` 所有用例都把控方初值写成 `0.70` = 其 `PriorA`，
+  锚定项恒为 0，**该路径零覆盖**。已补回归钉 `TestUpdateWithDiff_AnchorNeverReversesEvidence`
+  （禁用护栏后精确复现 0.7900→0.7373 / 0.2400→0.2728，与真实数据一致）。全量 `go test ./...` 退出码 0。
+  **⚠️ 验证状态（未做的事，别当成已做）**：只有**单测**；**未做浏览器实测**，也**没有一条修复后的真实证据记录**
+  （需要重新提交一条证据才会产生）。另注意：**`air` 在 Windows bind mount 上不热重载**，改后端代码后必须
+  `docker compose -f docker-compose.dev.yml restart backend`；重启**不毁在跑的庭审**（启动恢复会接回来）。
+  **顺带订正一处文档错误**：演示文档曾写"法官锚得重、律师锚得轻"，与代码相反——实际
+  律师 0.7（最重）/ 法官 0.3 / 调查员 0.2。**遗留（未修，登记备查）**：① 锚定项不可见（`BeliefSrcAnchorPull`
+  常量与前端 Anchor 图标都在，但全仓无发射方，锚定被折叠进 evidence 卡片 → 用户会把整个 Δ 归因给证据）；
+  ② 发言（stance）触发的 diff 只写库、只广播 `belief.updated`，不广播 `belief.diff` → 实时视图看不到、
+  刷新（hydrate）后突然多出来，同一份数据两副面孔；③ 律师 Anchor=0.7 导致每步把"偏离先验"乘 0.3，
+  三条证据后偏离只剩 2.7%，轨迹更接近"最近一条证据 + 强先验"而非证据累积。
 - ⚠️ **纪律提醒**：本批发现第 2 轮曾误报"全量测试全绿"（`| head` 掩盖了退出码）。
   **跑 `go test ./...` 必须看真实退出码，不要用管道过滤后的输出判断成败。**
 
@@ -431,6 +456,9 @@ docker compose -f docker-compose.dev.yml ps
 # 2026-10-10 第 3 轮起还有 dc_dev_prometheus / dc_dev_grafana（观测栈默认启动；
 #   Grafana http://localhost:3001 admin/admin、Prometheus http://localhost:9090，
 #   不想跑就 `docker compose -f docker-compose.dev.yml stop prometheus grafana`）
+# 2026-10-12 起 Grafana 有**两块**预置看板：`DecisionCourt 总览`（Prometheus 指标）+
+#   `DecisionCourt 埋点与跨域关联`（**直连业务库 Postgres**，画 decision_events：前端埋点 ↔ 后端 AI 决策事件的跨域时间线）。
+#   数据源 `deploy/ops/grafana/provisioning/datasources/postgres.yml`，靠 grafana 服务的 POSTGRES_* 环境变量连库（dev/prod 已透传）。
 
 # 2. 业务端点健康检查
 curl http://localhost:8180/health
