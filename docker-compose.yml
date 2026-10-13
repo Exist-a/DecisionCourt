@@ -209,8 +209,6 @@ services:
     depends_on:
       - backend
       - frontend
-      # 2026-10-13: /monitor/* 反代到 grafana（Caddy 能容忍 upstream 未就绪，这里只为启动顺序）
-      - grafana
 
   # ── 可观测「呈现层」（2026-10-10 第 3 轮）**默认启动** ──────────────────────
   # 2026-10-10 第 3 轮（OPS-DASHBOARD-PLAN §10）。**内存依据是实测的**：
